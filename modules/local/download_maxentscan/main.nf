@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: DOWNLOAD_MAXENTSCAN
  * Purpose: Download vep plugin database
  */

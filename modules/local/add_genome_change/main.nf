@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: ADD_GENOME_CHANGE
  * Purpose: Add genome-level change information to a MAF file
  */

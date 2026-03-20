@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: MERGE_ANNOTATIONS
  * Purpose: Merge annotations in a single maf file
  */

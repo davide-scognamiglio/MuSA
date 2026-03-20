@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: BCFTOOLS_FILTER_NONVARIANT_GT
  * Purpose: Keep only variant genotypes (remove homozygous reference GT="0/0")
  */

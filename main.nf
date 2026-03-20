@@ -1,7 +1,16 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2
 
+
+// Load and display ASCII banner
+def bannerFile = file('assets/banner.txt')
+
+if (bannerFile.exists()) {
+    println bannerFile.text
+}
+
 /*
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     VALIDATE & PRINT PARAMETER SUMMARY
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

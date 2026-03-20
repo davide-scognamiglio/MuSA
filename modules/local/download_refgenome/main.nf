@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: DOWNLOAD_REFGENOME
  * Purpose: Download/create reference genome files
  */

@@ -21,11 +21,11 @@ process DBNSFP_ANNOTATE_VCF {
 
 script:
 """
-ls -lah
+    ls -lah
 
-java -cp /data/dbNSFP/dbNSFP5.3.1a search_dbNSFP531a \
-    -i ${vcf} \
-    -o ${meta.patient}.dbnsfp.tsv \
-    -p
-"""
+    java -cp /data/dbNSFP/dbNSFP5.3.1a search_dbNSFP531a \
+        -i ${vcf} \
+        -o ${meta.patient}.dbnsfp.tsv \
+        -p
+    """
 }

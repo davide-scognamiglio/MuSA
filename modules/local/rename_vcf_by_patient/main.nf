@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: RENAME_VCF_BY_PATIENT
  * Purpose: Rename final VCF based on patient ID
  */

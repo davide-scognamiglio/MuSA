@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: VEP_ANNOTATE_VCF
  * Purpose: Annotate variants using Ensembl VEP, optionally with plugins
  */
@@ -58,7 +58,7 @@ process VEP_ANNOTATE_VCF {
         else
             echo "Running VEP without plugins..."
             vep \\
-                -i \$vcf \\
+                -i $vcf \\
                 --dir_cache "/data/vep_data/vep_cache" --safe \\
                 --format vcf \\
                 --fasta "/data/vep_data/reference_genome/${params.build}.fa" \\

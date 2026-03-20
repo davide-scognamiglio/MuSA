@@ -1,6 +1,6 @@
 {
-    "name": "nf-core/variantannotation",
-    "homePage": "https://github.com/nf-core/variantannotation",
+    "name": "MuSA",
+    "homePage": "https://github.com/MuSA",
     "repos": {
         "https://github.com/nf-core/modules.git": {
             "modules": {

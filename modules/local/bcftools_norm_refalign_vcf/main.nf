@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: BCFTOOLS_NORM_REFALIGN_VCF
  * Purpose: Normalize VCF with reference genome and left-align (no indexing)
  */

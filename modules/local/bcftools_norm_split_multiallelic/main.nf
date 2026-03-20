@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: BCFTOOLS_NORM_SPLIT_MULTIALLELIC
  * Purpose: Normalize VCF and split multi-allelic variants using bcftools
  */

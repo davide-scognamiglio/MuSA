@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: FILTER_VARIANTS
  * Purpose: Apply HPO or panel-based filtering to MAF
  */

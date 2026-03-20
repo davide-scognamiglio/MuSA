@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: GENEBE_ANNOTATE_VCF
  * Purpose: Annotate variants using GeneBe API
  */

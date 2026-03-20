@@ -1,6 +1,6 @@
-# nf-core/variantannotation: Documentation
+# MuSA: Documentation
 
-The nf-core/variantannotation documentation is split into the following pages:
+The MuSA documentation is split into the following pages:
 
 - [Usage](usage.md)
   - An overview of how the pipeline works, how to run it and a description of all of the different command-line flags.

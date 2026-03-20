@@ -1,4 +1,4 @@
-# nf-core/variantannotation: Output
+# MuSA: Output
 
 ## Introduction
 

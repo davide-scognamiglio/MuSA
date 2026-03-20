@@ -4,15 +4,15 @@
   |\\ | |__  __ /  ` /  \\ |__) |__         }  {
   | \\| |       \\__, \\__/ |  \\ |___     \\`-._,-`-,
                                         `._,._,'
-  nf-core/variantannotation ${version}
+  MuSA ${version}
 ----------------------------------------------------
 Run Name: $runName
 
 <% if (success){
-    out << "## nf-core/variantannotation execution completed successfully! ##"
+    out << "## MuSA execution completed successfully! ##"
 } else {
     out << """####################################################
-## nf-core/variantannotation execution completed unsuccessfully! ##
+## MuSA execution completed unsuccessfully! ##
 ####################################################
 The exit status of the task that caused the workflow execution to fail was: $exitStatus.
 The full error message was:
@@ -35,5 +35,5 @@ Pipeline Configuration:
 <% out << summary.collect{ k,v -> " - $k: $v" }.join("\n") %>
 
 --
-nf-core/variantannotation
-https://github.com/nf-core/variantannotation
+MuSA
+https://github.com/MuSA

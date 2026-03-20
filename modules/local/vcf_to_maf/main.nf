@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: VCF_TO_MAF
  * Purpose: Convert a VCF to a MAF file using vcf2maf
  */

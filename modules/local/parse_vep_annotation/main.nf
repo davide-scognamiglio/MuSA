@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: PARSE_VEP_ANNOTATION
  * Purpose: Parse VEP annotated VCF to extract relevant variant fields
  */

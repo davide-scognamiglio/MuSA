@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: ADD_REF_CONTEXT
  * Purpose: Add reference genome context around variants in a MAF
  */

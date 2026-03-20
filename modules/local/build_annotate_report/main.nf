@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: BUILD_ANNOTATE_REPORT
  * Purpose: Generate HTML report/report for each patient
  */

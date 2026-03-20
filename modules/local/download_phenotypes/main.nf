@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: DOWNLOAD_PHENOTYPES
  * Purpose: Download vep plugin database
  */

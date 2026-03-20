@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: RENOVO_ANNOTATE_VCF
  * Purpose: Annotate variants with ReNOVo and generate corresponding MAF file
  */

@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: GATK_VARIANTFILTRATION_HARDFILTER
  * Purpose: Apply hard filtering using GATK VariantFiltration and index VCF
  */

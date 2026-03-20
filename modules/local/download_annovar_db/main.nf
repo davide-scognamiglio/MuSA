@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: DOWNLOAD_ANNOVAR_DB
  * Purpose: Download ANNOVAR databases
  */

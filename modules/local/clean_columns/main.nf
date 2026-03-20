@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: CLEAN_COLUMNS
  * Purpose: Drop duplicate columns and clean the file a little bit
  */

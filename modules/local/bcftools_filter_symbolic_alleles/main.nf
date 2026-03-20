@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: BCFTOOLS_FILTER_SYMBOLIC_ALLELES
  * Purpose: Remove symbolic alleles (ALT="*") from VCF
  */

@@ -83,6 +83,18 @@
                     "fa_icon": "fas fa-wrench",
                     "default": false
                 },
+                "drop_benign": {
+                    "type": "boolean",
+                    "description": "Drop variants reported as 'bening' in Clinvar",
+                    "fa_icon": "fas fa-wrench",
+                    "default": false
+                },
+                "max_freq": {
+                    "type": "number",
+                    "description": "Maximum allele frequency to retain a variant (e.g., 0.05)",
+                    "fa_icon": "fas fa-percent",
+                    "default": 0.05
+                },
                 "data_dir": {
                     "type": "string",
                     "format": "directory-path",

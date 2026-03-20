@@ -1,5 +1,5 @@
 /*
- * nf-core/variantannotation
+ * MuSA
  * Module: DOWNLOAD_VEP_CACHE
  * Purpose: Download VEP cache
  */
