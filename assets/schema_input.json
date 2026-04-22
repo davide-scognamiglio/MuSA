@@ -1,0 +1,34 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://raw.githubusercontent.com/MuSA/master/assets/schema_input.json",
+    "title": "MuSA pipeline - params.input schema",
+    "description": "Schema for the file provided with params.input",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "patient": {
+                "type": ["string", "integer"],
+                "errorMessage": "Patient code must be provided and cannot contain spaces",
+                "meta": ["id"]
+            },
+            "sample_type": {
+                "type": "string",
+                "errorMessage": "Sample type (ex: blood, saliva ecc) must be provided and cannot contain spaces"
+            },
+            "sample_file": {
+                "type": "string",
+                "format": "file-path",
+                "exists": true,
+                "pattern": "^(\\S+\/)?\\S+\\.vcf(\\.gz)?$",
+                "errorMessage": "VCF file must not contain spaces and must have extension '.vcf.gz' or '.vcf'"
+            },
+            "hpo": {
+                "type": "string",
+                "pattern": "^HP:\\d+(;HP:\\d+)*$",
+                "errorMessage": "Optional HPOs must be semicolon-separated and in the format HP:number;HP:number"
+            }
+        },
+        "required": ["patient", "sample_type", "sample_file"]
+    }
+}

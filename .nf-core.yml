@@ -1,0 +1,25 @@
+repository_type: pipeline
+
+nf_core_version: 3.5.1
+
+lint:
+  files_unchanged:
+    - .github/CONTRIBUTING.md
+    - assets/sendmail_template.txt
+  multiqc_config: false
+  files_exist:
+    - assets/multiqc_config.yml
+
+template:
+  org: nf-core
+  name: variantannotation
+  description: Ultra-deep, multi-source variant annotation
+  author: D. Scognamiglio, E. Bonetti
+  version: 1.0.0dev
+  force: true
+  outdir: .
+  skip_features:
+    - multiqc
+    - fastqc
+    - gpu
+  is_nfcore: true
