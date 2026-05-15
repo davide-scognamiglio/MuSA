@@ -23,8 +23,8 @@ process ENCODE_CLINVAR {
     """
     encode_clinvar.py \\
         --file    ${maf} \\
-        --sig_col clinvar_clnsig \\
-        --rev_col clinvar_review \\
+        --sig_col CLNSIG \\
+        --rev_col CLNREVSTAT \\
         --output  "${meta.patient}.clinvar_encoded.maf"
     """
 }

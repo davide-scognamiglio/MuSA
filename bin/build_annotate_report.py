@@ -80,12 +80,12 @@ COLUMN_CONFIG = {
     "main": {
         "online": [
             "Hugo_Symbol", "HGVSc", "HGVSp_VEP",
-            "encoded_clinvar_clnsig", "renovo_adj_acmg_score", "clinvar_trait",
+            "encoded_CLNSIG", "renovo_adj_acmg_score", "clinvar_trait",
             "MAX_AF","PUBMED", "Franklin" # Franklin is computed, not in the MAF
         ],
         "offline": [
             "Hugo_Symbol", "HGVSc", "genome_change", "HGVSp_VEP",
-            "encoded_clinvar_clnsig", "MAX_AF",
+            "encoded_CLNSIG", "MAX_AF",
             "PUBMED", "Franklin"
         ],
     },
@@ -94,13 +94,13 @@ COLUMN_CONFIG = {
         "with_plugins": [
             "genome_change","ref_context","bioinfo_params",
             "MAX_AF_POPS", "clinvar_OMIM_id","clinvar_id", 
-            "acmg_criteria", "encoded_clinvar_review",
+            "acmg_criteria", "encoded_CLNREVSTAT",
             "PhenotypeOrthologous_Mouse_phenotype",
             "PhenotypeOrthologous_Rat_phenotype"
         ],
         "without_plugins": [
             "genome_change","ref_context","bioinfo_params",
-            "clinvar_OMIM_id","clinvar_id", "acmg_criteria", "encoded_clinvar_review"
+            "clinvar_OMIM_id","clinvar_id", "acmg_criteria", "encoded_CLNREVSTAT"
         ],
     },
     # Pretty labels for table headers (original MAF name -> display name)
@@ -111,7 +111,7 @@ COLUMN_CONFIG = {
         "bioinfo_params":         "Variant quality",
         "HGVSp_VEP":              "a.a.",
         "Consequence":            "consequence",
-        "encoded_clinvar_clnsig": "Clinvar class",
+        "encoded_CLNSIG": "Clinvar class",
         "renovo_adj_acmg_score":  "MuSA class",
         "acmg_criteria":          "GeneBe ACMG criteria",
         "MAX_AF":                 "max AF",
@@ -122,7 +122,7 @@ COLUMN_CONFIG = {
         "Franklin":               "Franklin",
         "clinvar_OMIM_id":        "OMIM",
         "clinvar_id":        "Clinvar ID",
-        "encoded_clinvar_review": "Clinvar review",
+        "encoded_CLNREVSTAT": "Clinvar review",
         "clinvar_trait":          "Clinvar trait",
         "PhenotypeOrthologous_Mouse_phenotype": "Mouse phenotype",
         "PhenotypeOrthologous_Rat_phenotype":   "Rat phenotype",
@@ -689,7 +689,7 @@ def plot_top_genes(df_raw: pd.DataFrame, n: int = 20) -> str:
 
 def plot_clinvar_pie(df_raw: pd.DataFrame) -> str:
     """Donut chart using CLIN_SIG (original MAF name)."""
-    col = "encoded_clinvar_clnsig"
+    col = "encoded_CLNSIG"
     if col not in df_raw.columns:
         print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
         return ""
@@ -802,7 +802,7 @@ def generate_all_plots(df_raw: pd.DataFrame) -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 def compute_stats(df_raw: pd.DataFrame) -> dict:
     sample_col = "Tumor_Sample_Barcode"   if "Tumor_Sample_Barcode"   in df_raw.columns else None
-    sig_col    = "encoded_clinvar_clnsig" if "encoded_clinvar_clnsig" in df_raw.columns else None
+    sig_col    = "encoded_CLNSIG" if "encoded_CLNSIG" in df_raw.columns else None
 
     total_variants = len(df_raw)
     total_samples  = df_raw[sample_col].replace("", np.nan).nunique() if sample_col else 1

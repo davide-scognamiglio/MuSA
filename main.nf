@@ -30,9 +30,10 @@ log.info paramsSummaryLog(workflow)
 // Set alternate build names
 if(params.build == "hg38") {
     params.build_alt_name = "GRCh38"
-} else if(params.build == "hg19") {
-    params.build_alt_name = "GRCh37"
+} else {
+    error "Currently, we only support hg38 build. We will likely support T2T build in the future"
 }
+
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

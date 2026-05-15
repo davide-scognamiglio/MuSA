@@ -91,8 +91,8 @@ filter_maf <- function(maf,
   }
 
   # Drop benign variants
-  if (drop_benign && "CLIN_SIG" %in% colnames(filtered)) {
-    keep <- !grepl("benign", filtered$CLIN_SIG, ignore.case = TRUE)
+  if (drop_benign && "encoded_CLNSIG" %in% colnames(filtered)) {
+    keep <- !grepl("benign", filtered$encoded_CLNSIG, ignore.case = TRUE)
     keep[is.na(keep)] <- TRUE
     filtered <- filtered[keep, , drop = FALSE]
   }
