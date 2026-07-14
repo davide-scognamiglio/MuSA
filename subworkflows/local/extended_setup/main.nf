@@ -22,30 +22,31 @@ include { DOWNLOAD_UTRANNOTATOR } from '../../../modules/local/download_utrannot
 workflow EXTENDED_SETUP {
 
     take:
-        basic_yaml_ch   // <- output of BASIC_SETUP
+        basic_yaml_ch      // <- output of BASIC_SETUP
+        changed_entries_ch // <- output of BASIC_SETUP (NO_FILE sentinel unless --update_db_only)
 
     main:
 
         /*
-         * FAN-OUT: every module consumes SAME merged YAML
+         * FAN-OUT: every module consumes SAME merged YAML + changed-entries gate
          */
-        alphamissense_ch      = DOWNLOAD_ALPHAMISSENSE(basic_yaml_ch)
-        ancestralallele_ch    = DOWNLOAD_ANCESTRALALLELE(basic_yaml_ch)
-        cadd_ch               = DOWNLOAD_CADD(basic_yaml_ch)
-        clinpred_ch           = DOWNLOAD_CLINPRED(basic_yaml_ch)
-        dbnsfp_ch             = DOWNLOAD_DBNSFP(basic_yaml_ch)
-        dbscsnv_ch            = DOWNLOAD_DBSCSNV(basic_yaml_ch)
-        enformer_ch           = DOWNLOAD_ENFORMER(basic_yaml_ch)
-        eve_ch                = DOWNLOAD_EVE(basic_yaml_ch)
-        gwas_ch               = DOWNLOAD_GWAS(basic_yaml_ch)
-        mavedb_ch             = DOWNLOAD_MAVEDB(basic_yaml_ch)
-        maxentscan_ch         = DOWNLOAD_MAXENTSCAN(basic_yaml_ch)
-        mutfunc_ch            = DOWNLOAD_MUTFUNC(basic_yaml_ch)
-        phenotypeorthologous_ch = DOWNLOAD_PHENOTYPEORTHOLOGOUS(basic_yaml_ch)
-        pli_ch                = DOWNLOAD_PLI(basic_yaml_ch)
-        referencequality_ch   = DOWNLOAD_REFERENCEQUALITY(basic_yaml_ch)
-        splicevault_ch        = DOWNLOAD_SPLICEVAULT(basic_yaml_ch)
-        utrannotator_ch       = DOWNLOAD_UTRANNOTATOR(basic_yaml_ch)
+        alphamissense_ch      = DOWNLOAD_ALPHAMISSENSE(basic_yaml_ch, changed_entries_ch)
+        ancestralallele_ch    = DOWNLOAD_ANCESTRALALLELE(basic_yaml_ch, changed_entries_ch)
+        cadd_ch               = DOWNLOAD_CADD(basic_yaml_ch, changed_entries_ch)
+        clinpred_ch           = DOWNLOAD_CLINPRED(basic_yaml_ch, changed_entries_ch)
+        dbnsfp_ch             = DOWNLOAD_DBNSFP(basic_yaml_ch, changed_entries_ch)
+        dbscsnv_ch            = DOWNLOAD_DBSCSNV(basic_yaml_ch, changed_entries_ch)
+        enformer_ch           = DOWNLOAD_ENFORMER(basic_yaml_ch, changed_entries_ch)
+        eve_ch                = DOWNLOAD_EVE(basic_yaml_ch, changed_entries_ch)
+        gwas_ch               = DOWNLOAD_GWAS(basic_yaml_ch, changed_entries_ch)
+        mavedb_ch             = DOWNLOAD_MAVEDB(basic_yaml_ch, changed_entries_ch)
+        maxentscan_ch         = DOWNLOAD_MAXENTSCAN(basic_yaml_ch, changed_entries_ch)
+        mutfunc_ch            = DOWNLOAD_MUTFUNC(basic_yaml_ch, changed_entries_ch)
+        phenotypeorthologous_ch = DOWNLOAD_PHENOTYPEORTHOLOGOUS(basic_yaml_ch, changed_entries_ch)
+        pli_ch                = DOWNLOAD_PLI(basic_yaml_ch, changed_entries_ch)
+        referencequality_ch   = DOWNLOAD_REFERENCEQUALITY(basic_yaml_ch, changed_entries_ch)
+        splicevault_ch        = DOWNLOAD_SPLICEVAULT(basic_yaml_ch, changed_entries_ch)
+        utrannotator_ch       = DOWNLOAD_UTRANNOTATOR(basic_yaml_ch, changed_entries_ch)
 
         /*
          * FAN-IN: merge all updated YAMLs
@@ -68,7 +69,6 @@ workflow EXTENDED_SETUP {
                 referencequality_ch,
                 splicevault_ch,
                 utrannotator_ch)
-            .map { dir, yaml -> yaml }
             .collect()
 
         merged_yaml = MERGE_EXTENDED_YAML(merged_input)

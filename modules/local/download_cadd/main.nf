@@ -12,9 +12,10 @@ process DOWNLOAD_CADD {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path('CADD'),file('cadd_manifest.yaml')
+        file('cadd_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,19 @@ process DOWNLOAD_CADD {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    _keys=""
+    for var in \$(compgen -v); do
+        if [[ \$var =~ ^vep_cadd_.*_url\$ ]]; then
+            _keys="\$_keys \${var%_url}"
+        fi
+    done
+
+    if should_skip_module "\$_keys" "${changed_entries}" "/data/vep_data/CADD"; then
+        echo "[INFO] No changes for download_cadd -- skipping download, reusing existing data."
+        cp "${manifest}" cadd_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p CADD
     cd CADD

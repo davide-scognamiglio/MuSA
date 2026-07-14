@@ -12,9 +12,10 @@ process DOWNLOAD_GWAS {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("GWAS"),file('gwas_manifest.yaml')
+        file('gwas_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_GWAS {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_gwas" "${changed_entries}" "/data/vep_data/GWAS"; then
+        echo "[INFO] No changes for download_gwas -- skipping download, reusing existing data."
+        cp "${manifest}" gwas_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p GWAS
     cd GWAS

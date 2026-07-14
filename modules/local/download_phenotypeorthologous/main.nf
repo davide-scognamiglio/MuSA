@@ -12,9 +12,10 @@ process DOWNLOAD_PHENOTYPEORTHOLOGOUS {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("PhenotypeOrthologous"),file('phenotypeorthologous_manifest.yaml')
+        file('phenotypeorthologous_manifest.yaml')
 
  script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_PHENOTYPEORTHOLOGOUS {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_phenotypeorthologous vep_phenotypeorthologous_tbi" "${changed_entries}" "/data/vep_data/PhenotypeOrthologous"; then
+        echo "[INFO] No changes for download_phenotypeorthologous -- skipping download, reusing existing data."
+        cp "${manifest}" phenotypeorthologous_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p PhenotypeOrthologous
     cd PhenotypeOrthologous

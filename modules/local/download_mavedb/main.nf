@@ -12,9 +12,10 @@ process DOWNLOAD_MAVEDB {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("MaveDB"),file('mavedb_manifest.yaml')
+        file('mavedb_manifest.yaml')
 
  script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_MAVEDB {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_mavedb vep_mavedb_tbi" "${changed_entries}" "/data/vep_data/MaveDB"; then
+        echo "[INFO] No changes for download_mavedb -- skipping download, reusing existing data."
+        cp "${manifest}" mavedb_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p MaveDB
     cd MaveDB

@@ -12,9 +12,10 @@ process DOWNLOAD_MUTFUNC {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("mutfunc"),file('mutfunc_manifest.yaml')
+        file('mutfunc_manifest.yaml')
         
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_MUTFUNC {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_mutfunc" "${changed_entries}" "/data/vep_data/mutfunc"; then
+        echo "[INFO] No changes for download_mutfunc -- skipping download, reusing existing data."
+        cp "${manifest}" mutfunc_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p mutfunc
     cd mutfunc

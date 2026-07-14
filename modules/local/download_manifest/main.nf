@@ -1,20 +1,24 @@
 /*
  * MuSA
  * Module: DOWNLOAD_MANIFEST
- * Purpose: Download manifest YAML for downstream modules
+ * Purpose: Stage the manifest YAML for downstream modules.
+ * params.dbs_manifest may be a remote http(s) URL (Nextflow stages it natively)
+ * or a local file path (e.g. a user-supplied custom manifest overriding DB versions).
  */
 
 process DOWNLOAD_MANIFEST {
 
     tag "manifest_download"
-    container "dsbioinfo/musa-helper:rebuild" 
+    container "dsbioinfo/musa-helper:rebuild"
+
+    input:
+        path(manifest_src, stageAs: 'input_manifest.yaml')
 
     output:
         file("dbs_manifest.yaml")  // will be used by downstream modules
 
     script:
     """
-    echo "Downloading manifest from ${params.dbs_manifest}..."
-    curl -L -o dbs_manifest.yaml "${params.dbs_manifest}"
+    cp -L "${manifest_src}" dbs_manifest.yaml
     """
 }

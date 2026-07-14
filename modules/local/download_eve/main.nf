@@ -12,9 +12,10 @@ process DOWNLOAD_EVE {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("EVE"),file('eve_manifest.yaml')
+        file('eve_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_EVE {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_eve" "${changed_entries}" "/data/vep_data/EVE"; then
+        echo "[INFO] No changes for download_eve -- skipping download, reusing existing data."
+        cp "${manifest}" eve_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p EVE
     cd EVE

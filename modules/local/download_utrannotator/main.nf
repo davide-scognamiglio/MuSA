@@ -12,9 +12,10 @@ process DOWNLOAD_UTRANNOTATOR {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("UTRannotator"),file('utrannotator_manifest.yaml')
+        file('utrannotator_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_UTRANNOTATOR {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_utrannotator" "${changed_entries}" "/data/vep_data/UTRannotator"; then
+        echo "[INFO] No changes for download_utrannotator -- skipping download, reusing existing data."
+        cp "${manifest}" utrannotator_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p UTRannotator
     cd UTRannotator

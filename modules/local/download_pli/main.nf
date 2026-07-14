@@ -12,9 +12,10 @@ process DOWNLOAD_PLI {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("pLI"),file('pli_manifest.yaml')
+        file('pli_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_PLI {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_pli" "${changed_entries}" "/data/vep_data/pLI"; then
+        echo "[INFO] No changes for download_pli -- skipping download, reusing existing data."
+        cp "${manifest}" pli_manifest.yaml
+        exit 0
+    fi
 
     mkdir pLI
     cd pLI
