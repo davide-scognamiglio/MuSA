@@ -33,7 +33,9 @@ process VEP_ANNOTATE_VCF {
                 -o "${meta.patient}.vep.vcf" \\
                 --offline \\
                 --assembly GRCh38 \\
-                --mane --pick --everything --fork ${params.n_core} \\
+                --mane --pick \\
+                --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
+                --everything --fork ${params.n_core} \\
                 --verbose \\
                 --plugin AlphaMissense,file="/data/vep_data/AlphaMissense/AlphaMissense_${params.build}.tsv.gz" \\
                 --plugin AncestralAllele,"/data/vep_data/AncestralAllele/homo_sapiens_ancestor_GRCh38.fa.gz" \\
@@ -66,7 +68,9 @@ process VEP_ANNOTATE_VCF {
                 -o "${meta.patient}.vep.vcf" \\
                 --offline \\
                 --assembly GRCh38 \\
-                --mane --pick --everything --fork ${params.n_core} \\
+                --mane --pick \\
+                --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
+                --everything --fork ${params.n_core} \\
                 --verbose
         fi
         """
