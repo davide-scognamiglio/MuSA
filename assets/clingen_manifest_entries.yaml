@@ -1,0 +1,43 @@
+# ClinGen manifest entries — paste these under `grch38:` in dbs_manifest.yaml
+# (the remote test-datasets manifest, or a local --dbs_manifest override).
+#
+# DOWNLOAD_CLINGEN consumes them; each needs out/url/method + the two sha fields
+# (trust-on-first-use: leave expected_sha256 "" and it is adopted on first download).
+#
+# CONFIRM the actionability + ERepo URLs against ClinGen before a production run —
+# ClinGen occasionally moves these download paths. Dosage + gene-validity URLs are stable.
+
+  clingen_gene_dosage:
+    out: "ClinGen_gene_curation_list_GRCh38.tsv"
+    url: "https://ftp.clinicalgenome.org/ClinGen_gene_curation_list_GRCh38.tsv"
+    method: "curl"
+    expected_sha256: ""
+    computed_sha256: ""
+
+  clingen_gene_validity:
+    out: "clingen_gene_validity.csv"
+    url: "https://search.clinicalgenome.org/kb/gene-validity/download"
+    method: "curl"
+    expected_sha256: ""
+    computed_sha256: ""
+
+  clingen_actionability_adult:
+    out: "clingen_actionability_adult.tsv"
+    url: "https://actionability.clinicalgenome.org/ac/Adult/api/summ/assertion?format=tsv"   # CONFIRMED
+    method: "curl"
+    expected_sha256: ""
+    computed_sha256: ""
+
+  clingen_actionability_pediatric:
+    out: "clingen_actionability_pediatric.tsv"
+    url: "https://actionability.clinicalgenome.org/ac/Pediatric/api/summ/assertion?format=tsv"   # CONFIRMED
+    method: "curl"
+    expected_sha256: ""
+    computed_sha256: ""
+
+  clingen_variant_path:
+    out: "erepo.tabbed.txt"
+    url: "https://erepo.clinicalgenome.org/evrepo/api/summary/classifications/download"   # CONFIRMED
+    method: "curl"
+    expected_sha256: ""
+    computed_sha256: ""
