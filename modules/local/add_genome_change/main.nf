@@ -7,7 +7,7 @@
 
 process ADD_GENOME_CHANGE {
     tag "add-genome-change"
-    cpus 1
+    cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2

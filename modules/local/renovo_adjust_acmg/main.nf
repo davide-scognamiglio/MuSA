@@ -6,7 +6,7 @@
 
 process RENOVO_ADJUST_ACMG {
     tag "renovo-adjust"
-    cpus 1
+        cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2

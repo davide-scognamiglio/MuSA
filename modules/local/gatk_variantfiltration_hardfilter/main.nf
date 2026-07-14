@@ -15,11 +15,11 @@ process GATK_VARIANTFILTRATION_HARDFILTER {
         tuple val(meta), path(vcf)
 
     output:
-        tuple val(meta), path("hardfiltered.vcf")
+        tuple val(meta), path("hardfiltered.vcf.gz")
 
     script:
         """
-        # Index input VCF before filtering
+        # Index input VCF before filtering (bgzip-compressed, from BCFTOOLS_FILTER_SYMBOLIC_ALLELES)
         tabix -p vcf ${vcf}
 
         # Apply GATK hard filters
@@ -34,13 +34,12 @@ process GATK_VARIANTFILTRATION_HARDFILTER {
             -filter "ReadPosRankSum < -8.0" --filter-name "ReadPosRankSum-8" \
             -O filtered_temp.vcf
 
-        # Keep only unfiltered variants
+        # Keep only unfiltered variants. GATK auto-indexes a .vcf.gz -O target itself
+        # (produces hardfiltered.vcf.gz.tbi alongside), so no separate tabix call is needed here —
+        # one used to follow this and failed ("the index file exists") against GATK's own index.
         gatk SelectVariants \
             -V filtered_temp.vcf \
             --exclude-filtered \
-            -O hardfiltered.vcf
-
-        # Index final output
-        tabix -p vcf hardfiltered.vcf
+            -O hardfiltered.vcf.gz
         """
 }

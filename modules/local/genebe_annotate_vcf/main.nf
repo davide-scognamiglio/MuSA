@@ -7,7 +7,7 @@
 
 process GENEBE_ANNOTATE_VCF {
     tag "genebe-annotation"
-    cpus 1
+        cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3
     memory { 4.GB * task.attempt }

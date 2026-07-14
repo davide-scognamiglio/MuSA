@@ -7,7 +7,7 @@
 
 process BUILD_ANNOTATE_REPORT {
     tag "report"
-    cpus 1
+        cpus params.n_core
     errorStrategy 'retry'
     maxRetries 2
     memory { 18.GB * task.attempt }

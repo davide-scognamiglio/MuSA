@@ -7,7 +7,7 @@
 
 process BCFTOOLS_NORM_REFALIGN_VCF {
     tag "norm-refalign"
-    cpus 1
+        cpus params.n_core
     memory "2 GB"
     container "dsbioinfo/bcftools:1.2"
 

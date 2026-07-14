@@ -7,7 +7,7 @@
 
 process BCFTOOLS_FILTER_SYMBOLIC_ALLELES {
     tag "filter-symbolic"
-    cpus 1
+    cpus params.n_core
     memory "2 GB"
     container "dsbioinfo/bcftools:1.2"
 
@@ -15,10 +15,10 @@ process BCFTOOLS_FILTER_SYMBOLIC_ALLELES {
         tuple val(meta), path(vcf)
 
     output:
-        tuple val(meta), path("filtered_symbolic.vcf")
+        tuple val(meta), path("filtered_symbolic.vcf.gz")
 
     script:
         """
-        bcftools view -e 'ALT="*"' ${vcf} -Ov -o filtered_symbolic.vcf
+        bcftools view -e 'ALT="*"' ${vcf} -Oz -o filtered_symbolic.vcf.gz
         """
 }

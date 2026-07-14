@@ -7,7 +7,7 @@
 
 process RENOVO_ANNOTATE_VCF {
     tag "renovo-annotation"
-    cpus 1
+        cpus params.n_core
     errorStrategy 'retry'
     maxRetries 1
     memory { 18.GB * task.attempt }

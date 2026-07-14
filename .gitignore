@@ -14,3 +14,7 @@ VALIDATION_OUTPUT/
 CLINVAR/
 PAPER/
 NA12878*/
+# Local benchmark / acceptance data — NEVER commit (CLINVAR_20* alone is ~210 GB)
+CLINVAR_20*/
+MUSA_ACCEPTANCE/
+SIGU26_OI_VEP_plugins/

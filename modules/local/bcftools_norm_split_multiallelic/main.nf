@@ -7,7 +7,7 @@
 
 process BCFTOOLS_NORM_SPLIT_MULTIALLELIC {
     tag "normalize-split"
-    cpus 1
+    cpus params.n_core
     memory "2 GB"
     container "dsbioinfo/bcftools:1.2"
 

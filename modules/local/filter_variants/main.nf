@@ -7,7 +7,7 @@
 
 process FILTER_VARIANTS {
     tag "filter-maf"
-    cpus 1
+        cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2

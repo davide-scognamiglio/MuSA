@@ -6,7 +6,7 @@
 
 process NORMALIZE_CHR {
     tag "normalize_chr"
-    cpus 1
+        cpus params.n_core
     memory "1 GB"
     container "dsbioinfo/vcf2maf:rebuild"
 

@@ -59,6 +59,18 @@
                     "fa_icon": "fas fa-microchip",
                     "default": 16
                 },
+                "dbnsfp_shard_cpus": {
+                    "type": "integer",
+                    "description": "CPUs per per-chromosome dbNSFP annotation shard",
+                    "fa_icon": "fas fa-microchip",
+                    "default": 2
+                },
+                "dbnsfp_max_forks": {
+                    "type": "integer",
+                    "description": "Maximum number of per-chromosome dbNSFP shards to run concurrently",
+                    "fa_icon": "fas fa-layer-group",
+                    "default": 4
+                },
                 "offline": {
                     "type": "boolean",
                     "description": "Run in offline mode",
@@ -110,9 +122,14 @@
                 },
                 "dbs_manifest": {
                     "type": "string",
-                    "description": "Manifest url",
-                    "fa_icon": "fas fa-folder",
-                    "hidden": true
+                    "description": "URL or local file path to the DB manifest YAML. Override with a custom manifest to pin specific DB versions (e.g. a different VEP cache release) without editing the default remote manifest.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "update_db_only": {
+                    "type": "boolean",
+                    "description": "With --workflow setup, only re-download DB entries whose version/checksum changed since the last persisted manifest (data_dir/dbs_manifest.lock.yaml).",
+                    "fa_icon": "fas fa-sync",
+                    "default": false
                 },
                 "logo": {
                     "type": "string",
