@@ -6,7 +6,7 @@
 
 process CLEAN_COLUMNS {
     tag "clean-maf"
-    cpus 1
+        cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2
@@ -74,20 +74,46 @@ process CLEAN_COLUMNS {
 
     DROP="\${ORIG},\${T1},\${T2},\${DEAD}"
 
-    awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" '
+    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below):
+    # the ANNOVAR-origin ClinVar columns + the bare custom ClinVar id column. The self-managed
+    # ClinVar VCF (VEP --custom: ClinVar_CLNSIG/CLNREVSTAT/CLNDN) becomes the single ClinVar source.
+    DROP_ORIG="CLNSIG,CLNREVSTAT,CLNDN,CLNDISDB,ClinVar"
+
+    awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" -v drop_orig_cols="\$DROP_ORIG" '
     BEGIN {
         n = split(drop_cols, arr, ",")
         for (i = 1; i <= n; i++) drop[arr[i]] = 1
+        m = split(drop_orig_cols, arr2, ",")
+        for (i = 1; i <= m; i++) drop_orig[arr2[i]] = 1
     }
     NR == 1 {
         for (i = 1; i <= NF; i++) {
             col = \$i
             gsub(/\r/, "", col)
 
-            # Rename SYMBOL -> Hugo_Symbol
-            if (col == "SYMBOL") {
-                col = "Hugo_Symbol"
+            # Drop by ORIGINAL name first, so the ANNOVAR-origin CLNSIG/CLNREVSTAT/CLNDN (and the bare
+            # ClinVar id col) are removed while the custom ClinVar_* fields are renamed to those
+            # canonical names just below.
+            if (col in drop_orig) {
+                keep[i] = 0
+                \$i = col
+                continue
             }
+
+            # Rename to canonical MAF names
+            if (col == "SYMBOL")                       col = "Hugo_Symbol"
+            else if (col == "ClinVar_CLNSIG")          col = "CLNSIG"
+            else if (col == "ClinVar_CLNREVSTAT")      col = "CLNREVSTAT"
+            else if (col == "ClinVar_CLNDN")           col = "CLNDN"
+            else if (col == "ClinVar_CLNSIGCONF")      col = "CLNSIGCONF"
+            else if (col == "ClinVar_CLNDISDB")        col = "CLNDISDB"
+            else if (col == "ClinVar_CLNHGVS")         col = "CLNHGVS"
+            else if (col == "ClinVar_MC")              col = "MC"
+            else if (col == "ClinVar_GENEINFO")        col = "GENEINFO"
+            else if (col == "ClinVar_ALLELEID")        col = "ALLELEID"
+            else if (col == "ClinGenVCEP_Assertion")     col = "ClinGen_Variant_Assertion"
+            else if (col == "ClinGenVCEP_EvidenceCodes") col = "ClinGen_Variant_EvidenceCodes"
+            else if (col == "ClinGenVCEP_Disease")       col = "ClinGen_Variant_Disease"
 
             # Skip if explicitly dropped or already seen (keep first occurrence only)
             if ((col in drop) || (col in seen)) {
