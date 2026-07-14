@@ -79,11 +79,19 @@ process PARSE_VEP_ANNOTATION {
         annot_info = ""
         csq_part = ""
 
-        # Split INFO into pre-CSQ and post-CSQ parts
+        # Split INFO into pre-CSQ and post-CSQ parts. CSQ may be preceded by other INFO fields
+        # (leading semicolon before CSQ=) OR be the very first/only INFO field with no leading
+        # semicolon, which is what VEP emits when the input VCF has an empty INFO column. Handle
+        # both, else the whole CSQ blob stays in bioinfo_params and Consequence, IMPACT, etc. come
+        # out NA. (NB: no apostrophes in this comment; the awk program is single-quoted in the
+        # shell, so an embedded single quote would truncate it.)
         if (index(info, ";CSQ=") > 0) {
             split(info, parts, ";CSQ=")
             bioinfo_params = parts[1]
             annot_info = parts[2]
+        } else if (index(info, "CSQ=") == 1) {
+            bioinfo_params = ""
+            annot_info = substr(info, 5)
         }
 
         # Extract CSQ entry (the first section before any further ;)
