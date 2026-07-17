@@ -10,7 +10,11 @@ process DBNSFP_ANNOTATE_VCF_CHR {
     maxForks params.dbnsfp_max_forks
     errorStrategy 'retry'
     maxRetries 3
-    memory { (4.GB * params.dbnsfp_shard_cpus) * task.attempt }
+    // Deliberately NOT derived from dbnsfp_shard_cpus: the heap below is rendered into the script, so
+    // tying memory to the cpu count would rewrite the command (and drop every task's cache) each time
+    // the scatter width is tuned. 8 GB is the measured need: peak_rss tops out at 5.1 GB on the worst
+    // chromosome and is ~0 for the many empty shards.
+    memory { 8.GB * task.attempt }
     container "dsbioinfo/musa-helper:rebuild"
 
     input:

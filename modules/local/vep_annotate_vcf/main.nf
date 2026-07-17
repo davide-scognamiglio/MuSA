@@ -36,7 +36,7 @@ process VEP_ANNOTATE_VCF {
                 --mane --pick \\
                 --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
                 --everything --fork ${params.n_core} \\
-                --verbose \\
+                --no_stats \\
                 --custom file="/data/vep_data/ClinVar/clinvar.vcf.gz",short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN%CLNSIGCONF%CLNDISDB%CLNHGVS%GENEINFO%ALLELEID%RS%MC \\
                 --custom file="/data/vep_data/ClinGen/clingen_pathogenicity.vcf.gz",short_name=ClinGenVCEP,format=vcf,type=exact,coords=0,fields=Assertion%EvidenceCodes%Disease \\
                 --plugin AlphaMissense,file="/data/vep_data/AlphaMissense/AlphaMissense_${params.build}.tsv.gz" \\
@@ -73,7 +73,7 @@ process VEP_ANNOTATE_VCF {
                 --mane --pick \\
                 --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
                 --everything --fork ${params.n_core} \\
-                --verbose \\
+                --no_stats \\
                 --custom file="/data/vep_data/ClinVar/clinvar.vcf.gz",short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN%CLNSIGCONF%CLNDISDB%CLNHGVS%GENEINFO%ALLELEID%RS%MC \\
                 --custom file="/data/vep_data/ClinGen/clingen_pathogenicity.vcf.gz",short_name=ClinGenVCEP,format=vcf,type=exact,coords=0,fields=Assertion%EvidenceCodes%Disease
         fi

@@ -27,9 +27,20 @@ workflow ANNOTATE_GERMLINE {
         /*
          * Branch 2: dbNSFP (scattered by chromosome, gathered back to one TSV per patient)
          */
-        chr_ch = Channel.fromList(chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai"))
+        // The wanted chromosomes travel as ONE value, not as a channel to cross with: SPLIT_VCF_BY_CHR
+        // now shards a VCF in a single pass instead of being fanned out one task per chromosome.
+        chr_ch = Channel.value(chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai"))
 
-        dbnsfp_shards    = SPLIT_VCF_BY_CHR(vcf.combine(chr_ch))
+        // transpose() turns (meta, [shard, shard, ...]) into one (meta, shard) per shard; the chr is
+        // recovered from the filename that SPLIT_VCF_BY_CHR wrote it into, rebuilding the exact
+        // (meta, chr, shard) tuple DBNSFP_ANNOTATE_VCF_CHR already expects.
+        dbnsfp_shards = SPLIT_VCF_BY_CHR(vcf, chr_ch)
+            .transpose()
+            .map { meta, shard ->
+                def m = (shard.name =~ /\.([^.]+)\.shard\.vcf$/)
+                if (!m) error "SPLIT_VCF_BY_CHR produced an unparseable shard name: ${shard.name}"
+                tuple(meta, m[0][1], shard)
+            }
         dbnsfp_shard_tsv = DBNSFP_ANNOTATE_VCF_CHR(dbnsfp_shards)
 
         dbnsfp_tsv = GATHER_DBNSFP_TSV(
