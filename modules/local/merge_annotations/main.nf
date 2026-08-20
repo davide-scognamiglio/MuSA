@@ -50,7 +50,15 @@ process MERGE_ANNOTATIONS {
     awk -F'\t' -v OFS='\t' -v key_cols="#CHROM POS REF ALT" '
     BEGIN { split(key_cols, kc, " ") }
     NR==1 {
-        for (i=1; i<=NF; i++) hdr[\$i] = i
+        for (i=1; i<=NF; i++) {
+            # dbNSFP MANE is the per-transcript array (".;.;Select;."); VEP MANE, already in this
+            # merge, is a single flag for the one transcript VEP picked. Same column name, different
+            # meaning - and CLEAN_COLUMNS keeps only the first of two same-named columns, which
+            # silently dropped the array: the only thing that says which array position is the
+            # canonical isoform. Rename it so both survive.
+            if (\$i == "MANE") \$i = "MANE_dbNSFP"
+            hdr[\$i] = i
+        }
         print "0_KEY", \$0
         next
     }
@@ -99,6 +107,34 @@ process MERGE_ANNOTATIONS {
     END { for (k in brow) print brow[k] }
     ' "\$VEP_NORM" "\$DBS_NORM" | sort -t\$'\\t' -k1,1 > "\$DBS_DEDUP"
 
+    # --- 2c. Collapse dbNSFP's per-transcript arrays to the MANE transcript (params-controlled) ---
+    #
+    # Dedup above settles WHICH ROW survives; this settles which element INSIDE that row's arrays is
+    # the answer. dbNSFP keeps transcript-specific fields as ';'-delimited arrays aligned with
+    # Ensembl_transcriptid, so "SIFT_score = .;0.169;0.169;." is unreadable on its own: the position of
+    # the canonical isoform lives in MANE_dbNSFP (".;.;Select;.") and nowhere else. Ensembl_transcriptid
+    # names the transcript at each position but does not mark which one is MANE.
+    #   mane (default) - rewrite each transcript-aligned column to the element at MANE_dbNSFP's Select
+    #   all            - leave the arrays alone; MANE_dbNSFP is what indexes them
+    # Which columns are transcript-aligned comes from a fixed, committed list rather than from probing
+    # this file, so the same column is collapsed for every patient: dbNSFP also uses ';' for gene-level
+    # fields (GO_*, Pathway(*), HPO_*, ...) that must never be indexed by a transcript position, and a
+    # per-file guess would vary with whichever rows a patient happens to have. Regenerate the list on a
+    # dbNSFP upgrade with bin/gen_dbnsfp_aligned_columns.py.
+    DBS_FINAL="\$DBS_DEDUP"
+    case "${params.dbnsfp_transcript_scores}" in
+        mane)
+            dbnsfp_collapse_mane.py "\$DBS_DEDUP" "dbnsfp.mane.tsv" \\
+                "${projectDir}/assets/dbnsfp_transcript_aligned_columns.txt" "\$VEP_NORM"
+            DBS_FINAL="dbnsfp.mane.tsv"
+            ;;
+        all) ;;
+        *)
+            echo "ERROR: --dbnsfp_transcript_scores must be 'mane' or 'all' (got '${params.dbnsfp_transcript_scores}')" >&2
+            exit 1
+            ;;
+    esac
+
     # --- 3. Normalize Renovo  (key: Otherinfo4 | Otherinfo5 | Otherinfo7 | Otherinfo8) ---
     #        Otherinfo4=CHROM, Otherinfo5=POS, Otherinfo7=REF, Otherinfo8=ALT
     RENOVO_NORM="renovo.norm.tsv"
@@ -135,7 +171,7 @@ process MERGE_ANNOTATIONS {
     ' "\$MAF_IN" | sort -t\$'\\t' -k1,1 > "\$MAF_NORM"
 
     # --- 5. Sequential outer-join on KEY, then drop the KEY column ---
-    join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto "\$VEP_NORM"    "\$DBS_DEDUP"  \\
+    join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto "\$VEP_NORM"    "\$DBS_FINAL"  \\
         | join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto - "\$RENOVO_NORM" \\
         | join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto - "\$MAF_NORM"    \\
         | cut -f2- > "\$OUT"

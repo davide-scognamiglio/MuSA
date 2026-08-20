@@ -55,7 +55,6 @@ process CLEAN_COLUMNS {
     #   #CHROM             -> keep Chromosome        (VCF header field, partially filled)
     #   #chr               -> keep Chromosome        (dbNSFP field, no chr-prefix)
     #   HGVSc_VEP          -> keep HGVSc             (dbNSFP bare notation vs VEP canonical)
-    #   Ensembl_transcriptid -> keep Feature         (dbNSFP all-transcripts vs VEP canonical)
     #   Ensembl_proteinid  -> keep ENSP              (same)
     #   Uniprot_acc        -> keep SWISSPROT         (dbNSFP multi-isoform vs VEP versioned)
     #   genename           -> keep Hugo_Symbol       (dbNSFP duplicates per transcript)
@@ -67,7 +66,22 @@ process CLEAN_COLUMNS {
     #   am_pathogenicity   -> keep AlphaMissense_score (same)
     #   Func.ensGene       -> keep Func.refGene      (91.5% match, keep refGene)
     #   Uniprot_id         -> keep Uniprot_entry     (single vs multi-transcript mnemonic)
-    T2="CLIN_SIG,Chr,#CHROM,#chr,HGVSc_VEP,Ensembl_transcriptid,Ensembl_proteinid,Uniprot_acc,genename,Gene.refGene,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Func.ensGene,Uniprot_id"
+    T2="CLIN_SIG,Chr,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,Gene.refGene,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Func.ensGene,Uniprot_id"
+    #
+    # KEPT ON PURPOSE:
+    #   MANE_dbNSFP          — dbNSFP's per-transcript MANE array (renamed in MERGE_ANNOTATIONS to
+    #                          clear the name clash with VEP's single-value MANE). This is the column
+    #                          that carries the POSITION of the canonical isoform: the offset of
+    #                          "Select" in ".;.;Select;." is the offset to read in every other
+    #                          transcript-aligned array. Nothing else in the MAF encodes it, which is
+    #                          why losing it to the name clash made the score arrays unreadable.
+    #                          After a =mane collapse, '.' here means the scores on that row are NOT
+    #                          from a MANE transcript, so it doubles as the provenance flag.
+    #   Ensembl_transcriptid — the parallel list of transcript IDs. It does NOT say which position is
+    #                          MANE (that is MANE_dbNSFP alone); it says which transcript each
+    #                          position IS. Kept purely as provenance — under =mane it names the one
+    #                          isoform the scores came from, which Feature cannot: Feature is VEP's
+    #                          pick, i.e. the most-severe consequence, not necessarily the MANE.
     #
     # DEAD — zero coverage in this file (MAF-standard fields never populated by pipeline)
     DEAD="gnomad_exomes_af,gnomad_genomes_af,Exon_Number,Entrez_Gene_Id,HGVSp_Short"

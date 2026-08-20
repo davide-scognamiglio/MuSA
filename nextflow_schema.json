@@ -63,13 +63,21 @@
                     "type": "integer",
                     "description": "CPUs per per-chromosome dbNSFP annotation shard",
                     "fa_icon": "fas fa-microchip",
-                    "default": 2
+                    "default": 1
                 },
                 "dbnsfp_max_forks": {
                     "type": "integer",
                     "description": "Maximum number of per-chromosome dbNSFP shards to run concurrently",
                     "fa_icon": "fas fa-layer-group",
-                    "default": 4
+                    "default": 16
+                },
+                "dbnsfp_transcript_scores": {
+                    "type": "string",
+                    "description": "How dbNSFP's per-transcript score arrays reach the final MAF",
+                    "help_text": "dbNSFP reports transcript-specific fields as ';'-delimited arrays positionally aligned with Ensembl_transcriptid (e.g. SIFT_score '.;0.169;0.169;.'). Which element belongs to the clinically canonical isoform is encoded only in the MANE_dbNSFP array: the offset of 'Select' is the offset to read in every other array. 'mane' collapses every transcript-aligned column to that element, so each score column holds a single value and MANE_dbNSFP records whether a MANE transcript was found at all ('.' means the scores came from a fallback). 'all' leaves the arrays untouched for downstream tools that prefer to resolve them themselves; Ensembl_transcriptid and MANE_dbNSFP are retained in both modes.",
+                    "fa_icon": "fas fa-code-branch",
+                    "enum": ["mane", "all"],
+                    "default": "mane"
                 },
                 "offline": {
                     "type": "boolean",
