@@ -413,4 +413,4 @@ An extensive list of references for the tools used by the pipeline can be found 
 
 The MuSA publication can be cited as:
 
-> Pubblication pending
+> Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow pipeline for deep, reproducible annotation and clinical ranking of genomic variants. BMC Bioinformatics. 2026 Jun 16;27(1):199. doi: [10.1186/s12859-026-06513-0](https://doi.org/10.1186/s12859-026-06513-0).

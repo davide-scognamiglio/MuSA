@@ -1,5 +1,9 @@
 # MuSA: Citations
 
+## [MuSA](https://doi.org/10.1186/s12859-026-06513-0)
+
+> Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow pipeline for deep, reproducible annotation and clinical ranking of genomic variants. BMC Bioinformatics. 2026 Jun 16;27(1):199. doi: 10.1186/s12859-026-06513-0.
+
 ## [nf-core](https://pubmed.ncbi.nlm.nih.gov/32055031/)
 
 > Ewels PA, Peltzer A, Fillinger S, Patel H, Alneberg J, Wilm A, Garcia MU, Di Tommaso P, Nahnsen S. The nf-core framework for community-curated bioinformatics pipelines. Nat Biotechnol. 2020 Mar;38(3):276-278. doi: 10.1038/s41587-020-0439-x. PubMed PMID: 32055031.
