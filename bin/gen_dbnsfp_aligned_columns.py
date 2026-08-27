@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 """Regenerate the list of dbNSFP columns that are positionally aligned with the transcript list.
 
-This produces `assets/dbnsfp_transcript_aligned_columns.txt`, the fixed allowlist that
-dbnsfp_collapse_mane.py reads at run time. Run it ONCE per dbNSFP release, commit the result, and
-note the version in the file header. It is deliberately not part of the pipeline: deriving the list
-per run would let the same column be collapsed for one patient and left alone for another, depending
-on whether that patient's file happened to contain a multi-transcript row for it.
+This produces `dbnsfp_transcript_aligned_columns.txt`, the fixed allowlist that
+dbnsfp_collapse_mane.py reads at run time. It is deliberately not derived per pipeline run: that
+would let the same column be collapsed for one patient and left alone for another, depending on
+whether that patient's file happened to contain a multi-transcript row for it.
+
+Two ways this runs, both producing the same file shape:
+
+  AUTOMATIC   subworkflows/local/refresh_dbnsfp_aligned_columns runs this after every dbNSFP
+              download/update, against the committed probe panel (assets/dbnsfp_probe_variants.vcf)
+              annotated fresh through dbNSFP — there is no patient MAF yet at that point in the
+              pipeline. Output lands inside the dbNSFP install itself
+              (<data_dir>/dbNSFP/dbNSFP/dbnsfp_transcript_aligned_columns.txt), which is what makes
+              it visible to every container without a projectDir bind mount (data_dir is already
+              mounted). This is what MERGE_ANNOTATIONS actually reads at run time.
+
+  MANUAL      Run this by hand against real patient MAFs to audit the automatic result, or if the
+              probe panel ever needs to grow (e.g. a future dbNSFP release drops one of its six
+              positions — see the probe VCF's own header for why six, and why those six). A manual
+              run's output is not consumed by anything unless you copy it over the automatic one;
+              treat it as a check, not a replacement.
 
 The list is built from two sources, because neither is sufficient on its own:
 
@@ -155,9 +170,11 @@ def main() -> int:
             "# but never wrong. A name that does NOT belong here would silently attach one\n"
             "# transcript's score to another, so add entries only with evidence.\n"
             "#\n"
-            "# GENERATED - do not hand-edit. Regenerate after a dbNSFP upgrade:\n"
+            "# GENERATED - do not hand-edit. Rebuilt automatically after every dbNSFP download/update\n"
+            "# (subworkflows/local/refresh_dbnsfp_aligned_columns). Regenerate by hand only to audit\n"
+            "# against real patient MAFs:\n"
             "#   bin/gen_dbnsfp_aligned_columns.py <readme.txt> \\\n"
-            "#       assets/dbnsfp_transcript_aligned_columns.txt <a.dbnsfp.tsv> <b.dbnsfp.tsv> ...\n"
+            "#       dbnsfp_transcript_aligned_columns.txt <a.dbnsfp.tsv> <b.dbnsfp.tsv> ...\n"
             "#\n"
             f"# source readme : {version}\n"
             f"# generated     : {date.today().isoformat()}\n"

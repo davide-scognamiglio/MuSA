@@ -7,6 +7,7 @@ include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
 include { DOWNLOAD_CLINVAR } from '../../../modules/local/download_clinvar'
 include { DOWNLOAD_CLINGEN } from '../../../modules/local/download_clingen'
 include { MERGE_YAML as MERGE_BASIC_YAML } from '../../../modules/local/merge_yaml'
+include { REFRESH_DBNSFP_ALIGNED_COLUMNS } from '../refresh_dbnsfp_aligned_columns'
 
 workflow BASIC_SETUP {
 
@@ -41,6 +42,11 @@ workflow BASIC_SETUP {
             .collect()
 
         merged_yaml = MERGE_BASIC_YAML(merged_input)
+
+        // Step 3: rebuild dbnsfp_transcript_aligned_columns.txt when dbNSFP changed (or was never
+        // built for the current install). No-ops instantly otherwise — see the subworkflow's own
+        // doc comment for why it is safe to call unconditionally here.
+        REFRESH_DBNSFP_ALIGNED_COLUMNS(dbnsfp_ch, refgen_ch)
 
     emit:
         merged_yaml

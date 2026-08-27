@@ -16,10 +16,13 @@ transcript-aligned column to the single element at the MANE position, leaving ge
 variant-level columns untouched.
 
 WHICH COLUMNS ARE TRANSCRIPT-ALIGNED COMES FROM A FIXED LIST, not from inspecting the file at hand:
-assets/dbnsfp_transcript_aligned_columns.txt, regenerated once per dbNSFP release by
-bin/gen_dbnsfp_aligned_columns.py from dbNSFP's readme plus verification against real output.
-Deriving it per run would let the same column collapse for one patient and stay an array for the
-next, purely because that patient's file happened to hold no multi-transcript row for it.
+<dbNSFP install>/dbnsfp_transcript_aligned_columns.txt (path is the caller's job — MERGE_ANNOTATIONS
+passes it explicitly), rebuilt automatically after every dbNSFP download/update
+(subworkflows/local/refresh_dbnsfp_aligned_columns, against a small committed probe panel — there is
+no patient MAF yet at that point) and regeneratable by hand for an audit against real MAFs with
+bin/gen_dbnsfp_aligned_columns.py. Deriving it per run instead would let the same column collapse for
+one patient and stay an array for the next, purely because that patient's file happened to hold no
+multi-transcript row for it.
 
 Getting that list wrong is not symmetric. A column missing from it stays a ';' array: awkward, never
 false. A column wrongly ON it would attach one transcript's score to a different transcript, in

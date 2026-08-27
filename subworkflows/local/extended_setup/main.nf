@@ -17,6 +17,7 @@ include { DOWNLOAD_PLI } from '../../../modules/local/download_pli'
 include { DOWNLOAD_REFERENCEQUALITY } from '../../../modules/local/download_referencequality'
 include { DOWNLOAD_SPLICEVAULT } from '../../../modules/local/download_splicevault'
 include { DOWNLOAD_UTRANNOTATOR } from '../../../modules/local/download_utrannotator'
+include { REFRESH_DBNSFP_ALIGNED_COLUMNS } from '../refresh_dbnsfp_aligned_columns'
 
 
 workflow EXTENDED_SETUP {
@@ -72,6 +73,16 @@ workflow EXTENDED_SETUP {
             .collect()
 
         merged_yaml = MERGE_EXTENDED_YAML(merged_input)
+
+        // BASIC_SETUP already ran this off its own dbnsfp_ch/refgen_ch; wired here too so a run of
+        // extended_setup alone (dbNSFP re-downloaded here on line 37) still produces the file. The
+        // two calls cannot race or duplicate work: extended_setup structurally runs after
+        // basic_setup completes (it takes basic_yaml_ch as an input), so by the time this fires the
+        // file basic_setup's own call wrote (if any) is already on disk, and the existence gate in
+        // REFRESH_DBNSFP_ALIGNED_COLUMNS skips accordingly. basic_yaml_ch doubles as the
+        // "reference genome is ready" token: MERGE_BASIC_YAML only emits after every basic_setup
+        // download — refgenome included — has completed.
+        REFRESH_DBNSFP_ALIGNED_COLUMNS(dbnsfp_ch, basic_yaml_ch)
 
     emit:
         merged_yaml

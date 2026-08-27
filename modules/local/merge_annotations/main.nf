@@ -116,16 +116,22 @@ process MERGE_ANNOTATIONS {
     # names the transcript at each position but does not mark which one is MANE.
     #   mane (default) - rewrite each transcript-aligned column to the element at MANE_dbNSFP's Select
     #   all            - leave the arrays alone; MANE_dbNSFP is what indexes them
-    # Which columns are transcript-aligned comes from a fixed, committed list rather than from probing
-    # this file, so the same column is collapsed for every patient: dbNSFP also uses ';' for gene-level
-    # fields (GO_*, Pathway(*), HPO_*, ...) that must never be indexed by a transcript position, and a
-    # per-file guess would vary with whichever rows a patient happens to have. Regenerate the list on a
-    # dbNSFP upgrade with bin/gen_dbnsfp_aligned_columns.py.
+    # Which columns are transcript-aligned comes from a fixed list rather than from probing this file,
+    # so the same column is collapsed for every patient: dbNSFP also uses ';' for gene-level fields
+    # (GO_*, Pathway(*), HPO_*, ...) that must never be indexed by a transcript position, and a
+    # per-file guess would vary with whichever rows a patient happens to have. The list lives inside
+    # the dbNSFP install itself (params.data_dir/dbNSFP/dbNSFP), not under assets/ — that is what
+    # makes it visible here without a projectDir bind mount: data_dir is already mounted to /data for
+    # every container (nextflow.config's docker/singularity profiles bind it, never projectDir), and
+    # a raw "${projectDir}/..." path used to resolve to nothing inside this process's container. It is
+    # rebuilt automatically after every dbNSFP download/update
+    # (subworkflows/local/refresh_dbnsfp_aligned_columns) — regenerate by hand only to audit it
+    # against real patient MAFs, with bin/gen_dbnsfp_aligned_columns.py.
     DBS_FINAL="\$DBS_DEDUP"
     case "${params.dbnsfp_transcript_scores}" in
         mane)
             dbnsfp_collapse_mane.py "\$DBS_DEDUP" "dbnsfp.mane.tsv" \\
-                "${projectDir}/assets/dbnsfp_transcript_aligned_columns.txt" "\$VEP_NORM"
+                "/data/dbNSFP/dbNSFP/dbnsfp_transcript_aligned_columns.txt" "\$VEP_NORM"
             DBS_FINAL="dbnsfp.mane.tsv"
             ;;
         all) ;;
