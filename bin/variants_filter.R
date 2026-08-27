@@ -60,6 +60,9 @@ build_gene_panel <- function(panel_file = NULL,
 # =========================
 # Drop rows where all columns are NA
 # =========================
+# Correctly catches a row that is all "." or all empty-string too, now that read.table's
+# na.strings (below) folds every missing-value spelling into real NA before this ever runs —
+# previously only an all-literal-"NA" row would trip is.na() here.
 drop_all_na_rows <- function(df) {
   if (nrow(df) == 0) return(df)
   df[rowSums(is.na(df)) < ncol(df), , drop = FALSE]
@@ -124,6 +127,14 @@ drop_benign   <- if (!is.null(normalize_arg(args[7]))) as.logical(args[7]) else 
 # =========================
 # Load MAF
 # =========================
+# na.strings covers every missing-value spelling the upstream tools + MERGE_ANNOTATIONS's outer
+# join produce for a whole cell ("NA" from the join's `-e "NA"` fill, "" from VEP/ANNOVAR fields
+# with no match, "." from dbNSFP's own convention) — R's na.strings is a whole-cell match, so a
+# multi-transcript array like ".;.;.;0.901;.;." is untouched; only a cell that IS exactly one of
+# these three strings becomes NA. Paired with `na = "."` on both write.table calls below, every
+# flavor of missing collapses to the single "." spelling in the published MAF.
+NA_SPELLINGS <- c("NA", "", ".")
+
 raw_maf <- tryCatch(
   read.table(
     maf_file,
@@ -133,7 +144,8 @@ raw_maf <- tryCatch(
     comment.char = "",
     fill = TRUE,
     stringsAsFactors = FALSE,
-    check.names = FALSE
+    check.names = FALSE,
+    na.strings = NA_SPELLINGS
   ),
   error = function(e) {
     message("Warning: malformed lines detected — retrying with relaxed parsing.")
@@ -145,7 +157,8 @@ raw_maf <- tryCatch(
       comment.char = "",
       fill = TRUE,
       stringsAsFactors = FALSE,
-      check.names = FALSE
+      check.names = FALSE,
+      na.strings = NA_SPELLINGS
     )
   }
 )
@@ -155,7 +168,8 @@ write.table(
   paste0(patient_code, ".raw.maf"),
   sep = "\t",
   quote = FALSE,
-  row.names = FALSE
+  row.names = FALSE,
+  na = "."
 )
 
 # =========================
@@ -181,5 +195,6 @@ write.table(
   paste0(patient_code, ".filtered.maf"),
   sep = "\t",
   quote = FALSE,
-  row.names = FALSE
+  row.names = FALSE,
+  na = "."
 )
