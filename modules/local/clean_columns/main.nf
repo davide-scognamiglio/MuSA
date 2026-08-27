@@ -77,6 +77,9 @@ process CLEAN_COLUMNS {
     #                          why losing it to the name clash made the score arrays unreadable.
     #                          After a =mane collapse, '.' here means the scores on that row are NOT
     #                          from a MANE transcript, so it doubles as the provenance flag.
+    #   Feature              — VEP's picked transcript. The HGVSc/HGVSp/Consequence on the row are
+    #                          expressed against it, and it is the only transcript column populated
+    #                          on every row. Never drop it.
     #   Ensembl_transcriptid — the parallel list of transcript IDs. It does NOT say which position is
     #                          MANE (that is MANE_dbNSFP alone); it says which transcript each
     #                          position IS. Kept purely as provenance — under =mane it names the one

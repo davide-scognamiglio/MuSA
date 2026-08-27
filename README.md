@@ -222,7 +222,14 @@ belongs to the isoform you care about. The position of the canonical isoform is 
 canonical, and `Feature` (VEP's pick) is the most-severe-consequence transcript, which is not
 necessarily the MANE one.
 
-Both columns are preserved in the final MAF, in either mode.
+`Feature`, `Ensembl_transcriptid` and `MANE_dbNSFP` are all preserved in the final MAF, in either
+mode. They answer different questions and none substitutes for another: `Feature` is the single
+transcript VEP/vcf2maf selected, and the row's `HGVSc`/`HGVSp`/`Consequence` are expressed against
+it; `Ensembl_transcriptid` is the transcript mapping of dbNSFP's own annotations — positional under
+`all`, and under `mane` collapsed in lockstep with the scores so it names the one transcript they
+came from; `MANE_dbNSFP` marks which position is canonical. Keeping all three lets a downstream
+consumer resolve transcript-specific scores explicitly while still seeing dbNSFP's original
+annotation.
 
 | Value | Behaviour |
 |-------|-----------|
