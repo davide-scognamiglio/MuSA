@@ -96,11 +96,17 @@
 
   > Rentzsch P, Witten D, Cooper GM, Shendure J, Kircher M. CADD: predicting the deleteriousness of variants throughout the human genome. Nucleic Acids Res. 2019 Jan 8;47(D1):D886-D894. doi: 10.1093/nar/gky1016. PubMed PMID: 30371827; PubMed Central PMCID: PMC6323892.
 
-### SpliceAI
+### GWAS Catalog
 
-- [SpliceAI](https://pubmed.ncbi.nlm.nih.gov/30661751/)
+- [GWAS Catalog](https://pubmed.ncbi.nlm.nih.gov/36350656/)
 
-  > Jaganathan K, Kyriazopoulou Panagiotopoulou S, McRae JF, Darbandi SF, Knowles D, Li YI, Kosmicki JA, Arbelaez J, Cui W, Schwartz GB, Chow ED, Kanterakis E, Gao H, Kia A, Batzoglou S, Sanders SJ, Farh KKH. Predicting splicing from primary sequence with deep learning. Cell. 2019 Jan 24;176(3):535-548.e24. doi: 10.1016/j.cell.2018.12.015. PubMed PMID: 30661751.
+  > Sollis E, Mosaku A, Abid A, Buniello A, Cerezo M, Gil L, Groza T, Güneş O, Hall P, Hayhurst J, Ibrahim A, Ji Y, John S, Lewis E, MacArthur JAL, McMahon A, Osumi-Sutherland D, Panoutsopoulou K, Pendlington Z, Ramachandran S, Stefancsik R, Stewart J, Whetzel P, Wilson R, Hindorff L, Cunningham F, Lambert SA, Inouye M, Parkinson H, Harris LW. The NHGRI-EBI GWAS Catalog: knowledgebase and deposition resource. Nucleic Acids Res. 2023 Jan 6;51(D1):D977-D985. doi: 10.1093/nar/gkac1010. PubMed PMID: 36350656; PubMed Central PMCID: PMC9825413.
+
+### pLI
+
+- [pLI (gnomAD constraint)](https://pubmed.ncbi.nlm.nih.gov/32461654/)
+
+  > Karczewski KJ, Francioli LC, Tiao G, Cummings BB, Alföldi J, Wang Q, et al. The mutational constraint spectrum quantified from variation in 141,456 humans. Nature. 2020 May;581(7809):434-443. doi: 10.1038/s41586-020-2308-7. PubMed PMID: 32461654; PubMed Central PMCID: PMC7334197.
 
 ### dbscSNV
 

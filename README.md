@@ -18,7 +18,7 @@ MuSA orchestrates four parallel annotation branches — **Ensembl VEP** (with up
 
 The pipeline supports two operating modes:
 - **Basic mode** — core clinical annotation (VEP, ANNOVAR, dbNSFP, ClinVar, gnomAD) with minimal storage footprint (~123 GB).
-- **Extended mode** — ultra-deep annotation additionally enabling 22 VEP plugins (AlphaMissense, CADD, SpliceAI, Enformer, and others) for comprehensive functional characterization (~224 GB total).
+- **Extended mode** — ultra-deep annotation additionally enabling 22 VEP plugins (AlphaMissense, CADD, ClinPred, Enformer, and others) for comprehensive functional characterization (~224 GB total).
 
 ![Pipeline schema](assets/pipeline_schema.svg)
 
