@@ -1,8 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://raw.githubusercontent.com/nf-core/template/master/nextflow_schema.json",
-    "title": "nf-core/template pipeline parameters",
-    "description": "template",
+    "$id": "https://raw.githubusercontent.com/davide-scognamiglio/MuSA/master/nextflow_schema.json",
+    "title": "MuSA pipeline parameters",
+    "description": "Ultra-deep, multi-source variant annotation",
     "type": "object",
     "$defs": {
         "pipeline_options": {
@@ -115,6 +115,17 @@
                     "description": "Maximum allele frequency to retain a variant (e.g., 0.05)",
                     "fa_icon": "fas fa-percent",
                     "default": 0.05
+                },
+                "panel": {
+                    "type": "string",
+                    "description": "Name of a gene panel CSV under <data_dir>/panels (without the .csv suffix); restricts the filtered MAF to those genes.",
+                    "fa_icon": "fas fa-filter"
+                },
+                "skip_genebe": {
+                    "type": "boolean",
+                    "description": "Skip the GeneBe ACMG/AMP classification step and the columns it contributes to the report",
+                    "fa_icon": "fas fa-forward",
+                    "default": false
                 },
                 "data_dir": {
                     "type": "string",
