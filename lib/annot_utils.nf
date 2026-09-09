@@ -8,14 +8,12 @@ def extract_csv(csv_file) {
             if (n==1) {
                 def requiredColumns = ["patient", "sample_type", "sample_file", "hpo"]
                 if (!requiredColumns.every { line.contains(it) }) {
-                    log.error "Missing required columns: ${requiredColumns}"
-                    System.exit(1)
+                    error "Samplesheet is missing required columns: ${requiredColumns}"
                 }
             }
         }
         if (n==1) {
-            log.error "Provide at least one sample."
-            System.exit(1)
+            error "Samplesheet contains a header but no samples: provide at least one sample."
         }
     }
 
