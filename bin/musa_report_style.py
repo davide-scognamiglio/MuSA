@@ -122,13 +122,19 @@ a:hover { text-decoration-thickness: 2px; }
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
-.masthead-id { display: flex; align-items: center; gap: 0.875rem; min-width: 0; }
-/* The asset carries a wide margin of its own and sets the tagline small, so the
-   wordmark only becomes readable at a height that looks generous for a logo box. */
-.masthead-logo { height: 78px; width: auto; display: block; }
+.masthead-id { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+/* The mark is the image; the wordmark and version are set in type. The banner asset
+   carried its own baked-in "v1.0", which goes stale the moment the pipeline is
+   tagged again, and no image height made its strapline legible. */
+.masthead-mark { height: 40px; width: 40px; display: block; }
 .masthead-wordmark {
-  font-family: var(--font-serif); font-size: var(--step-2); font-weight: 600;
-  letter-spacing: -0.01em;
+  display: flex; align-items: baseline; gap: 0.4rem;
+  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
+  letter-spacing: -0.015em; line-height: 1;
+}
+.masthead-version {
+  font-family: var(--font-mono); font-size: var(--step--1); font-weight: 400;
+  color: var(--ink-muted); letter-spacing: 0;
 }
 .masthead-doc {
   font-size: var(--step--1); color: var(--ink-muted);
@@ -369,3 +375,21 @@ def clinvar_stars(value):
         return None
     n = int(v)
     return (n, 4, CLINVAR_STARS[v])
+
+
+# ── masthead ──────────────────────────────────────────────────────────────────
+
+def masthead_id(logo_b64, logo_mime, version, doc_label):
+    """The shared masthead identity block for both reports.
+
+    The wordmark is type, not pixels, and the version comes from the pipeline
+    manifest at run time. The previous banner asset had "v1.0" drawn into it, which
+    was already wrong for the next tag and could only be fixed by re-drawing art.
+    """
+    mark = (f'<img class="masthead-mark" src="data:{logo_mime};base64,{logo_b64}" alt=""/>'
+            if logo_b64 else "")
+    v = (version or "").strip().lstrip("vV")
+    ver = f'<span class="masthead-version">v{v}</span>' if v and v != "—" else ""
+    return (f'<div class="masthead-id">{mark}'
+            f'<span class="masthead-wordmark">MuSA{ver}</span>'
+            f'<span class="masthead-doc">{doc_label}</span></div>')

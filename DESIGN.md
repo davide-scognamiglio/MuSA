@@ -159,8 +159,12 @@ The annotation report is **two pages in one file**. It opens on findings and the
 step away, not the bottom of the same scroll. A 68,000-row surface presented first is a search
 problem handed to a reader who came for an answer.
 
-**Page one, findings.** Masthead → inked band → findings, in one column at a document measure
-(1180px) rather than spread across the full window.
+**Page one, findings.** Masthead → inked band → findings on the left, the selected variant's
+evidence in a panel on the right.
+
+The masthead is the square mark plus a wordmark set in type, with the version taken from
+`workflow.manifest.version` at run time. The banner asset had "v1.0" drawn into the pixels, which
+was already wrong for the next tag and could only be corrected by re-drawing art.
 
 The band carries the review-set count as a single large figure, and each classifier as a
 proportional spectrum with a legend beneath it. Everything in the band is counted **over the review
@@ -171,16 +175,34 @@ There are no summary charts. A consequence-profile bar chart and a population-fr
 were tried and removed: neither changed what a reader did next, which is the only test a figure in
 a clinical document has to pass.
 
-The findings are a bullet list of the four reasons a variant is worth a second look, counted from
-the actual data — *ClinVar flagged*, *ClinVar VUS escalated by ReNOVo*, *not classified by ClinVar*,
-*calls contradict*. Each block names its count, previews up to six of its variants, and its header is
-the control that opens the table filtered to exactly that block. One definition (`GROUPS` in
+The findings are a bullet list of the reasons a variant is worth a second look, counted from the
+actual data. Each block names its count, previews up to six of its variants, and its header is the
+control that opens the table filtered to exactly that block. One definition (`GROUPS` in
 `build_annotate_report.py`) drives the count, the preview and the filter, so they cannot disagree.
+
+| block | why |
+|---|---|
+| ClinVar flagged | pathogenic, likely pathogenic or conflicting |
+| Loss of function in an established disease gene | `IMPACT` HIGH in a gene ClinGen rates definitive or strong |
+| Homozygous or hemizygous | `AC == AN`: no wild-type allele was called |
+| ClinVar VUS, ReNOVo pathogenic | uncertain to ClinVar, called by MuSA |
+| Not classified by ClinVar | ReNOVo calls it, ClinVar has never seen it |
+| Calls contradict | the two point in opposite directions |
+
+The middle two come from the variant and the gene rather than from either classifier, which is the
+point of them: they surface candidates no classifier has flagged yet. On patient 6534 the
+loss-of-function block opens with a homozygous frameshift in *PEX5*, absent from gnomAD, in a gene
+ClinGen ties to a recessive peroxisome biogenesis disorder — and ClinVar calls it VUS while ReNOVo
+calls it benign, so no classifier-driven block would have shown it.
 
 Every preview row carries the **disease**, from ClinVar's `CLNDN`. "CPT2 p.Ser113Leu P" does not say
 what the variant is pathogenic *for*, which is the first thing a reader needs in order to decide
-whether it bears on the case in front of them. Previews prefer distinct genes: a group of 175 can
-otherwise open with six indels from one 60 bp window and say nothing about the other 169.
+whether it bears on the case in front of them. Under it sits the triage strip — impact, zygosity,
+absence from gnomAD, the gene's established relationship and inheritance, the ClinVar star rating —
+so a reviewer can pick candidates off the list without opening anything.
+
+Previews prefer distinct genes: a group of 175 can otherwise open with six indels from one 60 bp
+window and say nothing about the other 169.
 
 **Page two, the table.** Sticky control bar → virtual table → docked evidence panel. The bar carries
 the way back, the review-set/all-variants switch, and, when the table was opened from a findings
@@ -189,14 +211,42 @@ block, a named filter chip that says which block and carries the control that cl
 The table sorts on clinical priority by default: ClinVar rank, then a ReNOVo pathogenic call, then
 rarity. Opening the table puts the pathogenic calls on the first screen.
 
-Full evidence for one variant is a single block of markup with two homes. Clicking a finding on page
-one opens it as a **dialog**: that reader wants one variant, not a table. Clicking a row on page two
-fills the **panel docked beside the table**, which is deliberately not a modal and not an expanding
-row: expansion gives rows variable height, which makes virtual scrolling fragile at 68,000 rows, and
-during review the panel stays put while arrow keys walk the list.
+## The evidence panel
 
-The dialog is a plain overlay rather than `<dialog>`: these open on lab desktops running whatever
-browser the institution froze, and `showModal()` is not universally present.
+Full evidence for one variant is a single block of markup with two homes: docked beside the findings
+on page one, docked beside the table on page two. **Never over them.** A reader triaging candidates
+has to see the list and one variant at the same time, and a dialog covers exactly the thing being
+compared against. It is also not an expanding row: expansion gives rows variable height, which makes
+virtual scrolling fragile at 68,000 rows, and a fixed panel stays put while arrow keys walk the list.
+
+The panel opens with the **assessment**: the evidence already read, one line per fact, the decisive
+ones marked. Before it, the panel was a flat dump of every column in `DETAIL_COLUMNS`, which left
+the reader holding eight fields in their head and doing the reasoning themselves.
+
+```
+▸ ClinVar and ReNOVo both call this pathogenic.
+▸ High-impact change (frameshift variant), predicted to disrupt the protein.
+• Called heterozygous.
+▸ NEB has a definitive gene-disease relationship with nemaline myopathy 2 (autosomal recessive).
+• The gene is moderately constrained against loss of function (LOEUF 0.597).
+```
+
+Each line is a claim a clinician may act on, so the wording is held to what the number supports.
+LOEUF reads in three bands (`< 0.35` strongly constrained, `< 1.0` moderately, above that not);
+calling 0.6 "tolerant of loss of function" would be wrong, not merely loose.
+
+Then the identifiers, as links. Every accession in the MAF is a dead end unless it is one, and the
+fields carrying them are inconsistent enough that a single column will not do: `clinvar_OMIM_id` is
+populated on 1,781 of 73,008 rows, `CLNDISDB` carries OMIM numbers on 18,113, and `MIM_disease`
+embeds more as `[MIM:615413]Disease name`. All three are read, plus MONDO, Orphanet, dbSNP, COSMIC,
+PubMed, gnomAD and ClinVar itself — by variation ID where present, by allele ID where not
+(`clinvar_id` is populated on 3,372 rows against `ALLELEID`'s 20,321). Beyond ten, they fold away.
+
+Then the fields, grouped in the order the decision is made: the change, the population, the disease,
+the gene's constraint, the prediction, the call quality, the model organisms. Absent fields are
+omitted rather than printed as "not reported"; `bioinfo_params` is parsed into a small table, since
+the two things anyone asks of it — the zygosity, and whether there were enough reads to believe the
+call — were buried mid-way through a 150-character run-on.
 
 ## Data rendering
 

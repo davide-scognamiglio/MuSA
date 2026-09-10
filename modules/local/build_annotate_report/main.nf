@@ -27,8 +27,8 @@ process BUILD_ANNOTATE_REPORT {
 
     script:
         """
-        logo="${projectDir}/assets/MuSA_logo_masthead.png"
+        logo="${projectDir}/assets/MuSA_logo.png"
         build_annotate_report.py "${meta.patient}" "${params.use_vep_plugins}" \
-        "${params.offline}" "${params.skip_genebe}" "\$logo"
+        "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}"
         """
 }

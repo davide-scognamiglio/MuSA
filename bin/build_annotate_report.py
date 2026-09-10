@@ -23,7 +23,8 @@ back to <patient>.raw.maf when the filtered file is header-only) and embeds ever
 *view* is the review set, defined in review_flags() below; the full set is one click away and the
 count of both is stated in the header.
 
-Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe> [logo]
+Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe>
+                                [logo] [pipeline_version]
 """
 
 import base64
@@ -54,33 +55,59 @@ MAIN_COLUMNS = [
     ("MAX_AF",         "Max AF",      "af"),
 ]
 
+# Everything the evidence panel reads. Grouped there under headings rather than
+# rendered as one flat list; DETAIL_SECTIONS below owns that arrangement.
 DETAIL_COLUMNS = [
-    # The first three are also table columns, but the detail view now opens on its own
-    # from the findings list, so it has to stand alone: a dialog that names the gene and
-    # the genomic coordinate and then omits the protein change and the frequency is not
-    # a variant record. Costs nothing in payload size, the columns are already embedded.
     ("HGVSc",                "cDNA"),
     ("HGVSp_VEP",            "Protein"),
-    ("MAX_AF",               "Max allele frequency"),
     ("Consequence",          "All consequences"),
+    ("IMPACT",               "VEP impact"),
+    ("VARIANT_CLASS",        "Variant class"),
+    ("MAX_AF",               "Max allele frequency"),
+    ("MAX_AF_POPS",          "Max AF population"),
     ("CLNDN",                "ClinVar disease"),
+    ("CLNDISDB",             "ClinVar disease references"),
     ("clinvar_id",           "ClinVar variation ID"),
+    ("ALLELEID",             "ClinVar allele ID"),
+    ("ClinVar_RS",           "dbSNP"),
+    ("Existing_variation",   "Known identifiers"),
     ("clinvar_OMIM_id",      "OMIM"),
+    ("MIM_disease",          "OMIM phenotypes"),
+    ("Orphanet_disorder",    "Orphanet"),
     ("encoded_CLNREVSTAT",   "ClinVar review status"),
     ("ClinGen_GeneDisease_Disease",        "ClinGen gene-disease"),
     ("ClinGen_GeneDisease_MOI",            "Inheritance (ClinGen)"),
     ("ClinGen_GeneDisease_Classification", "Gene-disease validity"),
     ("gnomAD_pLI",           "gnomAD pLI"),
-    ("PUBMED",               "PubMed"),
-    ("MAX_AF_POPS",          "Max AF population"),
+    ("gnomAD_LOEUF",         "gnomAD LOEUF"),
     ("PL_score",             "ReNOVo pathogenicity score"),
+    ("PUBMED",               "PubMed"),
     ("ref_context",          "Reference context"),
-    ("bioinfo_params",       "Variant quality"),
+    ("bioinfo_params",       "Call quality"),
     ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
     ("PhenotypeOrthologous_Rat_phenotype",   "Rat orthologue phenotype"),
     # Present only when GeneBe ran (online mode).
     ("acmg_criteria",          "GeneBe ACMG criteria"),
     ("renovo_adj_acmg_score",  "GeneBe ACMG score"),
+]
+
+# The panel is read top to bottom while deciding whether a variant matters, so it is
+# ordered the way that decision is made: what the change is, how rare it is, which
+# disease and gene it belongs to, what the literature says, and only then the
+# sequencing detail and the animal models.
+DETAIL_SECTIONS = [
+    ("The change",     ["HGVSc", "HGVSp_VEP", "Consequence", "IMPACT", "VARIANT_CLASS"]),
+    ("Population",     ["MAX_AF", "MAX_AF_POPS"]),
+    ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinGen_GeneDisease_Disease",
+                        "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
+                        "MIM_disease", "Orphanet_disorder"]),
+    ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
+    ("Prediction",     ["PL_score", "acmg_criteria", "renovo_adj_acmg_score"]),
+    # No "References" section: every accession in the MAF is rendered as a link at the
+    # top of the panel instead, so listing the raw strings again would be noise.
+    ("Call quality",   ["bioinfo_params", "ref_context"]),
+    ("Model organisms", ["PhenotypeOrthologous_Mouse_phenotype",
+                         "PhenotypeOrthologous_Rat_phenotype"]),
 ]
 
 
@@ -100,6 +127,7 @@ def parse_args():
         "offline":         _bool(args[2]),
         "skip_genebe":     _bool(args[3]),
         "logo_path":       args[4] if len(args) > 4 else None,
+        "version":         args[5] if len(args) > 5 else "",
     }
 
 
@@ -229,15 +257,45 @@ def review_flags(df):
 # them. One definition drives three things: the blocks on the overview, the filter
 # the table opens under when a block is clicked, and the label of that filter.
 GROUPS = [
-    ("flagged",   "ClinVar flagged",
+    ("flagged",    "ClinVar flagged",
      "pathogenic, likely pathogenic or conflicting in ClinVar"),
-    ("escalated", "ClinVar VUS, ReNOVo pathogenic",
+    ("lof",        "Loss of function in an established disease gene",
+     "a high-impact change in a gene ClinGen ties to a disease with definitive or "
+     "strong evidence"),
+    ("biallelic",  "Homozygous or hemizygous",
+     "no wild-type allele was called in this sample, which is what a recessive "
+     "diagnosis needs"),
+    ("escalated",  "ClinVar VUS, ReNOVo pathogenic",
      "uncertain to ClinVar, called pathogenic by MuSA"),
-    ("novel",     "Not classified by ClinVar",
+    ("novel",      "Not classified by ClinVar",
      "ReNOVo calls these pathogenic and ClinVar has never seen them"),
-    ("contested", "Calls contradict",
+    ("contested",  "Calls contradict",
      "ClinVar and ReNOVo point in opposite directions"),
 ]
+
+# GATK writes the call into the INFO string. AC of AN allele copies: equal means no
+# reference allele was called, which is the single most decisive fact about a
+# candidate in a recessive case and was previously buried mid-way through a
+# 150-character run-on field.
+_AC = re.compile(r"(?:^|;)AC=([\d.]+)")
+_AN = re.compile(r"(?:^|;)AN=([\d.]+)")
+
+
+def zygosity(value):
+    if not value or str(value) in (".", "nan"):
+        return ""
+    ac, an = _AC.search(str(value)), _AN.search(str(value))
+    if not ac or not an:
+        return ""
+    try:
+        ac, an = float(ac.group(1)), float(an.group(1))
+    except ValueError:
+        return ""
+    if an <= 0:
+        return ""
+    if an == 1:
+        return "hemizygous"
+    return "homozygous" if ac >= an else "heterozygous"
 
 
 # ── payload ───────────────────────────────────────────────────────────────────
@@ -267,6 +325,7 @@ def build_payload(df, main_cols, detail_cols, flags, prio, groups):
         "review": flags,
         "prio": prio,
         "groups": groups,
+        "sections": [{"name": n, "keys": ks} for n, ks in DETAIL_SECTIONS],
     }
 
 
@@ -330,6 +389,21 @@ def overview(df, flags):
     escalated = [i for i, c, r, k in zip(idx, cv, rn, conf)
                  if c == "VUS" and not k and r in P]
 
+    # Two groups that come from the variant and the gene rather than from either
+    # classifier, so they surface candidates no classifier has flagged yet.
+    impact = df["IMPACT"].fillna("") if "IMPACT" in df.columns else pd.Series([""] * len(df))
+    valid = (df["ClinGen_GeneDisease_Classification"].fillna("")
+             if "ClinGen_GeneDisease_Classification" in df.columns
+             else pd.Series([""] * len(df)))
+    info = (df["bioinfo_params"].fillna("") if "bioinfo_params" in df.columns
+            else pd.Series([""] * len(df)))
+
+    lof = [i for i in idx
+           if str(impact.iloc[i]).upper() == "HIGH"
+           and str(valid.iloc[i]).strip().lower() in ("definitive", "strong")]
+    biallelic = [i for i in idx
+                 if zygosity(info.iloc[i]) in ("homozygous", "hemizygous")]
+
     bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
     unobserved = []
     for i in idx:
@@ -346,6 +420,8 @@ def overview(df, flags):
 
     return {
         "unobserved": unobserved,
+        "lof": lof,
+        "biallelic": biallelic,
         "novel": novel,
         "contested": contested,
         "flagged": flagged,
@@ -462,9 +538,21 @@ PAGE_CSS = """
 .key.sig-nc  b { color: var(--sig-nc-lift); }
 
 /* ── overview ─────────────────────────────────────────────────────────────── */
+/* Findings on the left, the selected variant's evidence on the right. A reader
+   triaging candidates has to see the list and one variant at the same time; a
+   dialog covers exactly the thing being compared against. */
 .overview {
-  max-width: 1180px; margin-inline: auto;
+  display: grid; align-items: start; gap: 2rem 2.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  max-width: 1620px; margin-inline: auto;
   padding: 1.75rem 1.5rem 2.5rem;
+  background: var(--surface);
+}
+.ov-detail {
+  position: sticky; top: 1rem;
+  max-height: calc(100vh - 2rem); overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1rem 1.15rem 1.25rem;
   background: var(--surface);
 }
 .ov-head h2 {
@@ -518,6 +606,20 @@ PAGE_CSS = """
 }
 .finding + .finding { border-top: 1px solid var(--border); }
 .finding:hover { background: var(--surface-sunken); }
+.finding[aria-current="true"] {
+  background: var(--accent-weak);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+/* The triage signals that decide whether a row is worth opening: impact, zygosity,
+   absence from gnomAD, the gene's established relationship. Reading them off the
+   list is the whole point of the list. */
+.finding-tags {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.2rem 0.5rem;
+  font-size: var(--step--1); color: var(--ink-muted);
+}
+.finding-tags .tag { white-space: nowrap; }
+.finding-tags .tag.on { color: var(--sig-p); font-weight: 600; }
+.finding-tags .tag.gene { color: var(--ink); }
 .finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
 .finding-gene {
   font-size: var(--step-1); font-weight: 700; letter-spacing: -0.005em;
@@ -561,37 +663,6 @@ PAGE_CSS = """
 }
 #filterChip button:hover { background: var(--surface); }
 
-/* ── variant detail dialog ────────────────────────────────────────────────── */
-/* A plain overlay rather than <dialog>: these open on lab desktops whose browser
-   is whatever the institution froze, and showModal() is not universally there. */
-.modal-backdrop {
-  position: fixed; inset: 0; z-index: var(--z-modal);
-  display: flex; align-items: flex-start; justify-content: center;
-  padding: 5vh 1rem; overflow: auto;
-  background: oklch(0.26 0.012 255 / 0.45);
-}
-.modal-card {
-  width: min(560px, 100%);
-  background: var(--surface); color: var(--ink);
-  border: 1px solid var(--border-strong); border-radius: var(--radius);
-  box-shadow: 0 18px 48px oklch(0.26 0.012 255 / 0.22);
-  padding: 1.25rem 1.4rem 1.4rem;
-}
-.modal-close {
-  position: absolute; top: 0.6rem; right: 0.7rem;
-  font: inherit; font-size: var(--step-1); line-height: 1; cursor: pointer;
-  background: none; border: 0; color: var(--ink-muted); padding: 0.25rem 0.4rem;
-  border-radius: var(--radius);
-}
-.modal-close:hover { background: var(--surface-sunken); color: var(--ink); }
-.modal-card { position: relative; }
-/* The dialog is wide enough to set the evidence as a real two-column term list;
-   the docked panel is not, so it keeps the stacked one-column form. */
-.modal-card .detail dl {
-  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.6fr);
-  column-gap: 1.25rem; row-gap: 0.55rem; align-items: baseline;
-}
-.modal-card .detail dt { margin-bottom: 0; }
 .result-count {
   margin-left: auto;
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
@@ -670,8 +741,55 @@ table.variants tbody td.col-af { text-align: right; }
   border-radius: 3px; background: var(--surface-sunken);
 }
 .detail h3 {
-  font-family: var(--font-serif); font-size: var(--step-2); font-weight: 600;
-  margin-bottom: 0.15rem; padding-right: 2rem;
+  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+.detail-change {
+  font-family: var(--font-mono); font-size: var(--step-0); font-weight: 400;
+  color: var(--ink-muted);
+}
+
+/* The read of the evidence, above the evidence. Each line is one fact already
+   interpreted, so the reader is not left holding eight fields in their head. */
+.assess { list-style: none; display: grid; gap: 0.3rem; margin: 0.85rem 0 0.5rem; }
+.assess li {
+  position: relative; padding-left: 1.1rem;
+  font-size: var(--step-0); text-wrap: pretty;
+}
+.assess li::before {
+  content: "•"; position: absolute; left: 0.15rem;
+  color: var(--ink-muted); font-weight: 700;
+}
+.assess li.hit { font-weight: 600; }
+.assess li.hit::before  { content: "▸"; color: var(--sig-p); }
+.assess li.warn::before { content: "!"; color: var(--sig-lp); }
+
+.detail-sec { margin-top: 1.1rem; }
+.detail-sec h4 {
+  font-size: var(--step--1); font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-muted);
+  padding-bottom: 0.25rem; margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.detail .refs { display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; }
+.detail a.ref {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  text-decoration: none; color: var(--accent);
+  border-bottom: 1px solid var(--accent-ring);
+}
+.detail a.ref:hover { border-bottom-width: 2px; }
+.detail details > summary { cursor: pointer; }
+.detail details[open] > summary { margin-bottom: 0.3rem; color: var(--ink-muted); }
+
+table.qual { border-collapse: collapse; width: 100%; }
+table.qual th {
+  text-align: left; font-weight: 400; color: var(--ink-muted);
+  font-family: var(--font-sans); padding: 0.1rem 0.6rem 0.1rem 0;
+  white-space: nowrap;
+}
+table.qual td {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0;
 }
 .panel-gdna {
   font-family: var(--font-mono); font-size: var(--step--1);
@@ -689,6 +807,10 @@ table.variants tbody td.col-af { text-align: right; }
 .detail dd.plain { font-family: var(--font-sans); }
 .detail dd.absent { font-family: var(--font-sans); color: var(--ink-muted); font-style: italic; }
 .panel-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+.panel-links details { width: 100%; }
+.panel-links details summary {
+  font-size: var(--step--1); color: var(--ink-muted); cursor: pointer;
+}
 .panel-links a {
   font-size: var(--step--1); padding: 0.25rem 0.55rem;
   border: 1px solid var(--border-strong); border-radius: var(--radius);
@@ -700,6 +822,8 @@ table.variants tbody td.col-af { text-align: right; }
   .workspace { flex-direction: column; }
   .panel { flex: 1 1 auto; max-width: none; max-height: none; border-top: 1px solid var(--border); }
   #scroller { max-height: 60vh; border-right: none; }
+  .overview { grid-template-columns: minmax(0, 1fr); }
+  .ov-detail { position: static; max-height: none; }
 }
 
 @media (max-width: 860px) {
@@ -820,6 +944,10 @@ PAGE_JS = r"""
     "3": "reviewed by expert panel",
     "4": "practice guideline"
   };
+  function clinvarStars(v) {
+    var k = String(v).trim();
+    return STARS.hasOwnProperty(k) ? { n: parseInt(k, 10), text: STARS[k] } : null;
+  }
   // encoded_CLNREVSTAT is a 0-4 gold-star rating. A bare "2" tells a reader nothing.
   function starsHTML(v) {
     if (!STARS.hasOwnProperty(String(v).trim())) return null;
@@ -942,125 +1070,337 @@ PAGE_JS = r"""
     tbody.innerHTML = html.join("");
   }
 
+  // ── identifiers ──────────────────────────────────────────────────────────
+  // Every accession in the MAF is a dead end unless it is a link, and the fields
+  // that carry them are inconsistent: clinvar_OMIM_id is populated on 1,781 of
+  // 73,008 rows while CLNDISDB carries OMIM numbers on 18,113 and MIM_disease
+  // embeds more as "[MIM:615413]Disease name". Collect from all three.
+  function link(href, text, cls) {
+    return '<a class="' + (cls || "ref") + '" href="' + href +
+           '" target="_blank" rel="noopener noreferrer">' + esc(text) + "</a>";
+  }
+  function uniq(list) {
+    var seen = {}, out = [];
+    list.forEach(function (v) { if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out;
+  }
+  function grab(re, s) {
+    var out = [], m;
+    re.lastIndex = 0;
+    while ((m = re.exec(String(s))) !== null) out.push(m[1]);
+    return out;
+  }
+
+  function omimIds(i) {
+    var direct = absent(col("clinvar_OMIM_id")[i]) ? [] :
+      String(col("clinvar_OMIM_id")[i]).split(/[,|;\s]+/).filter(function (x) { return /^\d+$/.test(x); });
+    return uniq(direct
+      .concat(grab(/OMIM:(\d+)/g, col("CLNDISDB")[i] || ""))
+      .concat(grab(/\[MIM:(\d+)\]/g, col("MIM_disease")[i] || "")));
+  }
+  function pubmedIds(i) {
+    return uniq(grab(/(\d{5,8})/g, col("PUBMED")[i] || ""));
+  }
+  function rsIds(i) {
+    return uniq(grab(/(rs\d+)/g, (col("ClinVar_RS")[i] || "") + " " + (col("Existing_variation")[i] || ""))
+      .concat((String(col("ClinVar_RS")[i] || "").match(/^\d+$/) ? ["rs" + col("ClinVar_RS")[i]] : [])));
+  }
+
+  // The MAF's own identifiers, as a row of links.
+  function referenceLinks(i) {
+    var out = [], gdna = col("genome_change")[i];
+    var cvid = col("clinvar_id")[i], allele = col("ALLELEID")[i];
+    if (!absent(cvid)) {
+      String(cvid).split(/[,|]/).forEach(function (id) {
+        id = id.trim();
+        if (id) out.push(link("https://www.ncbi.nlm.nih.gov/clinvar/variation/" + encodeURIComponent(id),
+                              "ClinVar " + id));
+      });
+    } else if (!absent(allele)) {
+      // No variation ID on this row, but the allele ID resolves to the same record.
+      out.push(link("https://www.ncbi.nlm.nih.gov/clinvar/?term=" + encodeURIComponent(allele) + "%5Balleleid%5D",
+                    "ClinVar allele " + allele));
+    }
+    rsIds(i).forEach(function (rs) {
+      out.push(link("https://www.ncbi.nlm.nih.gov/snp/" + encodeURIComponent(rs), rs));
+    });
+    omimIds(i).forEach(function (id) {
+      out.push(link("https://www.omim.org/entry/" + encodeURIComponent(id), "OMIM " + id));
+    });
+    uniq(grab(/MONDO:MONDO:(\d+)/g, col("CLNDISDB")[i] || "")).forEach(function (id) {
+      out.push(link("https://monarchinitiative.org/MONDO:" + id, "MONDO " + id));
+    });
+    uniq(grab(/Orphanet:(\d+)/g, col("CLNDISDB")[i] || "")).forEach(function (id) {
+      out.push(link("https://www.orpha.net/en/disease/detail/" + id, "Orphanet " + id));
+    });
+    // Existing_variation also carries COSMIC (COSV/COSM) and HGMD (CM/CD) accessions.
+    grab(/(COS[VM]\d+)/g, col("Existing_variation")[i] || "").forEach(function (id) {
+      out.push(link("https://cancer.sanger.ac.uk/cosmic/search?q=" + id, id));
+    });
+    pubmedIds(i).forEach(function (id) {
+      out.push(link("https://pubmed.ncbi.nlm.nih.gov/" + id + "/", "PMID " + id));
+    });
+    var gene = col("Hugo_Symbol")[i];
+    if (!absent(gene)) {
+      out.push(link("https://gnomad.broadinstitute.org/gene/" + encodeURIComponent(gene) + "?dataset=gnomad_r4",
+                    "gnomAD " + gene));
+    }
+    var fu = franklinURL(gdna);
+    if (fu) out.push(link(fu, "Franklin"));
+    return out;
+  }
+
+  // ── call quality ─────────────────────────────────────────────────────────
+  // bioinfo_params is the INFO field as one string. The two things a reviewer
+  // actually asks of it are the zygosity and whether there were enough reads to
+  // believe the call, and both were buried in a 150-character run-on.
+  function infoFields(v) {
+    var out = {};
+    if (absent(v)) return out;
+    String(v).split(";").forEach(function (kv) {
+      var eq = kv.indexOf("=");
+      if (eq > 0) out[kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim();
+    });
+    return out;
+  }
+  function zygosity(f) {
+    var ac = parseFloat(f.AC), an = parseFloat(f.AN);
+    if (isNaN(ac) || isNaN(an) || an <= 0) return "";
+    if (an === 1) return "hemizygous";
+    return ac >= an ? "homozygous" : "heterozygous";
+  }
+
+  // ── assessment ───────────────────────────────────────────────────────────
+  // The panel used to be a flat dump of every column, leaving the reader to hold
+  // eight fields in their head and decide. These are the same fields, read.
+  function assessment(i) {
+    var out = [];
+    var cv = clinvarChip(col("encoded_CLNSIG")[i]), rn = renovoChip(col("RENOVO_Class")[i]);
+    var pathoish = { P: 1, LP: 1 }, benignish = { B: 1, LB: 1 };
+
+    if (pathoish[cv.code] && pathoish[rn.code]) {
+      out.push(["hit", "ClinVar and ReNOVo both call this pathogenic."]);
+    } else if ((pathoish[cv.code] && benignish[rn.code]) || (benignish[cv.code] && pathoish[rn.code])) {
+      out.push(["warn", "The two classifiers contradict each other: ClinVar " + cv.code +
+                        ", ReNOVo " + rn.code + "."]);
+    } else if (cv.code === "NC" && pathoish[rn.code]) {
+      out.push(["hit", "ClinVar has never classified this variant; ReNOVo calls it pathogenic."]);
+    }
+
+    var impact = col("IMPACT")[i], csq = firstConsequence(col("Consequence")[i]);
+    if (impact === "HIGH") out.push(["hit", "High-impact change (" + csq + "), predicted to disrupt the protein."]);
+    else if (impact === "MODERATE") out.push(["", "Moderate-impact change (" + csq + ")."]);
+    else if (!absent(impact)) out.push(["", esc(impact.toLowerCase()) + "-impact change (" + csq + ")."]);
+
+    var f = infoFields(col("bioinfo_params")[i]), z = zygosity(f);
+    if (z === "homozygous" || z === "hemizygous") {
+      out.push(["hit", "Called " + z + ": no wild-type allele in this sample."]);
+    } else if (z) {
+      out.push(["", "Called heterozygous."]);
+    }
+    var dp = parseFloat(f.DP);
+    if (!isNaN(dp) && dp < 20) {
+      out.push(["warn", "Only " + dp + " reads at this position; the call is weakly supported."]);
+    }
+
+    var af = col("MAX_AF")[i];
+    if (absent(af)) out.push(["hit", "Absent from gnomAD."]);
+    else {
+      var fv = parseFloat(af), pop = col("MAX_AF_POPS")[i];
+      var where = absent(pop) ? "" : " (" + String(pop).replace(/_/g, " ") + ")";
+      out.push([fv < 1e-4 ? "hit" : "",
+                "Max population frequency " + (fv < 1e-4 ? fv.toExponential(1) : fv.toPrecision(2)) +
+                where + "."]);
+    }
+
+    var gene = col("Hugo_Symbol")[i];
+    var gd = col("ClinGen_GeneDisease_Disease")[i], moi = col("ClinGen_GeneDisease_MOI")[i],
+        val = col("ClinGen_GeneDisease_Classification")[i];
+    if (!absent(gd)) {
+      var MOI = { AD: "autosomal dominant", AR: "autosomal recessive", XL: "X-linked",
+                  XLR: "X-linked recessive", XLD: "X-linked dominant", MT: "mitochondrial" };
+      out.push([/Definitive|Strong/i.test(val || "") ? "hit" : "",
+                gene + " has a " + (absent(val) ? "recorded" : String(val).toLowerCase()) +
+                " gene-disease relationship with " + gd +
+                (absent(moi) ? "" : " (" + (MOI[moi] || moi) + ")") + "."]);
+    }
+
+    // LOEUF is a confidence bound, so it reads in bands. The usual line for "highly
+    // constrained" is 0.35; anything up to about 1 is still some constraint, and only
+    // above 1 is the gene genuinely unconstrained. Calling 0.6 "tolerant" would be a
+    // claim a reader might act on, and it would be wrong.
+    var loeuf = parseFloat(col("gnomAD_LOEUF")[i]), pli = parseFloat(col("gnomAD_pLI")[i]);
+    if (!isNaN(loeuf)) {
+      var band = loeuf < 0.35 ? ["hit", "strongly constrained against loss of function"]
+               : loeuf < 1.0  ? ["", "moderately constrained against loss of function"]
+                              : ["", "not constrained against loss of function"];
+      out.push([band[0], "The gene is " + band[1] + " (LOEUF " + loeuf + ")."]);
+    } else if (!isNaN(pli)) {
+      out.push([pli >= 0.9 ? "hit" : "",
+                "gnomAD pLI " + pli.toPrecision(2) +
+                (pli >= 0.9 ? ", loss-of-function intolerant." : ".")]);
+    }
+
+    var stars = clinvarStars(col("encoded_CLNREVSTAT")[i]);
+    if (stars) out.push([stars.n >= 2 ? "hit" : "", "ClinVar review: " + stars.text + "."]);
+
+    return out;
+  }
+
   // ── variant detail ───────────────────────────────────────────────────────
-  // One renderer, two homes: the panel docked beside the table and the dialog the
-  // findings on the overview open.
+  function renderValue(k, v, i) {
+    if (k === "encoded_CLNREVSTAT") {
+      var st = starsHTML(v);
+      return '<dd class="plain">' + (st || esc(v)) + "</dd>";
+    }
+    if (k.indexOf("PhenotypeOrthologous") === 0) {
+      // These run to 30+ comma-separated terms. Kept, but folded away.
+      var items = uniq(String(v).split(",").map(function (t) {
+        return t.trim().replace(/^_+/, "").replace(/_/g, " ");
+      }));
+      if (!items.length) return '<dd class="absent">not reported</dd>';
+      var head = items.slice(0, 4).join(", ");
+      if (items.length <= 4) return '<dd class="plain">' + esc(head) + "</dd>";
+      return '<dd class="plain"><details><summary>' + esc(head) + " … " +
+             (items.length - 4) + " more</summary>" + esc(items.join(", ")) + "</details></dd>";
+    }
+    if (k === "Consequence") {
+      return '<dd class="plain">' + esc(String(v).split(/[,&]/).join(", ").replace(/_/g, " ")) + "</dd>";
+    }
+    if (k === "CLNDN") {
+      var ds = diseaseList(v);
+      return ds.length ? '<dd class="plain">' + esc(ds.join(" · ")) + "</dd>"
+                       : '<dd class="absent">not reported</dd>';
+    }
+    if (k === "MIM_disease") {
+      // "[MIM:615413]Spermatogenic failure 12;[MIM:600649]..." -> linked names.
+      var bits = String(v).split(";").map(function (s) { return s.trim(); }).filter(Boolean);
+      var html = bits.map(function (s) {
+        var m = /^\[MIM:(\d+)\](.*)$/.exec(s);
+        if (!m) return esc(s);
+        return link("https://www.omim.org/entry/" + m[1], m[2].trim() || ("OMIM " + m[1]));
+      }).join(" · ");
+      return '<dd class="plain">' + html + "</dd>";
+    }
+    if (k === "Orphanet_disorder") {
+      return '<dd class="plain">' + esc(uniq(String(v).split(";")).join(" · ")) + "</dd>";
+    }
+    if (k === "MAX_AF") return "<dd>" + afCell(v) + "</dd>";
+    if (k === "MAX_AF_POPS") return '<dd class="plain">' + esc(String(v).replace(/_/g, " ")) + "</dd>";
+    if (k === "IMPACT") return '<dd class="plain">' + esc(String(v).toLowerCase()) + "</dd>";
+    if (k === "PUBMED") {
+      return '<dd class="plain refs">' + pubmedIds(i).map(function (id) {
+        return link("https://pubmed.ncbi.nlm.nih.gov/" + id + "/", id);
+      }).join(" ") + "</dd>";
+    }
+    if (k === "clinvar_OMIM_id" || k === "CLNDISDB") {
+      var ids = omimIds(i);
+      if (!ids.length) return '<dd class="absent">not reported</dd>';
+      return '<dd class="plain refs">' + ids.map(function (id) {
+        return link("https://www.omim.org/entry/" + id, "OMIM " + id);
+      }).join(" ") + "</dd>";
+    }
+    if (k === "clinvar_id") {
+      return '<dd class="plain refs">' + String(v).split(/[,|]/).map(function (id) {
+        id = id.trim();
+        return id ? link("https://www.ncbi.nlm.nih.gov/clinvar/variation/" + id, id) : "";
+      }).join(" ") + "</dd>";
+    }
+    if (k === "ALLELEID") {
+      return '<dd class="plain refs">' +
+        link("https://www.ncbi.nlm.nih.gov/clinvar/?term=" + encodeURIComponent(v) + "%5Balleleid%5D", v) +
+        "</dd>";
+    }
+    if (k === "ClinVar_RS" || k === "Existing_variation") {
+      var rs = rsIds(i);
+      var other = String(v).split(",").map(function (s) { return s.trim(); })
+        .filter(function (s) { return s && !/^rs\d+$/.test(s); });
+      var html = rs.map(function (r) {
+        return link("https://www.ncbi.nlm.nih.gov/snp/" + r, r);
+      }).concat(other.map(esc)).join(" ");
+      return '<dd class="plain refs">' + html + "</dd>";
+    }
+    if (k === "bioinfo_params") {
+      var f = infoFields(v), z = zygosity(f);
+      var rows = [];
+      if (z) rows.push(["Zygosity", z + (f.AC && f.AN ? " (" + f.AC + " of " + f.AN + " alleles)" : "")]);
+      if (f.DP) rows.push(["Read depth", f.DP + "×"]);
+      if (f.QD) rows.push(["Quality by depth", f.QD]);
+      if (f.MQ) rows.push(["Mapping quality", f.MQ]);
+      if (f.FS) rows.push(["Strand bias (FS)", f.FS]);
+      if (f.SOR) rows.push(["Strand odds ratio", f.SOR]);
+      if (!rows.length) return "<dd>" + esc(v) + "</dd>";
+      return '<dd class="plain"><table class="qual">' + rows.map(function (r) {
+        return "<tr><th>" + esc(r[0]) + "</th><td>" + esc(r[1]) + "</td></tr>";
+      }).join("") + "</table></dd>";
+    }
+    return "<dd>" + esc(v).replace(/,/g, ", ") + "</dd>";
+  }
+
+  var LABEL = {};
+  P.detail.forEach(function (d) { LABEL[d.k] = d.label; });
+
   function detailHTML(i) {
     var gene = col("Hugo_Symbol")[i], gdna = col("genome_change")[i];
+    var prot = col("HGVSp_VEP")[i];
     var parts = ['<div class="detail">'];
-    parts.push('<h3>' + esc(absent(gene) ? "Unnamed gene" : gene) + '</h3>');
-    parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + '</p>');
+    parts.push("<h3>" + esc(absent(gene) ? "Unnamed gene" : gene) +
+               (absent(prot) ? "" : ' <span class="detail-change">' + esc(prot) + "</span>") + "</h3>");
+    parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + "</p>");
     parts.push('<div class="panel-chips">' +
       chipHTML(clinvarChip(col("encoded_CLNSIG")[i]), "ClinVar") +
-      chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") +
-      '</div>');
+      chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") + "</div>");
 
-    parts.push("<dl>");
-    P.detail.forEach(function (d) {
-      var v = col(d.k)[i];
-      parts.push("<dt>" + esc(d.label) + "</dt>");
-      if (absent(v)) { parts.push('<dd class="absent">not reported</dd>'); return; }
-      if (d.k === "encoded_CLNREVSTAT") {
-        var st = starsHTML(v);
-        parts.push('<dd class="plain">' + (st || esc(v)) + "</dd>");
-        return;
-      }
-      if (d.k.indexOf("PhenotypeOrthologous") === 0) {
-        var seen = {}, items = [];
-        String(v).split(",").forEach(function (t) {
-          t = t.trim().replace(/^_+/, "").replace(/_/g, " ");
-          if (t && !seen[t]) { seen[t] = 1; items.push(t); }
-        });
-        parts.push('<dd class="plain">' + esc(items.join(", ")) + "</dd>");
-        return;
-      }
-      if (d.k === "Consequence") {
-        parts.push('<dd class="plain">' + esc(String(v).split(/[,&]/).join(", ").replace(/_/g, " ")) + "</dd>");
-        return;
-      }
-      if (d.k === "CLNDN") {
-        var ds = diseaseList(v);
-        parts.push(ds.length
-          ? '<dd class="plain">' + esc(ds.join(" · ")) + "</dd>"
-          : '<dd class="absent">not reported</dd>');
-        return;
-      }
-      if (d.k === "MAX_AF") { parts.push("<dd>" + afCell(v) + "</dd>"); return; }
-      // ClinVar packs several MIM numbers into one field, joined with '|'.
-      if (d.k === "clinvar_OMIM_id") {
-        parts.push("<dd>" + esc(String(v).split(/[,|]/).join(" · ")) + "</dd>");
-        return;
-      }
-      parts.push("<dd>" + esc(v).replace(/,/g, ", ") + "</dd>");
+    var a = assessment(i);
+    if (a.length) {
+      parts.push('<ul class="assess">' + a.map(function (row) {
+        return '<li class="' + row[0] + '">' + esc(row[1]) + "</li>";
+      }).join("") + "</ul>");
+    }
+
+    // A well-annotated variant can carry forty accessions. The first ten identify it;
+    // the rest are the disease ontologies restating each other, so they fold away.
+    var refs = referenceLinks(i);
+    if (refs.length > 10) {
+      parts.push('<div class="panel-links">' + refs.slice(0, 10).join("") +
+        "<details><summary>" + (refs.length - 10) + " more references</summary>" +
+        '<span class="panel-links">' + refs.slice(10).join("") + "</span></details></div>");
+    } else if (refs.length) {
+      parts.push('<div class="panel-links">' + refs.join("") + "</div>");
+    }
+
+    P.sections.forEach(function (sec) {
+      var body = [];
+      sec.keys.forEach(function (k) {
+        if (!LABEL.hasOwnProperty(k)) return;          // column absent from this MAF
+        var v = col(k)[i];
+        if (absent(v)) return;                          // nothing to say, so say nothing
+        body.push("<dt>" + esc(LABEL[k]) + "</dt>" + renderValue(k, v, i));
+      });
+      if (!body.length) return;
+      parts.push('<section class="detail-sec"><h4>' + esc(sec.name) + "</h4><dl>" +
+                 body.join("") + "</dl></section>");
     });
-    parts.push("</dl>");
 
-    var links = [];
-    var fu = franklinURL(gdna);
-    if (fu) links.push('<a href="' + fu + '" target="_blank" rel="noopener noreferrer">Open in Franklin</a>');
-    var cvid = col("clinvar_id")[i];
-    if (!absent(cvid)) {
-      String(cvid).split(",").forEach(function (id) {
-        id = id.trim();
-        if (id) links.push('<a href="https://www.ncbi.nlm.nih.gov/clinvar/variation/' + encodeURIComponent(id) +
-                           '" target="_blank" rel="noopener noreferrer">ClinVar ' + esc(id) + '</a>');
-      });
-    }
-    var omim = col("clinvar_OMIM_id")[i];
-    if (!absent(omim)) {
-      // ClinVar packs several MIM numbers per variant and joins them with '|'.
-      String(omim).split(/[,|]/).forEach(function (id) {
-        id = id.trim();
-        if (id) links.push('<a href="https://www.omim.org/entry/' + encodeURIComponent(id) +
-                           '" target="_blank" rel="noopener noreferrer">OMIM ' + esc(id) + '</a>');
-      });
-    }
-    var pm = col("PUBMED")[i];
-    if (!absent(pm)) {
-      String(pm).split(",").slice(0, 6).forEach(function (id) {
-        id = id.trim();
-        if (id) links.push('<a href="https://pubmed.ncbi.nlm.nih.gov/' + encodeURIComponent(id) +
-                           '/" target="_blank" rel="noopener noreferrer">PMID ' + esc(id) + '</a>');
-      });
-    }
-    if (links.length) parts.push('<div class="panel-links">' + links.join("") + "</div>");
     parts.push("</div>");
     return parts.join("");
   }
 
-  function select(i) {
+  // Both views show the evidence in a panel beside the list, never over it: a reader
+  // comparing several candidates must be able to see the list and one variant at the
+  // same time, and a dialog hides exactly the thing being compared against.
+  var EMPTY_PANEL =
+    '<p class="panel-empty">Select a variant to see its evidence.<br><br>' +
+    'Use <kbd>&uarr;</kbd> and <kbd>&darr;</kbd> to walk the list without losing your place.</p>';
+
+  function select(i, where) {
     selected = i;
-    var panel = document.getElementById("panel");
-    panel.innerHTML = i < 0
-      ? '<p class="panel-empty">Select a variant to see its full evidence.<br><br>' +
-        'Use <kbd>&uarr;</kbd> and <kbd>&darr;</kbd> to walk the list without losing your place.</p>'
-      : detailHTML(i);
+    var html = i < 0 ? EMPTY_PANEL : detailHTML(i);
+    var target = document.getElementById(where === "overview" ? "ovPanel" : "panel");
+    target.innerHTML = html;
+    if (where === "overview") target.scrollTop = 0;
     render();
   }
-
-  // ── dialog ───────────────────────────────────────────────────────────────
-  var modal = document.getElementById("modal");
-  var modalBody = document.getElementById("modalBody");
-  var modalClose = document.getElementById("modalClose");
-  var lastFocus = null;
-
-  function openModal(i) {
-    lastFocus = document.activeElement;
-    modalBody.innerHTML = detailHTML(i);
-    modal.hidden = false;
-    modalClose.focus();
-  }
-
-  function closeModal() {
-    if (modal.hidden) return;
-    modal.hidden = true;
-    modalBody.innerHTML = "";
-    if (lastFocus && lastFocus.focus) lastFocus.focus();
-  }
-
-  modalClose.addEventListener("click", closeModal);
-  // Only a click on the backdrop itself closes; a click inside the card must not.
-  modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
 
   // ── events ───────────────────────────────────────────────────────────────
   scroller.addEventListener("scroll", render, { passive: true });
@@ -1115,10 +1455,13 @@ PAGE_JS = r"""
     }
   }
 
-  // A finding on the overview opens that variant's evidence and nothing else.
+  // A finding on the overview fills the panel beside it. Nothing navigates.
   Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (btn) {
     btn.addEventListener("click", function () {
-      openModal(parseInt(btn.dataset.goto, 10));
+      Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (b) {
+        b.setAttribute("aria-current", String(b === btn));
+      });
+      select(parseInt(btn.dataset.goto, 10), "overview");
     });
   });
 
@@ -1176,8 +1519,7 @@ PAGE_JS = r"""
   // Arrow keys walk the list with the panel pinned, which is the point of docking
   // it rather than expanding rows inline.
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { closeModal(); return; }
-    if (!modal.hidden || tableView.hidden) return;
+    if (tableView.hidden) return;
     if (e.target.tagName === "INPUT") return;
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
@@ -1192,6 +1534,7 @@ PAGE_JS = r"""
       scroller.scrollTop = bottom - scroller.clientHeight;
   });
 
+  select(-1, "overview");
   select(-1);
   setGroup(null);
   rebuild();
@@ -1215,10 +1558,7 @@ __PAGE_CSS__
 <body>
 
 <header class="masthead">
-  <div class="masthead-id">
-    __LOGO__
-    <span class="masthead-doc">Variant review</span>
-  </div>
+  __MASTHEAD_ID__
   <div class="masthead-meta">
     <span>Patient <b>__PATIENT__</b></span>
     <span>Assembly <b>hg38</b></span>
@@ -1239,12 +1579,15 @@ __PAGE_CSS__
 
 <main class="view" id="view-overview">
   <section class="overview">
-    <h2>Findings</h2>
-    <p class="findings-sub">__LEDE_SUB__</p>
-    <div class="priority">__PRIORITY__</div>
-    <div class="ov-actions no-print">
-      <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
+    <div class="ov-main">
+      <h2>Findings</h2>
+      <p class="findings-sub">__LEDE_SUB__</p>
+      <div class="priority">__PRIORITY__</div>
+      <div class="ov-actions no-print">
+        <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
+      </div>
     </div>
+    <aside class="ov-detail" id="ovPanel" aria-live="polite" aria-label="Variant evidence"></aside>
   </section>
 </main>
 
@@ -1281,12 +1624,6 @@ __PAGE_CSS__
   </div>
 </main>
 
-<div class="modal-backdrop no-print" id="modal" hidden>
-  <div class="modal-card" role="dialog" aria-modal="true" aria-label="Variant detail">
-    <button class="modal-close" type="button" id="modalClose" aria-label="Close">&times;</button>
-    <div id="modalBody"></div>
-  </div>
-</div>
 
 <footer class="doc-footer">
   <span>MuSA &middot; multi-source variant annotation &middot; patient __PATIENT__</span>
@@ -1400,20 +1737,61 @@ def _finding_rows(df, indices, limit=6):
             f'<span class="sr-only"> {cvnote}</span></span>'
             f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
             f'<span class="sr-only"> {rnnote}</span></span>'
+            f'{_finding_tags(df, i)}'
             f'<span class="finding-change">{html_escape(coords)}</span>'
             "</button>"
         )
     return "".join(out)
 
 
-def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+_MOI_WORDS = {"AD": "dominant", "AR": "recessive", "XL": "X-linked",
+              "XLR": "X-linked recessive", "XLD": "X-linked dominant",
+              "MT": "mitochondrial", "SD": "semidominant"}
 
-    # assets/MuSA_logo_light.png is the dark-ink wordmark, i.e. the one for a light
-    # ground; when present it *is* the wordmark, so the text version would duplicate it.
-    logo = (f'<img class="masthead-logo" src="data:{logo_mime};base64,{logo_b64}" alt="MuSA"/>'
-            if logo_b64
-            else '<span class="masthead-wordmark">MuSA</span>')
+
+def _finding_tags(df, i):
+    """The signals that decide whether a row is worth opening, read off the row.
+
+    Deliberately short and few: impact, zygosity, absence from gnomAD, and whether
+    the gene has an established disease relationship. A reviewer scanning the list
+    should be able to pick the candidates without opening anything.
+    """
+    get = lambda col: (str(df[col].iloc[i]) if col in df.columns else ".")
+    tags = []
+
+    if get("IMPACT").upper() == "HIGH":
+        tags.append(('<span class="tag on">high impact</span>'))
+
+    z = zygosity(get("bioinfo_params"))
+    if z in ("homozygous", "hemizygous"):
+        tags.append(f'<span class="tag on">{z}</span>')
+
+    af = get("MAX_AF")
+    if af in (".", "nan", ""):
+        tags.append('<span class="tag on">not in gnomAD</span>')
+    else:
+        try:
+            tags.append(f'<span class="tag">AF {float(af):.2g}</span>')
+        except ValueError:
+            pass
+
+    valid, moi = get("ClinGen_GeneDisease_Classification"), get("ClinGen_GeneDisease_MOI")
+    if valid not in (".", "nan", ""):
+        word = _MOI_WORDS.get(moi, moi if moi not in (".", "nan", "") else "")
+        label = f"{valid.lower()} gene-disease" + (f", {word}" if word else "")
+        tags.append(f'<span class="tag gene">{html_escape(label)}</span>')
+
+    stars = style.clinvar_stars(get("encoded_CLNREVSTAT"))
+    if stars and stars[0] >= 2:
+        tags.append(f'<span class="tag">{"★" * stars[0]} ClinVar</span>')
+
+    return f'<span class="finding-tags">{"".join(tags)}</span>' if tags else ""
+
+
+def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
+                    version=""):
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
     n_conf = stats["conflicting"]
     scales = (
@@ -1433,7 +1811,8 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
     # Each block header is the control that opens the table filtered to that block,
     # so the number a reader sees and the rows they get are the same set by
     # construction rather than by two definitions that could drift.
-    tones = {"flagged": "p", "escalated": "lp", "novel": "acc", "contested": "p"}
+    tones = {"flagged": "p", "lof": "p", "biallelic": "lp", "escalated": "lp",
+             "novel": "acc", "contested": "p"}
     blocks = []
     for key, title, why in GROUPS:
         items = ov[key]
@@ -1477,7 +1856,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__TOTAL__", f"{stats['total']:,}")
             .replace("__GENERATED__", now)
             .replace("__MODE__", mode)
-            .replace("__LOGO__", logo)
+            .replace("__MASTHEAD_ID__", masthead)
             .replace("__PATIENT__", patient_code.upper())
             .replace("__PAYLOAD__", json.dumps(payload, separators=(",", ":"))))
 
@@ -1528,6 +1907,7 @@ def main():
         logo_b64=logo_b64,
         logo_mime=logo_mime,
         mode="offline" if offline else "online",
+        version=params["version"],
     )
 
     out_file = f"{patient}_maf_dashboard.html"

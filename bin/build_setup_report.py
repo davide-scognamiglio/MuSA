@@ -240,13 +240,9 @@ __PAGE_CSS__
 <body>
 
 <header class="masthead">
-  <div class="masthead-id">
-    __LOGO__
-    <span class="masthead-doc">Reference data provenance</span>
-  </div>
+  __MASTHEAD_ID__
   <div class="masthead-meta">
     <span>Assembly <b>__GENOME__</b></span>
-    <span>Pipeline <b>__VERSION__</b></span>
     <span>Generated <b>__GENERATED__</b></span>
   </div>
 </header>
@@ -392,8 +388,7 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
                            f'aria-pressed="false">{STATUS[k][1]} {counts[k]}</button>')
 
     b64, mime = load_logo_base64(logo_path)
-    logo = (f'<img class="masthead-logo" src="data:{mime};base64,{b64}" alt="MuSA"/>'
-            if b64 else '<span class="masthead-wordmark">MuSA</span>')
+    masthead = style.masthead_id(b64, mime, pipeline_version, "Reference data provenance")
 
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -413,9 +408,8 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
             .replace("__PENDING__", f"{counts['pending']:,}")
             .replace("__PENDING_CLASS__", "is-pending" if counts["pending"] else "")
             .replace("__GENOME__", html.escape(_assembly_label(genome)))
-            .replace("__VERSION__", html.escape(str(pipeline_version)))
             .replace("__GENERATED__", now)
-            .replace("__LOGO__", logo))
+            .replace("__MASTHEAD_ID__", masthead))
 
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write(page)
