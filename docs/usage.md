@@ -141,6 +141,47 @@ retrieved from the HPO API and used as an additional panel.
 
 The full list is in [`nextflow_schema.json`](../nextflow_schema.json), or run with `--help`.
 
+#### dbNSFP transcript-specific scores
+
+dbNSFP reports many scores **per transcript**, as `;`-delimited arrays positionally aligned with
+`Ensembl_transcriptid`:
+
+```
+Ensembl_transcriptid   ENST00000538872;ENST00000382841;ENST00000111111
+MANE_dbNSFP            .;Select;.
+SIFT_score             0.622;1.0;0.3
+REVEL_score            0.361;0.361;0.9
+```
+
+Read on its own, `SIFT_score` is ambiguous: nothing in that field says which of the three numbers
+belongs to the isoform you care about. The position of the canonical isoform is encoded **only** in
+`MANE_dbNSFP` — the offset of `Select` is the offset to read in every other array.
+`Ensembl_transcriptid` names the transcript at each position but does not mark which one is
+canonical, and `Feature` (VEP's pick) is the most-severe-consequence transcript, which is not
+necessarily the MANE one.
+
+`Feature`, `Ensembl_transcriptid` and `MANE_dbNSFP` are all preserved in the final MAF, in either
+mode. They answer different questions and none substitutes for another: `Feature` is the single
+transcript VEP/vcf2maf selected, and the row's `HGVSc`/`HGVSp`/`Consequence` are expressed against
+it; `Ensembl_transcriptid` is the transcript mapping of dbNSFP's own annotations — positional under
+`all`, and under `mane` collapsed in lockstep with the scores so it names the one transcript they
+came from; `MANE_dbNSFP` marks which position is canonical. Keeping all three lets a downstream
+consumer resolve transcript-specific scores explicitly while still seeing dbNSFP's original
+annotation.
+
+| Value | Behaviour |
+|-------|-----------|
+| `mane` (default) | Every transcript-aligned column is rewritten to the single element at the MANE position, so each score column holds one value. When a variant has no MANE transcript the pipeline falls back, in order, to MANE Plus Clinical → the transcript VEP picked (`Feature`) → the first element. One index is chosen per row and applied to every column, so columns can never disagree. `MANE_dbNSFP` is collapsed along with the rest and doubles as a provenance flag: `.` means the scores on that row did **not** come from a MANE transcript. |
+| `all` | Arrays are left exactly as dbNSFP produced them. Use this if you would rather resolve transcripts yourself downstream — `Ensembl_transcriptid` and `MANE_dbNSFP` give you everything needed to do so. |
+
+Which columns count as transcript-aligned comes from a fixed, committed list
+(`assets/dbnsfp_transcript_aligned_columns.txt`), not from inspecting each run's output. dbNSFP also
+uses `;` for gene-level fields (`GO_*`, `Pathway(*)`, `HPO_*`, `MIM_*`, `Orphanet_*`, `GenCC_*`) whose
+element count has nothing to do with transcripts, and a per-file guess would collapse a column for
+one patient but not the next. As a second safeguard, a value is rewritten only when its element count
+matches that row's transcript count. Regenerate the list after a dbNSFP upgrade with
+`bin/gen_dbnsfp_aligned_columns.py`.
+
 ### Params files
 
 Rather than repeating flags, put them in a params file:
