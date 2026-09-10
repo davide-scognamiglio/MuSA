@@ -29,6 +29,7 @@ process BUILD_ANNOTATE_REPORT {
         """
         logo="${projectDir}/assets/MuSA_logo.png"
         build_annotate_report.py "${meta.patient}" "${params.use_vep_plugins}" \
-        "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}"
+        "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}" \
+        "${meta.hpo ?: ''}"
         """
 }

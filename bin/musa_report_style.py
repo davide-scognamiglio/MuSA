@@ -49,6 +49,7 @@ TOKENS = """
   --band-ink:    oklch(0.970 0.005 292);
   --band-muted:  oklch(0.760 0.020 292);
   --band-line:   oklch(0.380 0.035 292);
+  --band-link:   oklch(0.830 0.080 250);
   --sig-p-lift:   oklch(0.78 0.15  25);
   --sig-lp-lift:  oklch(0.82 0.13  45);
   --sig-vus-lift: oklch(0.86 0.12  90);

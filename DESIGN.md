@@ -163,8 +163,16 @@ problem handed to a reader who came for an answer.
 evidence in a panel on the right.
 
 The masthead is the square mark plus a wordmark set in type, with the version taken from
-`workflow.manifest.version` at run time. The banner asset had "v1.0" drawn into the pixels, which
-was already wrong for the next tag and could only be corrected by re-drawing art.
+`workflow.manifest.version` at run time, and nothing else. The banner asset had "v1.0" drawn into
+the pixels, which was already wrong for the next tag and could only be corrected by re-drawing art.
+
+The band has two halves, divided by a rule: **the case on the left, what was found in it on the
+right.** The case identity used to sit in the masthead, which is the wrong place for it — the
+masthead identifies the software, the band identifies the patient. Left carries the patient, the
+assembly, when the report was generated, whether MuSA ran offline, and the case's **HPO terms**,
+each linking out to `hpo.jax.org`. Those terms are the reason the case is being read at all and
+were previously nowhere in the document; offline MuSA has the identifiers but not their names, so
+the identifier is the link text. Right carries the review-set figure and the two spectra.
 
 The band carries the review-set count as a single large figure, and each classifier as a
 proportional spectrum with a legend beneath it. Everything in the band is counted **over the review

@@ -24,7 +24,7 @@ back to <patient>.raw.maf when the filtered file is header-only) and embeds ever
 count of both is stated in the header.
 
 Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe>
-                                [logo] [pipeline_version]
+                                [logo] [pipeline_version] [hpo_terms]
 """
 
 import base64
@@ -128,7 +128,18 @@ def parse_args():
         "skip_genebe":     _bool(args[3]),
         "logo_path":       args[4] if len(args) > 4 else None,
         "version":         args[5] if len(args) > 5 else "",
+        "hpo":             args[6] if len(args) > 6 else "",
     }
+
+
+# The samplesheet's hpo column, ';'-separated. Nextflow renders an absent value as
+# the literal "null", so that has to be treated as absence rather than as a term.
+def parse_hpo(value):
+    v = (value or "").strip()
+    if not v or v.lower() in ("null", "none", "nan", "."):
+        return []
+    return [t for t in (x.strip().upper() for x in re.split(r"[;,\s]+", v))
+            if re.fullmatch(r"HP:\d{7}", t)]
 
 
 def load_logo_base64(logo_path):
@@ -476,11 +487,48 @@ PAGE_CSS = """
    also where the two classifiers can be shown as figures rather than as a row of
    labelled numbers. Every count in here is over the review set, so nothing in the
    band can contradict the findings below it. */
+/* Two halves: the case on the left, what was found in it on the right. The case
+   identity used to sit in the masthead beside the logo, which is the wrong place for
+   it — the masthead identifies the software, the band identifies the patient. */
 .band {
-  display: grid; gap: 1.5rem 3rem; align-items: center;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  display: grid; gap: 1.5rem 2.5rem; align-items: start;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
   padding: 1.4rem 1.5rem;
   background: var(--band); color: var(--band-ink);
+}
+.band-case { border-right: 1px solid var(--band-line); padding-right: 2.5rem; }
+.case-id {
+  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
+  letter-spacing: -0.01em; margin-bottom: 0.6rem;
+}
+.case-meta {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.9rem; font-size: var(--step--1);
+}
+.case-meta dt { color: var(--band-muted); }
+.case-meta dd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* HPO terms are the reason this case is being read at all, so they belong beside the
+   patient rather than nowhere. Offline the report has the identifiers but not their
+   names, so each one links out to the term. */
+.case-hpo { margin-top: 0.9rem; }
+.case-hpo-label {
+  display: block; font-size: var(--step--1); color: var(--band-muted);
+  margin-bottom: 0.35rem;
+}
+.case-hpo-terms { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.case-hpo-terms a {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  color: var(--band-link); text-decoration: none;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--band-line); border-radius: 3px;
+}
+.case-hpo-terms a:hover { border-color: var(--band-link); }
+.case-hpo-none { font-size: var(--step--1); color: var(--band-muted); font-style: italic; }
+
+.band-stats {
+  display: grid; gap: 1.25rem 2.5rem; align-items: center;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
 }
 .band-figure { display: grid; gap: 0.1rem; }
 .band-n {
@@ -826,9 +874,12 @@ table.qual td {
   .ov-detail { position: static; max-height: none; }
 }
 
-@media (max-width: 860px) {
-  .band { grid-template-columns: minmax(0, 1fr); }
-  .masthead-logo { height: 58px; }
+@media (max-width: 1000px) {
+  .band, .band-stats { grid-template-columns: minmax(0, 1fr); }
+  .band-case {
+    border-right: 0; padding-right: 0;
+    border-bottom: 1px solid var(--band-line); padding-bottom: 1.25rem;
+  }
 }
 
 @media print {
@@ -1559,22 +1610,27 @@ __PAGE_CSS__
 
 <header class="masthead">
   __MASTHEAD_ID__
-  <div class="masthead-meta">
-    <span>Patient <b>__PATIENT__</b></span>
-    <span>Assembly <b>hg38</b></span>
-    <span>Generated <b>__GENERATED__</b></span>
-    <span>Mode <b>__MODE__</b></span>
-  </div>
 </header>
 
 <section class="band">
-  <div class="band-figure">
-    <span class="band-n">__REVIEW__</span>
-    <span class="band-label">variants in the review set</span>
-    <span class="band-note">Rare, and either flagged by ClinVar or protein-affecting.
-    Drawn from __TOTAL__ annotated, all of which are in this document.</span>
+  <div class="band-case">
+    <h2 class="case-id">Patient __PATIENT__</h2>
+    <dl class="case-meta">
+      <dt>Assembly</dt><dd>hg38</dd>
+      <dt>Generated</dt><dd>__GENERATED__</dd>
+      <dt>Mode</dt><dd>__MODE__</dd>
+    </dl>
+    __HPO__
   </div>
-  <div class="band-scales">__SCALES__</div>
+  <div class="band-stats">
+    <div class="band-figure">
+      <span class="band-n">__REVIEW__</span>
+      <span class="band-label">variants in the review set</span>
+      <span class="band-note">Rare, and either flagged by ClinVar or protein-affecting.
+      Drawn from __TOTAL__ annotated, all of which are in this document.</span>
+    </div>
+    <div class="band-scales">__SCALES__</div>
+  </div>
 </section>
 
 <main class="view" id="view-overview">
@@ -1788,8 +1844,21 @@ def _finding_tags(df, i):
     return f'<span class="finding-tags">{"".join(tags)}</span>' if tags else ""
 
 
+def _hpo_html(terms):
+    if not terms:
+        return ('<div class="case-hpo"><span class="case-hpo-none">'
+                'No phenotype terms in the samplesheet.</span></div>')
+    links = "".join(
+        f'<a href="https://hpo.jax.org/browse/term/{t}" target="_blank" '
+        f'rel="noopener noreferrer">{t}</a>' for t in terms)
+    word = "term" if len(terms) == 1 else "terms"
+    return (f'<div class="case-hpo"><span class="case-hpo-label">Phenotype '
+            f'({len(terms)} HPO {word})</span>'
+            f'<div class="case-hpo-terms">{links}</div></div>')
+
+
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
-                    version=""):
+                    version="", hpo=()):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
@@ -1850,6 +1919,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__LEDE_SUB__", lede_sub)
             .replace("__PRIORITY__", priority_html)
             .replace("__SCALES__", scales)
+            .replace("__HPO__", _hpo_html(hpo))
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
             .replace("__REVIEW__", f"{stats['review']:,}")
@@ -1871,6 +1941,9 @@ def main():
     print(f"  patient        : {patient}", file=sys.stderr)
     print(f"  offline        : {offline}", file=sys.stderr)
     print(f"  use_vep_plugins: {params['use_vep_plugins']}", file=sys.stderr)
+    hpo = parse_hpo(params["hpo"])
+    print(f"  HPO terms      : {len(hpo)}"
+          + (f" ({', '.join(hpo)})" if hpo else " (none in samplesheet)"), file=sys.stderr)
 
     logo_b64, logo_mime = load_logo_base64(params["logo_path"])
     df = load_maf_data(patient)
@@ -1908,6 +1981,7 @@ def main():
         logo_mime=logo_mime,
         mode="offline" if offline else "online",
         version=params["version"],
+        hpo=hpo,
     )
 
     out_file = f"{patient}_maf_dashboard.html"
