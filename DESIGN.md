@@ -179,6 +179,26 @@ proportional spectrum with a legend beneath it. Everything in the band is counte
 set**, the same denominator as the findings below. It used to count every annotated variant, which
 put "P 3" directly above "ClinVar flagged 2": two true numbers and a contradiction on screen.
 
+### What the review set is
+
+**Rare (MAX_AF < 1%, absent counts as rare), protein-affecting, and not called benign or likely
+benign by ClinVar.** All three conditions, not two of three: `review_flags()` in
+`build_annotate_report.py`.
+
+The ClinVar test used to be an *alternative* to the consequence test rather than a filter over it,
+so a variant ClinVar had looked at and called benign still entered the set on the strength of its
+consequence — 98 of patient 5510's 529. ClinVar having decided a variant is benign is a reason to
+stop reading, not a reason to read on. Making it a filter costs nothing: measured across four
+exomes, no ClinVar P or LP variant is lost, because every one of them is protein-affecting anyway.
+
+`NC` stays in, and is the bulk of the set, because "ClinVar has never seen it" is the ordinary state
+of a genuinely novel finding. Across the four verification exomes the set runs 374–767 of 65,000–
+73,000 annotated.
+
+One consequence to know: the *Calls contradict* block can now only fire in one direction (ClinVar
+pathogenic against a ReNOVo benign call), because ClinVar B and LB never enter the set for the
+opposite direction to catch.
+
 There are no summary charts. A consequence-profile bar chart and a population-frequency bar chart
 were tried and removed: neither changed what a reader did next, which is the only test a figure in
 a clinical document has to pass.

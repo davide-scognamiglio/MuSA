@@ -239,15 +239,28 @@ def disease_label(value, limit=90):
 
 
 # ── review set ────────────────────────────────────────────────────────────────
+# ClinVar classes a variant may hold and still be worth reviewing. Benign and likely
+# benign are excluded outright: ClinVar having looked at a variant and called it benign
+# is a reason to stop, not a reason to read on. NC stays because "ClinVar has never
+# seen it" is the commonest state of a genuinely novel finding.
+REVIEWABLE_CLINVAR = ("P", "LP", "VUS", "NC")
+
+
 def review_flags(df):
     """Return a list of 0/1 per row: is this variant in the default review view?
 
-    Definition: rare (MAX_AF < 1%, absent counts as rare) AND (ClinVar-flagged as
-    P/LP/VUS/conflicting OR protein-affecting consequence).
+    Definition: rare (MAX_AF < 1%, absent counts as rare) AND protein-affecting AND
+    not called benign or likely benign by ClinVar.
 
-    Measured on four clinical exomes this yields 420-789 variants out of 65,000-73,000. The
-    intent is the set a reviewer actually works through, not a claim that nothing else matters,
-    which is why the full set stays in the document and one control away.
+    The ClinVar test used to be an *alternative* to the consequence test rather than a
+    filter over it, so a variant ClinVar had called benign still entered the set on the
+    strength of its consequence: 98 of patient 5510's 529 were B or LB. Making it a
+    filter drops those and costs nothing — measured across four exomes, no ClinVar P or
+    LP variant is lost, because every one of them is protein-affecting anyway.
+
+    Measured on four clinical exomes this yields 374-767 variants out of 65,000-73,000.
+    The intent is the set a reviewer actually works through, not a claim that nothing
+    else matters, which is why the full set stays in the document and one control away.
     """
     af = df["MAX_AF"] if "MAX_AF" in df.columns else pd.Series([""] * len(df))
     sig = df["encoded_CLNSIG"] if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
@@ -256,10 +269,11 @@ def review_flags(df):
     af_num = pd.to_numeric(af, errors="coerce")
     rare = af_num.isna() | (af_num < 0.01)
 
-    flagged = sig.fillna("").map(lambda v: style.clinvar_chip(v)[0] in ("sig-p", "sig-lp", "sig-vus"))
+    reviewable = sig.fillna("").map(
+        lambda v: style.clinvar_chip(v)[1] in REVIEWABLE_CLINVAR)
     coding = csq.fillna("").map(style.is_protein_affecting)
 
-    flags = (rare & (flagged | coding)).astype(int).tolist()
+    flags = (rare & reviewable & coding).astype(int).tolist()
     print(f"  Review set: {sum(flags):,} of {len(flags):,} variants", file=sys.stderr)
     return flags
 
@@ -392,6 +406,10 @@ def overview(df, flags):
     P, B = RENOVO_PATHOGENIC, RENOVO_BENIGN
 
     novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r in P]
+    # Both directions of disagreement, though only the first can currently fire: the
+    # review set no longer admits ClinVar B or LB (see REVIEWABLE_CLINVAR), so the
+    # second arm is empty unless that filter is widened again. Kept because the group
+    # means "the two classifiers disagree", not "ClinVar says pathogenic".
     contested = [i for i, c, r, k in zip(idx, cv, rn, conf)
                  if not k and ((c in ("P", "LP") and r in B) or (c in ("B", "LB") and r in P))]
     # Conflicting joins the flagged group rather than the uncertain one: submitters
@@ -1626,8 +1644,9 @@ __PAGE_CSS__
     <div class="band-figure">
       <span class="band-n">__REVIEW__</span>
       <span class="band-label">variants in the review set</span>
-      <span class="band-note">Rare, and either flagged by ClinVar or protein-affecting.
-      Drawn from __TOTAL__ annotated, all of which are in this document.</span>
+      <span class="band-note">Rare, protein-affecting, and not called benign or likely
+      benign by ClinVar. Drawn from __TOTAL__ annotated, all of which are in this
+      document.</span>
     </div>
     <div class="band-scales">__SCALES__</div>
   </div>
@@ -1871,8 +1890,9 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
 
     n_unobs = ov["bands"]["not observed"]
     lede_sub = (f'<b>{ov["n_review"]:,}</b> variants are in the review set, drawn from '
-                f'<b>{stats["total"]:,}</b> annotated: rare, and either flagged by ClinVar or '
-                f'protein-affecting. <b>{n_unobs:,}</b> of them are absent from gnomAD entirely. '
+                f'<b>{stats["total"]:,}</b> annotated: rare, protein-affecting, and not called '
+                f'benign or likely benign by ClinVar. '
+                f'<b>{n_unobs:,}</b> of them are absent from gnomAD entirely. '
                 f'Everything below is counted over that review set; open any block to see all of '
                 f'its variants in the table.')
 
