@@ -232,6 +232,7 @@ PAGE_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Reference data provenance &middot; MuSA</title>
 <style>
+__FONTS__
 __TOKENS__
 __BASE_CSS__
 __PAGE_CSS__
@@ -393,6 +394,8 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     page = (PAGE_HTML
+            .replace("__FONTS__", style.load_fonts(
+                os.path.dirname(logo_path) if logo_path else None))
             .replace("__TOKENS__", style.TOKENS)
             .replace("__BASE_CSS__", style.BASE_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)

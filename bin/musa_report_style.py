@@ -10,7 +10,44 @@ No webfonts, no CDN, no network of any kind. MuSA runs offline by default and th
 read on lab desktops that may have no route out at all.
 """
 
+import base64
+import os
 import re
+import sys
+
+
+# ── typeface ──────────────────────────────────────────────────────────────────
+# Poppins, latin subset, base64-embedded. A <link> to a font CDN would break the one
+# hard promise these documents make — no network of any kind at read time — so the
+# face travels inside the file. Four weights of latin-subset woff2 cost ~42 KB
+# base64 against a ~33 MB report, which is nothing; the full family would be ten
+# times that and MuSA's reports are gene symbols, HGVS strings and English prose.
+FONT_WEIGHTS = (400, 500, 600, 700)
+
+
+def load_fonts(assets_dir):
+    """Return @font-face rules with the woff2 files inlined, or "" if unavailable.
+
+    A missing fonts directory is not an error: the stack below falls through to the
+    system sans and the document stays correct, it just stops looking like MuSA.
+    """
+    if not assets_dir:
+        return ""
+    faces = []
+    for weight in FONT_WEIGHTS:
+        path = os.path.join(assets_dir, "fonts", f"Poppins-{weight}.woff2")
+        if not os.path.isfile(path):
+            print(f"  WARNING: {path} not found, falling back to the system sans stack",
+                  file=sys.stderr)
+            return ""
+        with open(path, "rb") as fh:
+            b64 = base64.b64encode(fh.read()).decode()
+        faces.append(
+            "@font-face{font-family:Poppins;font-style:normal;font-weight:%d;"
+            "font-display:block;src:url(data:font/woff2;base64,%s) format('woff2')}"
+            % (weight, b64)
+        )
+    return "\n".join(faces)
 
 # ── tokens ────────────────────────────────────────────────────────────────────
 # Contrast against --bg, measured rather than eyeballed:
@@ -57,9 +94,13 @@ TOKENS = """
   --sig-b-lift:   oklch(0.83 0.11 165);
   --sig-nc-lift:  oklch(0.72 0.012 255);
 
-  --font-serif: ui-serif, "Iowan Old Style", Palatino, "Book Antiqua", Georgia, serif;
-  --font-sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono:  ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  /* One family carries the whole document, with weight and tracking doing the work
+     the old serif/sans split did. The serif role is gone: it resolved to Times on
+     most Linux desktops, which read as a memo from 1998 rather than as a clinical
+     record. Data stays mono, always. */
+  --font-display: Poppins, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-sans:    Poppins, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono:    ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   --step--1: 0.75rem;
   --step-0:  0.8125rem;
@@ -130,7 +171,7 @@ a:hover { text-decoration-thickness: 2px; }
 .masthead-mark { height: 40px; width: 40px; display: block; }
 .masthead-wordmark {
   display: flex; align-items: baseline; gap: 0.4rem;
-  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
+  font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
   letter-spacing: -0.015em; line-height: 1;
 }
 .masthead-version {
@@ -152,14 +193,14 @@ a:hover { text-decoration-thickness: 2px; }
 .wrap { padding: 1.5rem; max-width: 1800px; margin-inline: auto; }
 
 h1.doc-title {
-  font-family: var(--font-serif); font-weight: 600;
+  font-family: var(--font-display); font-weight: 600;
   font-size: var(--step-4); letter-spacing: -0.015em;
   text-wrap: balance; margin-bottom: 0.25rem;
 }
 .doc-sub { color: var(--ink-muted); font-size: var(--step-1); text-wrap: pretty; }
 
 h2.section-title {
-  font-family: var(--font-serif); font-weight: 600;
+  font-family: var(--font-display); font-weight: 600;
   font-size: var(--step-2); letter-spacing: -0.01em;
   margin-bottom: 0.75rem;
 }

@@ -128,21 +128,28 @@ compare garbage. Both documents currently pass WCAG 2.2 AA on every text node.
 
 ## Typography
 
-Three system stacks, no webfonts. A downloaded font is a network dependency or a multi-hundred-KB
-data URI; neither is acceptable here, and system stacks render natively on the lab desktops these
-open on.
+**Poppins**, vendored and embedded, plus a monospace system stack for data.
 
 ```
---font-serif  ui-serif, "Iowan Old Style", Palatino, "Book Antiqua", Georgia, serif
---font-sans   ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial
---font-mono   ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace
+--font-display  Poppins, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial
+--font-sans     Poppins, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial
+--font-mono     ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace
 ```
 
-- **Serif** carries document identity only: the report title and section headings. It is what makes
-  the page read as a record rather than a dashboard, and it is the contrast axis against the sans.
-- **Sans** carries all UI: controls, labels, buttons, prose.
-- **Mono** carries all genomic and numeric data: coordinates, HGVS, allele frequencies, checksums,
-  versions. Always with `font-variant-numeric: tabular-nums` so digits align in columns.
+One family carries the document, with **weight and tracking doing the work a serif/sans split used
+to do**. The previous system stack put `ui-serif` on titles, which resolves to Times on most Linux
+desktops: it read as a memo from 1998 rather than as a clinical record.
+
+**Mono** still carries every genomic and numeric value: coordinates, HGVS, allele frequencies,
+checksums, versions, counts. Always with `font-variant-numeric: tabular-nums`. A geometric sans is
+the wrong tool for a column of digits, and Poppins is a particularly bad one — its `1`, `l` and `I`
+are close to identical.
+
+The font is **base64-embedded, not linked** (`load_fonts()` in `bin/musa_report_style.py`). A
+`<link>` to a font CDN would break the one hard promise these documents make. Four weights of the
+latin subset cost about 42 KB against a ~33 MB report. `assets/fonts/` carries the woff2 files and
+the SIL OFL licence; if that directory is missing the stack falls through to the system sans and the
+document stays correct, it just stops looking like MuSA.
 
 Fixed rem scale, ratio ~1.2. No fluid `clamp()` headings: these are read at a consistent desk
 distance, and a heading that reflows with the window looks worse, not better.
@@ -174,8 +181,14 @@ each linking out to `hpo.jax.org`. Those terms are the reason the case is being 
 were previously nowhere in the document; offline MuSA has the identifiers but not their names, so
 the identifier is the link text. Right carries the review-set figure and the two spectra.
 
-The band carries the review-set count as a single large figure, and each classifier as a
-proportional spectrum with a legend beneath it. Everything in the band is counted **over the review
+The band carries the review-set count as a single large figure, and each classifier as a row of
+labelled count boxes (`P 4`, `VUS 106`, `NC 657`).
+
+Those were a proportional stacked bar, and it was dropped for being an honest figure that showed the
+wrong thing. On the review set ClinVar has no classification for the large majority, so the bar was
+mostly one grey block: the segment holding the four variants the reader is actually hunting rendered
+as a 7px sliver, while "never seen" filled the width. Equal boxes give every class the same
+visibility whether it holds four variants or six hundred. Everything in the band is counted **over the review
 set**, the same denominator as the findings below. It used to count every annotated variant, which
 put "P 3" directly above "ClinVar flagged 2": two true numbers and a contradiction on screen.
 

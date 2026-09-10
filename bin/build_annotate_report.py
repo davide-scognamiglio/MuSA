@@ -516,7 +516,7 @@ PAGE_CSS = """
 }
 .band-case { border-right: 1px solid var(--band-line); padding-right: 2.5rem; }
 .case-id {
-  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
+  font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
   letter-spacing: -0.01em; margin-bottom: 0.6rem;
 }
 .case-meta {
@@ -570,38 +570,26 @@ PAGE_CSS = """
 }
 .scale-meta { font-size: var(--step--1); color: var(--band-muted); }
 
-/* Proportional, so the reader sees at a glance that ClinVar has no opinion about
-   most of the review set. Segments grow by count and floor at 5px, because a class
-   with three variants in it must still be visible. */
-.spectrum {
-  display: flex; gap: 2px; height: 16px;
-  border-radius: 3px; overflow: hidden;
-}
-.spectrum span { min-width: 5px; border-radius: 2px; }
-.spectrum .sig-p   { background: var(--sig-p-lift); }
-.spectrum .sig-lp  { background: var(--sig-lp-lift); }
-.spectrum .sig-vus { background: var(--sig-vus-lift); }
-.spectrum .sig-lb  { background: var(--sig-lb-lift); }
-.spectrum .sig-b   { background: var(--sig-b-lift); }
-.spectrum .sig-nc  { background: var(--sig-nc-lift); }
-
-.scale-legend {
-  display: flex; flex-wrap: wrap; gap: 0.3rem 1rem;
-  margin-top: 0.45rem; list-style: none;
-}
+/* Each class as its own bordered box with the count beside the code. Every class is
+   equally visible whether it holds four variants or six hundred, which is the point:
+   the four are the ones being looked for. */
+.scale-keys { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .key {
-  display: inline-flex; align-items: baseline; gap: 0.35rem;
-  font-family: var(--font-mono); font-size: var(--step--1);
+  display: inline-flex; align-items: baseline; gap: 0.45rem;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-mono); font-size: var(--step-0);
   font-variant-numeric: tabular-nums;
+  border: 1px solid currentColor; border-radius: var(--radius);
 }
 .key b { font-weight: 700; letter-spacing: 0.03em; }
-.key .key-n { color: var(--band-ink); }
-.key.sig-p   b { color: var(--sig-p-lift); }
-.key.sig-lp  b { color: var(--sig-lp-lift); }
-.key.sig-vus b { color: var(--sig-vus-lift); }
-.key.sig-lb  b { color: var(--sig-lb-lift); }
-.key.sig-b   b { color: var(--sig-b-lift); }
-.key.sig-nc  b { color: var(--sig-nc-lift); }
+.key .key-n { color: var(--band-ink); font-weight: 500; }
+.key.sig-p   { color: var(--sig-p-lift); }
+.key.sig-lp  { color: var(--sig-lp-lift); }
+.key.sig-vus { color: var(--sig-vus-lift); }
+.key.sig-lb  { color: var(--sig-lb-lift); }
+.key.sig-b   { color: var(--sig-b-lift); }
+/* Dashed, matching the chip convention: "not classified" is an absence, not a class. */
+.key.sig-nc  { color: var(--sig-nc-lift); border-style: dashed; }
 
 /* ── overview ─────────────────────────────────────────────────────────────── */
 /* Findings on the left, the selected variant's evidence on the right. A reader
@@ -621,42 +609,50 @@ PAGE_CSS = """
   padding: 1rem 1.15rem 1.25rem;
   background: var(--surface);
 }
-.ov-head h2 {
-  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
-}
 .findings-sub {
-  margin-top: 0.35rem; color: var(--ink-muted);
-  font-size: var(--step-0); max-width: 72ch; text-wrap: pretty;
+  color: var(--ink-muted);
+  font-size: var(--step-0); max-width: 74ch; text-wrap: pretty;
 }
 .findings-sub b { color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* ── priority findings ────────────────────────────────────────────────────── */
-.priority { display: flex; flex-direction: column; gap: 1.5rem; margin-top: 1.5rem; }
-.priority-group { border-top: 1px solid var(--border); padding-top: 0.85rem; }
+/* Each block is its own bounded object. They were separated only by a hairline and a
+   gap, which left five lists reading as one long list; a reader could not see where
+   one reason to look ended and the next began. */
+.priority { display: flex; flex-direction: column; gap: 1.75rem; margin-top: 1.5rem; }
+.priority-group {
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--surface); overflow: hidden;
+}
 .priority-head {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: baseline; gap: 0.65rem; width: 100%;
-  padding: 0.2rem 0.4rem 0.35rem; margin-left: -0.4rem;
-  background: none; border: 0; border-radius: var(--radius);
+  align-items: center; gap: 0.75rem; width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--surface-sunken);
+  border: 0; border-bottom: 1px solid var(--border);
   font: inherit; text-align: left; cursor: pointer;
 }
-.priority-head:hover { background: var(--surface-sunken); }
-.priority-head:hover .priority-open { color: var(--accent); text-decoration: underline; }
+.priority-head:hover { background: var(--accent-weak); }
+.priority-head:hover .priority-open { text-decoration: underline; }
 .priority-n {
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: var(--step-2); font-weight: 600; line-height: 1;
-  min-width: 3ch; text-align: right;
+  font-size: var(--step-4); font-weight: 700; line-height: 1;
+  min-width: 3ch; text-align: right; letter-spacing: -0.02em;
 }
 .priority-group[data-tone="p"]   .priority-n { color: var(--sig-p); }
 .priority-group[data-tone="lp"]  .priority-n { color: var(--sig-lp); }
 .priority-group[data-tone="acc"] .priority-n { color: var(--accent); }
-.priority-title { font-size: var(--step-1); font-weight: 600; }
+.priority-title {
+  font-family: var(--font-display);
+  font-size: var(--step-2); font-weight: 600; letter-spacing: -0.01em;
+  line-height: 1.2; text-wrap: balance;
+}
 .priority-open {
   font-size: var(--step--1); color: var(--accent); white-space: nowrap;
 }
 .priority-why {
   font-size: var(--step--1); color: var(--ink-muted);
-  margin: -0.15rem 0 0.55rem 3.65rem;
+  padding: 0.6rem 1rem 0; text-wrap: pretty;
 }
 /* Gene and disease are the headline of the row, on one line and at reading size:
    "CPT2 p.Ser113Leu P" never says what the variant is pathogenic *for*, and that is
@@ -666,15 +662,16 @@ PAGE_CSS = """
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: baseline; gap: 0.2rem 0.75rem; width: 100%;
-  padding: 0.5rem 0.4rem; margin-left: -0.4rem;
-  background: none; border: 0; border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  background: none; border: 0;
   font: inherit; text-align: left; cursor: pointer;
 }
 .finding + .finding { border-top: 1px solid var(--border); }
+.finding:first-of-type { border-top: 1px solid var(--border); margin-top: 0.6rem; }
 .finding:hover { background: var(--surface-sunken); }
 .finding[aria-current="true"] {
   background: var(--accent-weak);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 /* The triage signals that decide whether a row is worth opening: impact, zygosity,
    absence from gnomAD, the gene's established relationship. Reading them off the
@@ -699,7 +696,11 @@ PAGE_CSS = """
   font-family: var(--font-mono); font-size: var(--step--1); color: var(--ink-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.priority-more { font-size: var(--step--1); color: var(--ink-muted); margin-top: 0.45rem; }
+.priority-more {
+  font-size: var(--step--1); color: var(--ink-muted);
+  padding: 0.6rem 1rem; background: var(--surface-sunken);
+  border-top: 1px solid var(--border);
+}
 .priority-none { font-size: var(--step-0); color: var(--ink-muted); margin-top: 1rem; }
 .ov-actions { margin-top: 1.75rem; }
 
@@ -807,7 +808,7 @@ table.variants tbody td.col-af { text-align: right; }
   border-radius: 3px; background: var(--surface-sunken);
 }
 .detail h3 {
-  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
+  font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
   margin-bottom: 0.15rem;
 }
 .detail-change {
@@ -1619,6 +1620,7 @@ PAGE_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>__PATIENT__ &middot; MuSA variant review</title>
 <style>
+__FONTS__
 __TOKENS__
 __BASE_CSS__
 __PAGE_CSS__
@@ -1632,7 +1634,7 @@ __PAGE_CSS__
 
 <section class="band">
   <div class="band-case">
-    <h2 class="case-id">Patient __PATIENT__</h2>
+    <h1 class="case-id">Patient __PATIENT__</h1>
     <dl class="case-meta">
       <dt>Assembly</dt><dd>hg38</dd>
       <dt>Generated</dt><dd>__GENERATED__</dd>
@@ -1655,7 +1657,6 @@ __PAGE_CSS__
 <main class="view" id="view-overview">
   <section class="overview">
     <div class="ov-main">
-      <h2>Findings</h2>
       <p class="findings-sub">__LEDE_SUB__</p>
       <div class="priority">__PRIORITY__</div>
       <div class="ov-actions no-print">
@@ -1725,26 +1726,25 @@ SIG_CLASS = {"P": "sig-p", "LP": "sig-lp", "VUS": "sig-vus",
 
 
 def _scale_html(name, counts, meta=""):
-    """One classifier as a proportional spectrum plus a legend.
+    """One classifier as a row of labelled count chips.
 
-    The spectrum is the figure and the legend is the reading of it: colour is never
-    the only carrier, so every band that exists also appears as a code and a count.
+    This was a proportional stacked bar. It was dropped because it was mostly one
+    grey block: on the review set ClinVar has no classification for the large
+    majority, so the segment carrying the four variants that matter was a 7px sliver
+    while "never seen" filled the width. The figure spent all its ink on the least
+    interesting fact and made the most interesting one invisible.
     """
     order = [k for k in style.SIG_SCALE + ["NC"] if counts.get(k)]
     if not order:
         return ""
-    spoken = ", ".join(f"{counts[k]} {SIG_WORDS[k]}" for k in order)
-    segs = "".join(
-        f'<span class="{SIG_CLASS[k]}" style="flex-grow:{counts[k]}"></span>' for k in order)
     keys = "".join(
-        f'<li class="key {SIG_CLASS[k]}"><b>{k}</b>'
-        f'<span class="key-n">{counts[k]:,}</span></li>' for k in order)
+        f'<span class="key {SIG_CLASS[k]}"><b>{k}</b>'
+        f'<span class="key-n">{counts[k]:,}</span>'
+        f'<span class="sr-only"> {SIG_WORDS[k]}</span></span>' for k in order)
     return (
         f'<div class="scale"><div class="scale-head"><span class="scale-name">{name}</span>'
         f'<span class="scale-meta">{meta}</span></div>'
-        f'<div class="spectrum" role="img" aria-label="{html_escape(name)} over the review set: '
-        f'{html_escape(spoken)}">{segs}</div>'
-        f'<ul class="scale-legend">{keys}</ul></div>'
+        f'<div class="scale-keys">{keys}</div></div>'
     )
 
 
@@ -1877,7 +1877,7 @@ def _hpo_html(terms):
 
 
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
-                    version="", hpo=()):
+                    version="", hpo=(), assets_dir=None):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
@@ -1932,6 +1932,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
     )
 
     return (PAGE_HTML
+            .replace("__FONTS__", style.load_fonts(assets_dir))
             .replace("__TOKENS__", style.TOKENS)
             .replace("__BASE_CSS__", style.BASE_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)
@@ -2002,6 +2003,9 @@ def main():
         mode="offline" if offline else "online",
         version=params["version"],
         hpo=hpo,
+        # The typefaces live beside the logo, in the same assets directory the module
+        # already passes in, so no new argument has to be threaded through Nextflow.
+        assets_dir=(os.path.dirname(params["logo_path"]) if params["logo_path"] else None),
     )
 
     out_file = f"{patient}_maf_dashboard.html"
