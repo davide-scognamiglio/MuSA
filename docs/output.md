@@ -30,7 +30,9 @@ results/
 
 - `<patient>.raw.maf`
   - Every variant that survived preprocessing, annotated by all four branches and merged into one
-    table. Up to ~937 columns per variant in extended mode, one row per variant.
+    table. 946 columns per variant in extended mode as of this version (basic mode has fewer,
+    since it skips the VEP plugin columns), one row per variant. This number grows as annotation
+    sources are added -- treat it as approximate rather than a stable interface.
 - `<patient>.filtered.maf`
   - The same table after the three-tier filter: gene panel (`--panel`), HPO-matched gene panel
     (from the samplesheet's `hpo` column), and allele frequency (`--max_freq`), plus
