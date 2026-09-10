@@ -282,8 +282,8 @@ def review_flags(df):
 # them. One definition drives three things: the blocks on the overview, the filter
 # the table opens under when a block is clicked, and the label of that filter.
 GROUPS = [
-    ("flagged",    "ClinVar flagged",
-     "pathogenic, likely pathogenic or conflicting in ClinVar"),
+    ("flagged",    "ClinVar pathogenic",
+     "pathogenic or likely pathogenic in ClinVar"),
     ("lof",        "Loss of function in an established disease gene",
      "a high-impact change in a gene ClinGen ties to a disease with definitive or "
      "strong evidence"),
@@ -402,7 +402,6 @@ def overview(df, flags):
 
     cv = [style.clinvar_chip(sig.iloc[i])[1] for i in idx]
     rn = [style.renovo_chip(rnv.iloc[i])[1] for i in idx]
-    conf = [style.is_conflicting(sig.iloc[i]) for i in idx]
     P, B = RENOVO_PATHOGENIC, RENOVO_BENIGN
 
     novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r in P]
@@ -410,13 +409,12 @@ def overview(df, flags):
     # review set no longer admits ClinVar B or LB (see REVIEWABLE_CLINVAR), so the
     # second arm is empty unless that filter is widened again. Kept because the group
     # means "the two classifiers disagree", not "ClinVar says pathogenic".
-    contested = [i for i, c, r, k in zip(idx, cv, rn, conf)
-                 if not k and ((c in ("P", "LP") and r in B) or (c in ("B", "LB") and r in P))]
-    # Conflicting joins the flagged group rather than the uncertain one: submitters
-    # disagreeing is a reason to read the variant, not a reason to park it.
-    flagged = [i for i, c, k in zip(idx, cv, conf) if c in ("P", "LP") or k]
-    escalated = [i for i, c, r, k in zip(idx, cv, rn, conf)
-                 if c == "VUS" and not k and r in P]
+    contested = [i for i, c, r in zip(idx, cv, rn)
+                 if (c in ("P", "LP") and r in B) or (c in ("B", "LB") and r in P)]
+    # Strictly P and LP. Conflicting is chipped VUS and stays with the uncertain
+    # variants, so this block means exactly what its title says.
+    flagged = [i for i, c in zip(idx, cv) if c in ("P", "LP")]
+    escalated = [i for i, c, r in zip(idx, cv, rn) if c == "VUS" and r in P]
 
     # Two groups that come from the variant and the gene rather than from either
     # classifier, so they surface candidates no classifier has flagged yet.
@@ -509,12 +507,14 @@ PAGE_CSS = """
    identity used to sit in the masthead beside the logo, which is the wrong place for
    it — the masthead identifies the software, the band identifies the patient. */
 .band {
-  display: grid; gap: 1.5rem 2.5rem; align-items: start;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 2fr);
+  display: grid; gap: 1.5rem 2rem; align-items: start;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.5fr) minmax(0, 0.85fr);
   padding: 1.4rem 1.5rem;
   background: var(--band); color: var(--band-ink);
 }
-.band-case { border-right: 1px solid var(--band-line); padding-right: 2.5rem; }
+.band-case, .band-stats {
+  border-right: 1px solid var(--band-line); padding-right: 2rem;
+}
 .case-id {
   font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
   letter-spacing: -0.01em; margin-bottom: 0.6rem;
@@ -555,10 +555,34 @@ PAGE_CSS = """
   letter-spacing: -0.02em;
 }
 .band-label { font-size: var(--step-1); font-weight: 600; }
-.band-note {
+
+/* ── findings index ───────────────────────────────────────────────────────── */
+/* The blocks below, listed with their counts, as the way into them. It answers
+   "what did this case turn up, and how much of it" before a single row is read, and
+   it saves scrolling past four blocks to reach the fifth. */
+.band-index { display: grid; gap: 0.1rem; align-content: start; }
+.band-index-label {
   font-size: var(--step--1); color: var(--band-muted);
-  max-width: 34ch; text-wrap: pretty;
+  margin-bottom: 0.35rem;
 }
+.index-item {
+  display: grid; grid-template-columns: 3.5ch minmax(0, 1fr);
+  align-items: baseline; gap: 0.6rem; width: 100%;
+  padding: 0.28rem 0.4rem; margin-left: -0.4rem;
+  background: none; border: 0; border-radius: var(--radius);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.index-item:hover { background: oklch(1 0 0 / 0.07); }
+.index-item:hover .index-title { text-decoration: underline; }
+.index-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-1); font-weight: 700; text-align: right;
+}
+.index-item[data-tone="p"]   .index-n { color: var(--sig-p-lift); }
+.index-item[data-tone="lp"]  .index-n { color: var(--sig-lp-lift); }
+.index-item[data-tone="acc"] .index-n { color: var(--band-link); }
+.index-title { font-size: var(--step--1); text-wrap: pretty; }
+.band-index-none { font-size: var(--step--1); color: var(--band-muted); font-style: italic; }
 
 .band-scales { display: grid; gap: 1rem; }
 .scale-head {
@@ -609,12 +633,6 @@ PAGE_CSS = """
   padding: 1rem 1.15rem 1.25rem;
   background: var(--surface);
 }
-.findings-sub {
-  color: var(--ink-muted);
-  font-size: var(--step-0); max-width: 74ch; text-wrap: pretty;
-}
-.findings-sub b { color: var(--ink); font-variant-numeric: tabular-nums; }
-
 /* ── priority findings ────────────────────────────────────────────────────── */
 /* Each block is its own bounded object. They were separated only by a hairline and a
    gap, which left five lists reading as one long list; a reader could not see where
@@ -623,11 +641,14 @@ PAGE_CSS = """
 .priority-group {
   border: 1px solid var(--border-strong); border-radius: var(--radius);
   background: var(--surface); overflow: hidden;
+  /* The masthead is sticky, so a block jumped to from the index would otherwise
+     land with its header underneath it. */
+  scroll-margin-top: 5rem;
 }
 .priority-head {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center; gap: 0.75rem; width: 100%;
-  padding: 0.75rem 1rem;
+  align-items: center; gap: 0.65rem; width: 100%;
+  padding: 0.75rem 1rem 0.75rem 0.65rem;
   background: var(--surface-sunken);
   border: 0; border-bottom: 1px solid var(--border);
   font: inherit; text-align: left; cursor: pointer;
@@ -637,7 +658,7 @@ PAGE_CSS = """
 .priority-n {
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: var(--step-4); font-weight: 700; line-height: 1;
-  min-width: 3ch; text-align: right; letter-spacing: -0.02em;
+  min-width: 2.4ch; text-align: right; letter-spacing: -0.02em;
 }
 .priority-group[data-tone="p"]   .priority-n { color: var(--sig-p); }
 .priority-group[data-tone="lp"]  .priority-n { color: var(--sig-lp); }
@@ -893,9 +914,15 @@ table.qual td {
   .ov-detail { position: static; max-height: none; }
 }
 
+@media (max-width: 1280px) {
+  .band { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); }
+  .band-stats { border-right: 0; padding-right: 0; }
+  .band-index { grid-column: 1 / -1; padding-top: 1.25rem; border-top: 1px solid var(--band-line); }
+}
+
 @media (max-width: 1000px) {
   .band, .band-stats { grid-template-columns: minmax(0, 1fr); }
-  .band-case {
+  .band-case, .band-stats {
     border-right: 0; padding-right: 0;
     border-bottom: 1px solid var(--band-line); padding-bottom: 1.25rem;
   }
@@ -1547,6 +1574,20 @@ PAGE_JS = r"""
     });
   });
 
+  // The band's index jumps to a block on the findings page. It works from the table
+  // view too, so it doubles as the way back to a specific block rather than to the
+  // top of the page.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-jump]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var target = document.getElementById(btn.dataset.jump);
+      if (!target) return;
+      if (!tableView.hidden) showView("overview");
+      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      target.querySelector(".priority-head").focus({ preventScroll: true });
+    });
+  });
+
   document.getElementById("openTable").addEventListener("click", function () {
     setGroup(null);
     rebuild();
@@ -1645,19 +1686,16 @@ __PAGE_CSS__
   <div class="band-stats">
     <div class="band-figure">
       <span class="band-n">__REVIEW__</span>
-      <span class="band-label">variants in the review set</span>
-      <span class="band-note">Rare, protein-affecting, and not called benign or likely
-      benign by ClinVar. Drawn from __TOTAL__ annotated, all of which are in this
-      document.</span>
+      <span class="band-label" title="Rare, protein-affecting, and not called benign or likely benign by ClinVar. Drawn from __TOTAL__ annotated, all of which are in this document.">variants in the review set</span>
     </div>
     <div class="band-scales">__SCALES__</div>
   </div>
+  <nav class="band-index" aria-label="Findings blocks">__INDEX__</nav>
 </section>
 
 <main class="view" id="view-overview">
   <section class="overview">
     <div class="ov-main">
-      <p class="findings-sub">__LEDE_SUB__</p>
       <div class="priority">__PRIORITY__</div>
       <div class="ov-actions no-print">
         <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
@@ -1888,21 +1926,13 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
         + _scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier")
     )
 
-    n_unobs = ov["bands"]["not observed"]
-    lede_sub = (f'<b>{ov["n_review"]:,}</b> variants are in the review set, drawn from '
-                f'<b>{stats["total"]:,}</b> annotated: rare, protein-affecting, and not called '
-                f'benign or likely benign by ClinVar. '
-                f'<b>{n_unobs:,}</b> of them are absent from gnomAD entirely. '
-                f'Everything below is counted over that review set; open any block to see all of '
-                f'its variants in the table.')
-
     # ── findings blocks, grouped by why a variant is here ────────────────────
     # Each block header is the control that opens the table filtered to that block,
     # so the number a reader sees and the rows they get are the same set by
     # construction rather than by two definitions that could drift.
     tones = {"flagged": "p", "lof": "p", "biallelic": "lp", "escalated": "lp",
              "novel": "acc", "contested": "p"}
-    blocks = []
+    blocks, index = [], []
     for key, title, why in GROUPS:
         items = ov[key]
         if not items:
@@ -1911,7 +1941,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
         more = (f'<p class="priority-more">{len(items) - shown:,} more in this group</p>'
                 if len(items) > shown else "")
         blocks.append(
-            f'<section class="priority-group" data-tone="{tones[key]}">'
+            f'<section class="priority-group" id="g-{key}" data-tone="{tones[key]}">'
             f'<button class="priority-head" type="button" data-group="{key}" '
             f'data-group-label="{html_escape(title)}">'
             f'<span class="priority-n">{len(items):,}</span>'
@@ -1921,9 +1951,18 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             f'<p class="priority-why">{html_escape(why)}</p>'
             f'{_finding_rows(df, items)}{more}</section>'
         )
+        index.append(
+            f'<button class="index-item" type="button" data-jump="g-{key}" '
+            f'data-tone="{tones[key]}">'
+            f'<span class="index-n">{len(items):,}</span>'
+            f'<span class="index-title">{html_escape(title)}</span></button>'
+        )
     priority_html = "".join(blocks) or (
         '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
         'pathogenic by ReNOVo. The full variant table is still one click away.</p>')
+    index_html = (
+        '<span class="band-index-label">Findings</span>' + "".join(index) if index
+        else '<span class="band-index-none">No findings blocks on this case.</span>')
 
     headers = "".join(
         f'<th scope="col" tabindex="0" data-key="{c["k"]}">{c["label"]}'
@@ -1937,8 +1976,8 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__BASE_CSS__", style.BASE_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)
             .replace("__PAGE_JS__", PAGE_JS)
-            .replace("__LEDE_SUB__", lede_sub)
             .replace("__PRIORITY__", priority_html)
+            .replace("__INDEX__", index_html)
             .replace("__SCALES__", scales)
             .replace("__HPO__", _hpo_html(hpo))
             .replace("__NCOL__", str(len(payload["main"])))

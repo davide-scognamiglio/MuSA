@@ -103,8 +103,9 @@ named (`.chip-src`).
 
 ClinVar's *conflicting classifications* shares the `VUS` chip, because five steps is the scale, but
 it is not the same finding as an uncertain classification: it means submitters disagree. Anything
-that needs to tell them apart calls `is_conflicting()`. It sorts above VUS, and it joins the flagged
-findings group rather than the uncertain one.
+that needs to tell them apart calls `is_conflicting()`, and it sorts above VUS. It stays with the
+uncertain variants rather than the pathogenic ones, so the *ClinVar pathogenic* block means exactly
+what its title says: `P` and `LP`, nothing else.
 
 Measured under simulated deuteranopia and protanopia, the ramp separates where it matters and
 converges where it does not:
@@ -181,8 +182,13 @@ each linking out to `hpo.jax.org`. Those terms are the reason the case is being 
 were previously nowhere in the document; offline MuSA has the identifiers but not their names, so
 the identifier is the link text. Right carries the review-set figure and the two spectra.
 
-The band carries the review-set count as a single large figure, and each classifier as a row of
-labelled count boxes (`P 4`, `VUS 106`, `NC 657`).
+The band has three parts: the case, then the review-set count as a single large figure with each
+classifier as a row of labelled count boxes (`P 4`, `VUS 106`, `NC 657`), then an **index of the
+findings blocks** with their counts, each one jumping to its block.
+
+The index answers "what did this case turn up, and how much of it" before a row is read, and it
+saves scrolling past four blocks to reach the fifth. It works from the table view too, so it is also
+the way back to a particular block rather than to the top of the page.
 
 Those were a proportional stacked bar, and it was dropped for being an honest figure that showed the
 wrong thing. On the review set ClinVar has no classification for the large majority, so the bar was
@@ -223,7 +229,7 @@ control that opens the table filtered to exactly that block. One definition (`GR
 
 | block | why |
 |---|---|
-| ClinVar flagged | pathogenic, likely pathogenic or conflicting |
+| ClinVar pathogenic | pathogenic or likely pathogenic |
 | Loss of function in an established disease gene | `IMPACT` HIGH in a gene ClinGen rates definitive or strong |
 | Homozygous or hemizygous | `AC == AN`: no wild-type allele was called |
 | ClinVar VUS, ReNOVo pathogenic | uncertain to ClinVar, called by MuSA |
