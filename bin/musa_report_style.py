@@ -100,12 +100,12 @@ a:hover { text-decoration-thickness: 2px; }
   position: sticky; top: 0; z-index: var(--z-sticky);
   display: flex; align-items: center; justify-content: space-between;
   gap: 1.5rem;
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.5rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 .masthead-id { display: flex; align-items: center; gap: 0.875rem; min-width: 0; }
-.masthead-logo { height: 27px; width: auto; display: block; }
+.masthead-logo { height: 44px; width: auto; display: block; }
 .masthead-wordmark {
   font-family: var(--font-serif); font-size: var(--step-2); font-weight: 600;
   letter-spacing: -0.01em;

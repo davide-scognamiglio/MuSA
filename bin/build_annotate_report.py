@@ -160,7 +160,7 @@ def review_flags(df):
 
 
 # ── payload ───────────────────────────────────────────────────────────────────
-def build_payload(df, main_cols, detail_cols, flags):
+def build_payload(df, main_cols, detail_cols, flags, prio):
     """Columnar, per-column dictionary-encoded JSON.
 
     Row-oriented JSON for a 68k exome is 66 MB; this is 26 MB, and it stays plain JSON that any
@@ -184,6 +184,85 @@ def build_payload(df, main_cols, detail_cols, flags):
         "detail": [{"k": k, "label": lbl} for k, lbl in detail_cols],
         "data": data,
         "review": flags,
+        "prio": prio,
+    }
+
+
+# Clinical priority ordering. The table sorts on this by default: a reviewer opening
+# the report should land on the ClinVar pathogenic calls, not on alphabetical genes.
+SIG_RANK = {"P": 6, "LP": 5, "CONF": 4, "VUS": 3, "LB": 2, "B": 1, "NC": 0}
+
+
+def priority_scores(df):
+    """Per-row sort key: ClinVar rank first, then a ReNOVo pathogenic call, then rarity.
+
+    Encoded as one number so the JS sorts on a plain array:
+        rank * 1000  +  renovo_pathogenic * 100  +  rarity_bonus
+    """
+    sig = df["encoded_CLNSIG"] if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
+    rnv = df["RENOVO_Class"] if "RENOVO_Class" in df.columns else pd.Series([""] * len(df))
+    af = pd.to_numeric(df["MAX_AF"], errors="coerce") if "MAX_AF" in df.columns else pd.Series([None] * len(df))
+
+    out = []
+    for s, r, a in zip(sig.fillna(""), rnv.fillna(""), af):
+        rank = SIG_RANK.get(style.clinvar_chip(s)[1], 0)
+        patho = 1 if style.renovo_chip(r)[1] == "PATH" else 0
+        rare = 10 if (a != a or a is None) else (5 if a < 1e-4 else 0)   # a != a catches NaN
+        out.append(rank * 1000 + patho * 100 + rare)
+    return out
+
+
+def overview(df, flags):
+    """Everything the dashboard above the table needs, computed once in Python."""
+    idx = [i for i, f in enumerate(flags) if f]
+    sig = df["encoded_CLNSIG"].fillna("") if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
+    rnv = df["RENOVO_Class"].fillna("") if "RENOVO_Class" in df.columns else pd.Series([""] * len(df))
+    csq = df["Consequence"].fillna("") if "Consequence" in df.columns else pd.Series([""] * len(df))
+    af = pd.to_numeric(df["MAX_AF"], errors="coerce") if "MAX_AF" in df.columns else pd.Series([None] * len(df))
+
+    cv = [style.clinvar_chip(sig.iloc[i])[1] for i in idx]
+    rn = [style.renovo_chip(rnv.iloc[i])[1] for i in idx]
+
+    # Concordance between the two independent calls. This is the figure that is
+    # specific to MuSA: nothing else in the report shows where its own classifier
+    # and ClinVar disagree, or where it has an opinion and ClinVar has none.
+    matrix = {}
+    for c, r in zip(cv, rn):
+        matrix[(c, r)] = matrix.get((c, r), 0) + 1
+
+    novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r == "PATH"]
+    contested = [i for i, c, r in zip(idx, cv, rn)
+                 if (c in ("P", "LP") and r == "BEN") or (c in ("B", "LB") and r == "PATH")]
+    flagged = [i for i, c in zip(idx, cv) if c in ("P", "LP", "CONF")]
+    escalated = [i for i, c, r in zip(idx, cv, rn) if c == "VUS" and r == "PATH"]
+
+    consequences = {}
+    for i in idx:
+        parts = style.split_consequences(csq.iloc[i])
+        if parts:
+            consequences[parts[0]] = consequences.get(parts[0], 0) + 1
+
+    bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
+    for i in idx:
+        a = af.iloc[i]
+        if a != a or a is None:
+            bands["not observed"] += 1
+        elif a < 1e-4:
+            bands["under 0.01%"] += 1
+        elif a < 1e-3:
+            bands["0.01% to 0.1%"] += 1
+        else:
+            bands["0.1% to 1%"] += 1
+
+    return {
+        "matrix": matrix,
+        "novel": novel,
+        "contested": contested,
+        "flagged": flagged,
+        "escalated": escalated,
+        "consequences": sorted(consequences.items(), key=lambda kv: -kv[1]),
+        "bands": bands,
+        "n_review": len(idx),
     }
 
 
@@ -207,6 +286,112 @@ def summarise(df, flags):
 
 # ── page CSS ──────────────────────────────────────────────────────────────────
 PAGE_CSS = """
+/* ── findings banner ──────────────────────────────────────────────────────── */
+/* The first thing on the page is a sentence, not a number. A clinician opening a
+   case wants the conclusion; the counts are the supporting detail underneath. */
+.findings {
+  padding: 1.5rem 1.5rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.findings-lede {
+  font-family: var(--font-serif);
+  font-size: var(--step-3); line-height: 1.35;
+  max-width: 68ch; text-wrap: pretty;
+}
+.findings-lede b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.findings-lede .n-alert { color: var(--sig-p); }
+.findings-lede .n-novel { color: var(--accent); }
+.findings-sub {
+  margin-top: 0.4rem; color: var(--ink-muted);
+  font-size: var(--step-0); max-width: 68ch;
+}
+
+/* ── priority findings ────────────────────────────────────────────────────── */
+.priority { display: grid; gap: 1.25rem 2rem; padding: 1.25rem 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  border-bottom: 1px solid var(--border); background: var(--surface); }
+.priority-group h3 {
+  font-size: var(--step-0); font-weight: 600; margin-bottom: 0.1rem;
+}
+.priority-why { font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.5rem; }
+.finding {
+  display: grid; grid-template-columns: minmax(6ch, max-content) minmax(0, 1fr) auto auto;
+  align-items: center; gap: 0.5rem; width: 100%;
+  padding: 0.3rem 0.4rem; margin-left: -0.4rem;
+  background: none; border: 0; border-radius: var(--radius);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.finding:hover { background: var(--surface-sunken); }
+.finding-gene { font-weight: 700; white-space: nowrap; }
+.finding-change {
+  font-family: var(--font-mono); font-size: var(--step--1); color: var(--ink-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.priority-more { font-size: var(--step--1); color: var(--ink-muted); margin-top: 0.35rem; }
+.priority-none { font-size: var(--step--1); color: var(--ink-muted); }
+
+/* ── charts ───────────────────────────────────────────────────────────────── */
+.charts {
+  display: grid; gap: 1.5rem 2rem; padding: 1.25rem 1.5rem 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  border-bottom: 1px solid var(--border); background: var(--surface);
+}
+.chart h3 { font-size: var(--step-0); font-weight: 600; }
+.chart-why { font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.6rem; }
+.chart-empty { font-size: var(--step--1); color: var(--ink-muted); }
+
+.bar-row {
+  display: grid; grid-template-columns: minmax(0,17ch) 1fr 5ch;
+  align-items: center; gap: 0.6rem; padding: 0.13rem 0;
+}
+.bar-label {
+  font-size: var(--step--1); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.bar-track { height: 9px; background: var(--surface-sunken); border-radius: 2px; }
+.bar-fill { display: block; height: 100%; border-radius: 2px; }
+.bar-fill.tone-accent { background: var(--accent); }
+.bar-fill.tone-p      { background: var(--sig-p); }
+.bar-fill.tone-lp     { background: var(--sig-lp); }
+.bar-fill.tone-vus    { background: var(--sig-vus); }
+.bar-fill.tone-nc     { background: var(--sig-nc); }
+.bar-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step--1); text-align: right; color: var(--ink-muted);
+}
+
+table.matrix { border-collapse: collapse; font-size: var(--step--1); }
+table.matrix th {
+  font-weight: 600; color: var(--ink-muted); padding: 0.2rem 0.5rem;
+  font-family: var(--font-mono);
+}
+table.matrix thead th { text-align: center; }
+table.matrix tbody th { text-align: right; }
+table.matrix td {
+  width: 5.5ch; height: 26px; text-align: center;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  border: 1px solid var(--surface);
+  background: color-mix(in oklab, var(--accent) calc(var(--w, 0) * 100%), var(--surface-sunken));
+}
+table.matrix td.cell-disagree {
+  background: color-mix(in oklab, var(--sig-p) calc(var(--w, 0) * 100%), var(--surface-sunken));
+  outline: 1px solid var(--sig-p); outline-offset: -1px;
+}
+table.matrix td.cell-novel {
+  background: color-mix(in oklab, var(--sig-lp) calc(var(--w, 0) * 100%), var(--surface-sunken));
+}
+.matrix-legend {
+  display: flex; flex-wrap: wrap; gap: 0.75rem;
+  margin-top: 0.5rem; font-size: var(--step--1); color: var(--ink-muted);
+}
+.matrix-legend span::before {
+  content: ""; display: inline-block; width: 9px; height: 9px;
+  margin-right: 0.3rem; border-radius: 2px; vertical-align: baseline;
+}
+.matrix-legend .k-novel::before    { background: var(--sig-lp); }
+.matrix-legend .k-disagree::before { background: var(--sig-p); }
+
 /* ── case summary ─────────────────────────────────────────────────────────── */
 .summary {
   display: flex; flex-wrap: wrap; gap: 0 2.5rem;
@@ -246,7 +431,7 @@ PAGE_CSS = """
 .workspace { display: flex; align-items: stretch; min-height: 0; }
 .table-region { flex: 1 1 auto; min-width: 0; }
 #scroller {
-  height: calc(100vh - 210px); min-height: 320px;
+  height: 72vh; min-height: 340px;
   overflow: auto; background: var(--surface);
   border-right: 1px solid var(--border);
 }
@@ -299,7 +484,7 @@ table.variants tbody td.col-af { text-align: right; }
 /* ── detail panel ─────────────────────────────────────────────────────────── */
 .panel {
   flex: 0 0 380px; max-width: 380px;
-  height: calc(100vh - 210px); min-height: 320px;
+  height: 72vh; min-height: 340px;
   overflow: auto; background: var(--surface); padding: 1rem 1.25rem;
 }
 .panel-empty { color: var(--ink-muted); font-size: var(--step-0); }
@@ -449,7 +634,7 @@ PAGE_JS = r"""
   // ── state ────────────────────────────────────────────────────────────────
   var view = "review";
   var query = "";
-  var sortKey = null, sortDir = 1;
+  var sortKey = "__prio", sortDir = -1;   // ClinVar pathogenic first, on open
   var order = [];
   var selected = -1;
 
@@ -474,8 +659,8 @@ PAGE_JS = r"""
     }
 
     if (sortKey) {
-      var vals = col(sortKey);
-      var numeric = sortKey === "MAX_AF" || sortKey === "PL_score";
+      var vals = sortKey === "__prio" ? P.prio : col(sortKey);
+      var numeric = sortKey === "__prio" || sortKey === "MAX_AF" || sortKey === "PL_score";
       out.sort(function (a, b) {
         var x = vals[a], y = vals[b];
         if (numeric) {
@@ -620,6 +805,21 @@ PAGE_JS = r"""
     if (tr) select(parseInt(tr.dataset.row, 10));
   });
 
+  Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var i = parseInt(btn.dataset.goto, 10);
+      if (view === "review" && !P.review[i]) {
+        document.querySelector('[data-view="all"]').click();
+      }
+      var pos = order.indexOf(i);
+      if (pos < 0) { query = ""; document.getElementById("search").value = ""; rebuild(); pos = order.indexOf(i); }
+      if (pos < 0) return;
+      scroller.scrollTop = Math.max(0, pos * ROW_H - scroller.clientHeight / 2);
+      select(i);
+      scroller.scrollIntoView({ block: "start" });
+    });
+  });
+
   document.getElementById("search").addEventListener("input", function (e) {
     query = e.target.value;
     rebuild();
@@ -725,6 +925,36 @@ __PAGE_CSS__
   </div>
 </section>
 
+<section class="findings">
+  <p class="findings-lede">__LEDE__</p>
+  <p class="findings-sub">__LEDE_SUB__</p>
+</section>
+
+<section class="priority" aria-label="Priority findings">__PRIORITY__</section>
+
+<section class="charts" aria-label="Overview">
+  <div class="chart">
+    <h3>ClinVar against ReNOVo</h3>
+    <p class="chart-why">Where the two independent calls agree, disagree, or where only MuSA has an
+    opinion. Review-set variants only.</p>
+    __MATRIX__
+    <div class="matrix-legend">
+      <span class="k-novel">ClinVar has no classification</span>
+      <span class="k-disagree">calls contradict each other</span>
+    </div>
+  </div>
+  <div class="chart">
+    <h3>Consequence profile</h3>
+    <p class="chart-why">What kind of change the review set is made of.</p>
+    __CSQ_BARS__
+  </div>
+  <div class="chart">
+    <h3>Population frequency</h3>
+    <p class="chart-why">How rare the review set is. Absence from gnomAD is itself evidence.</p>
+    __AF_BARS__
+  </div>
+</section>
+
 <div class="controls no-print">
   <div class="controls-group" role="group" aria-label="Which variants to show">
     <button class="btn" type="button" data-view="review" aria-pressed="true">Review set</button>
@@ -770,17 +1000,94 @@ __PAGE_JS__
 """
 
 
+def _bars(items, total, tone="accent", limit=8, scale=None):
+    """Horizontal proportional bars. Plain HTML, no chart library, no SVG path data."""
+    rows = []
+    top = scale or max([n for _, n in items[:limit]] or [1])
+    for label, n in items[:limit]:
+        pct = n / top * 100
+        rows.append(
+            '<div class="bar-row">'
+            f'<span class="bar-label">{html_escape(str(label).replace("_", " "))}</span>'
+            f'<span class="bar-track"><span class="bar-fill tone-{tone}" style="width:{pct:.2f}%"></span></span>'
+            f'<span class="bar-n">{n:,}</span>'
+            "</div>"
+        )
+    return "".join(rows)
+
+
+def html_escape(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _finding_rows(df, indices, limit=8):
+    """Compact clickable rows for the priority findings list."""
+    get = lambda col, i: (str(df[col].iloc[i]) if col in df.columns else ".")
+    out = []
+    for i in indices[:limit]:
+        gene = get("Hugo_Symbol", i)
+        prot = get("HGVSp_VEP", i)
+        gdna = get("genome_change", i)
+        cvc, cvcode, cvnote = style.clinvar_chip(get("encoded_CLNSIG", i))
+        rnc, rncode, rnnote = style.renovo_chip(get("RENOVO_Class", i))
+        change = prot if prot not in (".", "nan", "") else gdna
+        out.append(
+            f'<button class="finding" type="button" data-goto="{i}">'
+            f'<span class="finding-gene">{html_escape(gene if gene != "." else "—")}</span>'
+            f'<span class="finding-change">{html_escape(change)}</span>'
+            f'<span class="chip {cvc}"><b>{cvcode}</b><span class="sr-only"> ClinVar {cvnote}</span></span>'
+            f'<span class="chip {rnc}"><b>{rncode}</b><span class="sr-only"> ReNOVo {rnnote}</span></span>'
+            "</button>"
+        )
+    return "".join(out)
+
+
+def _matrix_html(matrix):
+    """ClinVar (rows) against ReNOVo (columns), counts in cells.
+
+    Off-diagonal cells are where the two independent calls disagree, which is the
+    only place in the report that comparison is visible.
+    """
+    cv_order = [c for c in ("P", "LP", "CONF", "VUS", "LB", "B", "NC")
+                if any(k[0] == c for k in matrix)]
+    rn_order = [r for r in ("PATH", "BEN", "--") if any(k[1] == r for k in matrix)]
+    if not cv_order or not rn_order:
+        return '<p class="chart-empty">No paired calls to compare.</p>'
+    peak = max(matrix.values()) or 1
+
+    head = "".join(f'<th scope="col">{r}</th>' for r in rn_order)
+    body = []
+    for c in cv_order:
+        cells = []
+        for r in rn_order:
+            n = matrix.get((c, r), 0)
+            disagree = (c in ("P", "LP") and r == "BEN") or (c in ("B", "LB") and r == "PATH")
+            novel = c == "NC" and r == "PATH"
+            cls = "cell-disagree" if disagree and n else ("cell-novel" if novel and n else "")
+            weight = 0 if not n else 0.12 + 0.68 * (n / peak)
+            cells.append(
+                f'<td class="{cls}" style="--w:{weight:.3f}">'
+                f'<span class="cell-n">{n:,}</span></td>'
+            )
+        body.append(f'<tr><th scope="row">{c}</th>{"".join(cells)}</tr>')
+    return (
+        '<table class="matrix"><caption class="sr-only">ClinVar significance by ReNOVo call'
+        f'</caption><thead><tr><td></td>{head}</tr></thead><tbody>{"".join(body)}</tbody></table>'
+    )
+
+
 def _chip(cls, code, note, count):
     return (f'<span class="chip {cls}"><b>{code}</b>'
             f'<span class="chip-note">{count:,}</span>'
             f'<span class="sr-only"> {note}</span></span>')
 
 
-def build_html_page(patient_code, payload, stats, logo_b64, logo_mime, mode):
+def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # assets/MuSA_logo_dark.png is the dark-ink wordmark (correct on a light ground);
-    # when it is present it *is* the wordmark, so the text version would be a duplicate.
+    # assets/MuSA_logo_light.png is the dark-ink wordmark, i.e. the one for a light
+    # ground; when present it *is* the wordmark, so the text version would duplicate it.
     logo = (f'<img class="masthead-logo" src="data:{logo_mime};base64,{logo_b64}" alt="MuSA"/>'
             if logo_b64
             else '<span class="masthead-wordmark">MuSA</span>')
@@ -808,6 +1115,67 @@ def build_html_page(patient_code, payload, stats, logo_b64, logo_mime, mode):
         ] if rn.get(code, 0)
     ) or '<span class="summary-note">no ReNOVo call present</span>'
 
+    n_flag, n_esc, n_novel = len(ov["flagged"]), len(ov["escalated"]), len(ov["novel"])
+    n_contested, n_unobs = len(ov["contested"]), ov["bands"]["not observed"]
+
+    clauses = []
+    if n_flag:
+        clauses.append(f'<b class="n-alert">{n_flag}</b> '
+                       f'{"variant carries" if n_flag == 1 else "variants carry"} a ClinVar '
+                       f'pathogenic, likely-pathogenic or conflicting classification')
+    if n_novel:
+        clauses.append(f'ReNOVo calls <b class="n-novel">{n_novel}</b> '
+                       f'{"variant" if n_novel == 1 else "variants"} pathogenic that ClinVar '
+                       f'has never classified')
+    if n_esc:
+        clauses.append(f'<b>{n_esc}</b> ClinVar {"VUS is" if n_esc == 1 else "VUS are"} '
+                       f'called pathogenic by ReNOVo')
+    if not clauses:
+        lede = (f'No ClinVar pathogenic call and no ReNOVo pathogenic call in the '
+                f'<b>{ov["n_review"]:,}</b>-variant review set.')
+    else:
+        lede = (clauses[0][0].upper() + clauses[0][1:] + ". "
+                + ". ".join(c[0].upper() + c[1:] for c in clauses[1:])
+                + ("." if len(clauses) > 1 else ""))
+
+    lede_sub = (f'Counted across the {ov["n_review"]:,}-variant review set, drawn from '
+                f'{stats["total"]:,} annotated. {n_unobs:,} of the review set are absent from '
+                f'gnomAD entirely.')
+    if n_contested:
+        lede_sub += (f' {n_contested} '
+                     f'{"call is" if n_contested == 1 else "calls are"} contradicted between '
+                     f'ClinVar and ReNOVo and should be read carefully.')
+
+    # ── priority findings, grouped by why they are here ──────────────────────
+    groups = []
+    for key, title, why in [
+        ("flagged", "ClinVar flagged", "pathogenic, likely pathogenic or conflicting"),
+        ("escalated", "ClinVar VUS, ReNOVo pathogenic", "uncertain to ClinVar, called by MuSA"),
+        ("novel", "Not classified by ClinVar", "ReNOVo calls these pathogenic"),
+        ("contested", "Calls contradict", "the two classifiers disagree outright"),
+    ]:
+        items = ov[key]
+        if not items:
+            continue
+        more = (f'<p class="priority-more">and {len(items) - 8:,} more, sorted to the top of '
+                f'the table</p>' if len(items) > 8 else "")
+        groups.append(
+            f'<div class="priority-group"><h3>{title} <span class="bar-n">{len(items):,}</span></h3>'
+            f'<p class="priority-why">{why}</p>{_finding_rows(df, items)}{more}</div>'
+        )
+    priority_html = "".join(groups) or (
+        '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
+        'pathogenic by ReNOVo.</p>')
+
+    # Rarity is the point of this chart, so each band carries its own tone rather than
+    # one colour scaled by count, which made the *commonest* band the loudest bar.
+    af_tones = {"not observed": "p", "under 0.01%": "lp",
+                "0.01% to 0.1%": "vus", "0.1% to 1%": "nc"}
+    af_bars = "".join(
+        _bars([(k, v)], ov["n_review"], tone=af_tones[k], scale=max(ov["bands"].values()) or 1)
+        for k, v in ov["bands"].items() if v
+    )
+
     headers = "".join(
         f'<th scope="col" tabindex="0" data-key="{c["k"]}">{c["label"]}'
         f'<span class="sort-mark" aria-hidden="true">&#8597;</span></th>'
@@ -819,6 +1187,12 @@ def build_html_page(patient_code, payload, stats, logo_b64, logo_mime, mode):
             .replace("__BASE_CSS__", style.BASE_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)
             .replace("__PAGE_JS__", PAGE_JS)
+            .replace("__LEDE__", lede)
+            .replace("__LEDE_SUB__", lede_sub)
+            .replace("__PRIORITY__", priority_html)
+            .replace("__MATRIX__", _matrix_html(ov["matrix"]))
+            .replace("__CSQ_BARS__", _bars(ov["consequences"], ov["n_review"]))
+            .replace("__AF_BARS__", af_bars)
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
             .replace("__CLINVAR_CHIPS__", clinvar_chips)
@@ -855,13 +1229,20 @@ def main():
               file=sys.stderr)
 
     flags = review_flags(df)
-    payload = build_payload(df, main_cols, detail_cols, flags)
+    prio = priority_scores(df)
+    payload = build_payload(df, main_cols, detail_cols, flags, prio)
     stats = summarise(df, flags)
+    ov = overview(df, flags)
+    print(f"  Priority: {len(ov['flagged'])} ClinVar-flagged, {len(ov['escalated'])} escalated "
+          f"VUS, {len(ov['novel'])} ReNOVo-only, {len(ov['contested'])} contested",
+          file=sys.stderr)
 
     html = build_html_page(
         patient_code=patient,
         payload=payload,
         stats=stats,
+        ov=ov,
+        df=df,
         logo_b64=logo_b64,
         logo_mime=logo_mime,
         mode="offline" if offline else "online",
