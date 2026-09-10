@@ -266,6 +266,10 @@ h2.section-title {
   justify-content: space-between;
   font-size: var(--step--1); color: var(--ink-muted);
 }
+/* The credit line is the only place the authors are named, so it stays on one
+   readable measure rather than stretching across a 1700px page. */
+.doc-credit { max-width: 62ch; }
+.doc-credit a { color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

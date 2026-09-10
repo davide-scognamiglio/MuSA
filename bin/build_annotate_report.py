@@ -1740,9 +1740,12 @@ __PAGE_CSS__
 
 
 <footer class="doc-footer">
-  <span>MuSA &middot; multi-source variant annotation &middot; patient __PATIENT__</span>
-  <span>__GENERATED__</span>
-  <span>IRCCS Istituto Ortopedico Rizzoli, Bologna</span>
+  <span>MuSA &middot; multi-source variant annotation</span>
+  <span class="doc-credit">Developed by
+    <a href="https://davide-scognamiglio.github.io/" target="_blank" rel="noopener noreferrer">D. Scognamiglio</a>
+    and
+    <a href="https://orcid.org/0000-0001-7462-3874" target="_blank" rel="noopener noreferrer">E. Bonetti</a>
+    at IRCCS Istituto Ortopedico Rizzoli, Bologna.</span>
 </footer>
 
 <script id="payload" type="application/json">__PAYLOAD__</script>
