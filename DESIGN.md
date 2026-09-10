@@ -38,7 +38,26 @@ of the previous dark theme, which is what the anti-reference rules out.
 ```
 
 Accent carries interactive state only: focus rings, links, the active view, sort direction. Never
-decoration, never a fill behind large areas.
+decoration, and never a fill behind large areas — with exactly one exception, below.
+
+### The inked band
+
+The annotation report's header band is the one large field of colour in either document: a
+near-black in the brand's own hue, carrying the case's headline figure and both classifiers.
+
+```
+--band        oklch(0.255 0.035 292)   near-black, brand hue
+--band-ink    oklch(0.970 0.005 292)   text on the band
+--band-muted  oklch(0.760 0.020 292)   secondary text on the band
+```
+
+It exists because a white masthead over a white working page gave the document no identity at all,
+and because the two classifiers read better as figures than as a row of labelled numbers. The
+significance ramp is relit for that ground rather than reused (`--sig-*-lift`, the same hues at
+L 0.78–0.86); the dark ramp on light or the light ramp on dark both fail AA, and the audit checks
+the band in place.
+
+One band, not a system of them. A second inked area anywhere in either document is drift.
 
 ### Clinical semantics
 
@@ -60,6 +79,32 @@ PENDING = `--sig-vus`.
 **Color is never the only signal.** Every significance chip carries its abbreviation (`P`, `LP`,
 `VUS`, `LB`, `B`, `NC`); every setup state carries its word. A reader who sees no color at all still
 gets the full meaning.
+
+**One vocabulary for both classifiers.** ClinVar and ReNOVo appear side by side on every row, so
+they are read on the same five-step scale. ReNOVo reports direction and confidence as one string,
+and folds onto that scale with confidence carrying the strength of the call — a low-confidence call
+in either direction is what "uncertain" means:
+
+| RENOVO_Class | chip |
+|---|---|
+| HP Pathogenic | `P` |
+| IP Pathogenic | `LP` |
+| LP Pathogenic | `VUS` |
+| LP Benign | `VUS` |
+| IP Benign | `LB` |
+| HP Benign | `B` |
+
+The mapping lives once, in `RENOVO_SCALE` in `bin/musa_report_style.py`, mirrored in the page's JS
+because the table renders client-side. They must not drift.
+
+The cost of one vocabulary is that a bare pair of chips reading `P  LB` no longer says which
+classifier said which, so wherever the two sit together outside a headed table column they are
+named (`.chip-src`).
+
+ClinVar's *conflicting classifications* shares the `VUS` chip, because five steps is the scale, but
+it is not the same finding as an uncertain classification: it means submitters disagree. Anything
+that needs to tell them apart calls `is_conflicting()`. It sorts above VUS, and it joins the flagged
+findings group rather than the uncertain one.
 
 Measured under simulated deuteranopia and protanopia, the ramp separates where it matters and
 converges where it does not:
@@ -102,6 +147,9 @@ open on.
 Fixed rem scale, ratio ~1.2. No fluid `clamp()` headings: these are read at a consistent desk
 distance, and a heading that reflows with the window looks worse, not better.
 
+The root is set to **110%**, so the whole scale moves together rather than each size being nudged by
+hand. These are read for hours at desk distance on lab monitors; the browser default was tight.
+
 ## Layout
 
 The setup report is a **fixed header over one scrolling working surface**: masthead → integrity
@@ -111,10 +159,19 @@ The annotation report is **two pages in one file**. It opens on findings and the
 step away, not the bottom of the same scroll. A 68,000-row surface presented first is a search
 problem handed to a reader who came for an answer.
 
-**Page one, findings.** Masthead → counts strip → a two-column body: findings on the left, the shape
-of the review set on the right.
+**Page one, findings.** Masthead → inked band → findings, in one column at a document measure
+(1180px) rather than spread across the full window.
 
-The left column is a bullet list of the four reasons a variant is worth a second look, counted from
+The band carries the review-set count as a single large figure, and each classifier as a
+proportional spectrum with a legend beneath it. Everything in the band is counted **over the review
+set**, the same denominator as the findings below. It used to count every annotated variant, which
+put "P 3" directly above "ClinVar flagged 2": two true numbers and a contradiction on screen.
+
+There are no summary charts. A consequence-profile bar chart and a population-frequency bar chart
+were tried and removed: neither changed what a reader did next, which is the only test a figure in
+a clinical document has to pass.
+
+The findings are a bullet list of the four reasons a variant is worth a second look, counted from
 the actual data — *ClinVar flagged*, *ClinVar VUS escalated by ReNOVo*, *not classified by ClinVar*,
 *calls contradict*. Each block names its count, previews up to six of its variants, and its header is
 the control that opens the table filtered to exactly that block. One definition (`GROUPS` in
@@ -124,14 +181,6 @@ Every preview row carries the **disease**, from ClinVar's `CLNDN`. "CPT2 p.Ser11
 what the variant is pathogenic *for*, which is the first thing a reader needs in order to decide
 whether it bears on the case in front of them. Previews prefer distinct genes: a group of 175 can
 otherwise open with six indels from one 60 bp window and say nothing about the other 169.
-
-The right column holds two charts, plain HTML and CSS rather than SVG paths or a charting library:
-
-- **Consequence profile** - proportional bars over the review set.
-- **Population frequency** - rarity bands, each with its own tone rather than one colour scaled by
-  count, which made the commonest band the loudest bar.
-
-They are sticky, because the findings column is far taller than they are.
 
 **Page two, the table.** Sticky control bar → virtual table → docked evidence panel. The bar carries
 the way back, the review-set/all-variants switch, and, when the table was opened from a findings

@@ -272,14 +272,28 @@ def build_payload(df, main_cols, detail_cols, flags, prio, groups):
 
 # Clinical priority ordering. The table sorts on this by default: a reviewer opening
 # the report should land on the ClinVar pathogenic calls, not on alphabetical genes.
-SIG_RANK = {"P": 6, "LP": 5, "CONF": 4, "VUS": 3, "LB": 2, "B": 1, "NC": 0}
+# Conflicting shares the VUS chip but outranks it here: submitters disagreeing about a
+# variant is a stronger reason to look than nobody having decided.
+SIG_RANK = {"P": 6, "LP": 5, "VUS": 3, "LB": 2, "B": 1, "NC": 0}
+CONFLICT_RANK = 4
+
+# ReNOVo's own codes, on the same five-step scale. "MuSA calls it pathogenic" means a
+# high- or intermediate-confidence pathogenic call; a low-confidence call in either
+# direction reads as VUS and is not treated as a call.
+RENOVO_PATHOGENIC = ("P", "LP")
+RENOVO_BENIGN = ("B", "LB")
+
+
+def _clinvar_rank(value):
+    return CONFLICT_RANK if style.is_conflicting(value) else SIG_RANK.get(
+        style.clinvar_chip(value)[1], 0)
 
 
 def priority_scores(df):
-    """Per-row sort key: ClinVar rank first, then a ReNOVo pathogenic call, then rarity.
+    """Per-row sort key: ClinVar rank first, then ReNOVo's, then rarity.
 
     Encoded as one number so the JS sorts on a plain array:
-        rank * 1000  +  renovo_pathogenic * 100  +  rarity_bonus
+        clinvar_rank * 1000  +  renovo_rank * 100  +  rarity_bonus
     """
     sig = df["encoded_CLNSIG"] if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
     rnv = df["RENOVO_Class"] if "RENOVO_Class" in df.columns else pd.Series([""] * len(df))
@@ -287,10 +301,10 @@ def priority_scores(df):
 
     out = []
     for s, r, a in zip(sig.fillna(""), rnv.fillna(""), af):
-        rank = SIG_RANK.get(style.clinvar_chip(s)[1], 0)
-        patho = 1 if style.renovo_chip(r)[1] == "PATH" else 0
         rare = 10 if (a != a or a is None) else (5 if a < 1e-4 else 0)   # a != a catches NaN
-        out.append(rank * 1000 + patho * 100 + rare)
+        out.append(_clinvar_rank(s) * 1000
+                   + SIG_RANK.get(style.renovo_chip(r)[1], 0) * 100
+                   + rare)
     return out
 
 
@@ -304,18 +318,17 @@ def overview(df, flags):
 
     cv = [style.clinvar_chip(sig.iloc[i])[1] for i in idx]
     rn = [style.renovo_chip(rnv.iloc[i])[1] for i in idx]
+    conf = [style.is_conflicting(sig.iloc[i]) for i in idx]
+    P, B = RENOVO_PATHOGENIC, RENOVO_BENIGN
 
-    novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r == "PATH"]
-    contested = [i for i, c, r in zip(idx, cv, rn)
-                 if (c in ("P", "LP") and r == "BEN") or (c in ("B", "LB") and r == "PATH")]
-    flagged = [i for i, c in zip(idx, cv) if c in ("P", "LP", "CONF")]
-    escalated = [i for i, c, r in zip(idx, cv, rn) if c == "VUS" and r == "PATH"]
-
-    consequences = {}
-    for i in idx:
-        parts = style.split_consequences(csq.iloc[i])
-        if parts:
-            consequences[parts[0]] = consequences.get(parts[0], 0) + 1
+    novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r in P]
+    contested = [i for i, c, r, k in zip(idx, cv, rn, conf)
+                 if not k and ((c in ("P", "LP") and r in B) or (c in ("B", "LB") and r in P))]
+    # Conflicting joins the flagged group rather than the uncertain one: submitters
+    # disagreeing is a reason to read the variant, not a reason to park it.
+    flagged = [i for i, c, k in zip(idx, cv, conf) if c in ("P", "LP") or k]
+    escalated = [i for i, c, r, k in zip(idx, cv, rn, conf)
+                 if c == "VUS" and not k and r in P]
 
     bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
     unobserved = []
@@ -337,42 +350,121 @@ def overview(df, flags):
         "contested": contested,
         "flagged": flagged,
         "escalated": escalated,
-        "consequences": sorted(consequences.items(), key=lambda kv: -kv[1]),
         "bands": bands,
         "n_review": len(idx),
     }
 
 
 def summarise(df, flags):
-    total = len(df)
-    out = {"total": total, "review": sum(flags)}
-    if "encoded_CLNSIG" in df.columns:
-        classes = df["encoded_CLNSIG"].fillna("").map(lambda v: style.clinvar_chip(v)[1])
-        counts = classes.value_counts().to_dict()
-    else:
-        counts = {}
-    out["clinvar"] = {k: int(counts.get(k, 0)) for k in ("P", "LP", "VUS", "CONF", "LB", "B", "NC")}
-    if "RENOVO_Class" in df.columns:
-        rc = df["RENOVO_Class"].fillna("").map(lambda v: style.renovo_chip(v)[1])
-        rcounts = rc.value_counts().to_dict()
-    else:
-        rcounts = {}
-    out["renovo"] = {"PATH": int(rcounts.get("PATH", 0)), "BEN": int(rcounts.get("BEN", 0))}
-    return out
+    """Counts for the header band, all of them over the **review set**.
+
+    The header used to count every annotated variant while the findings blocks below
+    counted the review set, so the page could show "P 3" directly above "ClinVar
+    flagged 2". Both numbers were true and the pair was still a contradiction on
+    screen. One denominator now, stated once.
+    """
+    idx = [i for i, f in enumerate(flags) if f]
+    sig = (df["encoded_CLNSIG"].fillna("") if "encoded_CLNSIG" in df.columns
+           else pd.Series([""] * len(df)))
+    rnv = (df["RENOVO_Class"].fillna("") if "RENOVO_Class" in df.columns
+           else pd.Series([""] * len(df)))
+
+    cv, rn = {}, {}
+    conflicting = 0
+    for i in idx:
+        code = style.clinvar_chip(sig.iloc[i])[1]
+        cv[code] = cv.get(code, 0) + 1
+        if style.is_conflicting(sig.iloc[i]):
+            conflicting += 1
+        code = style.renovo_chip(rnv.iloc[i])[1]
+        rn[code] = rn.get(code, 0) + 1
+
+    keys = style.SIG_SCALE + ["NC"]
+    return {
+        "total": len(df),
+        "review": len(idx),
+        "clinvar": {k: cv.get(k, 0) for k in keys},
+        "renovo": {k: rn.get(k, 0) for k in keys},
+        "conflicting": conflicting,
+    }
 
 
 # ── page CSS ──────────────────────────────────────────────────────────────────
 PAGE_CSS = """
 [hidden] { display: none !important; }
 
+/* ── inked band ───────────────────────────────────────────────────────────── */
+/* The one large field of colour in either document, and the only place the palette
+   is used decoratively rather than semantically. It earns that: a white masthead
+   over a white working page gave the report no identity at all, and the band is
+   also where the two classifiers can be shown as figures rather than as a row of
+   labelled numbers. Every count in here is over the review set, so nothing in the
+   band can contradict the findings below it. */
+.band {
+  display: grid; gap: 1.5rem 3rem; align-items: center;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  padding: 1.4rem 1.5rem;
+  background: var(--band); color: var(--band-ink);
+}
+.band-figure { display: grid; gap: 0.1rem; }
+.band-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-6); font-weight: 600; line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+.band-label { font-size: var(--step-1); font-weight: 600; }
+.band-note {
+  font-size: var(--step--1); color: var(--band-muted);
+  max-width: 34ch; text-wrap: pretty;
+}
+
+.band-scales { display: grid; gap: 1rem; }
+.scale-head {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+.scale-name {
+  font-size: var(--step-0); font-weight: 600; letter-spacing: 0.01em;
+}
+.scale-meta { font-size: var(--step--1); color: var(--band-muted); }
+
+/* Proportional, so the reader sees at a glance that ClinVar has no opinion about
+   most of the review set. Segments grow by count and floor at 5px, because a class
+   with three variants in it must still be visible. */
+.spectrum {
+  display: flex; gap: 2px; height: 16px;
+  border-radius: 3px; overflow: hidden;
+}
+.spectrum span { min-width: 5px; border-radius: 2px; }
+.spectrum .sig-p   { background: var(--sig-p-lift); }
+.spectrum .sig-lp  { background: var(--sig-lp-lift); }
+.spectrum .sig-vus { background: var(--sig-vus-lift); }
+.spectrum .sig-lb  { background: var(--sig-lb-lift); }
+.spectrum .sig-b   { background: var(--sig-b-lift); }
+.spectrum .sig-nc  { background: var(--sig-nc-lift); }
+
+.scale-legend {
+  display: flex; flex-wrap: wrap; gap: 0.3rem 1rem;
+  margin-top: 0.45rem; list-style: none;
+}
+.key {
+  display: inline-flex; align-items: baseline; gap: 0.35rem;
+  font-family: var(--font-mono); font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+.key b { font-weight: 700; letter-spacing: 0.03em; }
+.key .key-n { color: var(--band-ink); }
+.key.sig-p   b { color: var(--sig-p-lift); }
+.key.sig-lp  b { color: var(--sig-lp-lift); }
+.key.sig-vus b { color: var(--sig-vus-lift); }
+.key.sig-lb  b { color: var(--sig-lb-lift); }
+.key.sig-b   b { color: var(--sig-b-lift); }
+.key.sig-nc  b { color: var(--sig-nc-lift); }
+
 /* ── overview ─────────────────────────────────────────────────────────────── */
-/* Findings on the left, the shape of the review set on the right. The charts sit
-   beside the findings rather than under them so the first screen carries both the
-   list to act on and the context to read it against. */
 .overview {
-  display: grid; align-items: start; gap: 1.75rem 2.5rem;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
-  padding: 1.5rem 1.5rem 2rem;
+  max-width: 1180px; margin-inline: auto;
+  padding: 1.75rem 1.5rem 2.5rem;
   background: var(--surface);
 }
 .ov-head h2 {
@@ -412,87 +504,36 @@ PAGE_CSS = """
   font-size: var(--step--1); color: var(--ink-muted);
   margin: -0.15rem 0 0.55rem 3.65rem;
 }
+/* Gene and disease are the headline of the row, on one line and at reading size:
+   "CPT2 p.Ser113Leu P" never says what the variant is pathogenic *for*, and that is
+   what decides whether it bears on the case. The coordinates drop to a second line
+   as the supporting detail they are. */
 .finding {
   display: grid;
-  grid-template-columns: minmax(6ch, max-content) minmax(0, 1fr) auto auto;
-  align-items: baseline; gap: 0.15rem 0.6rem; width: 100%;
-  padding: 0.35rem 0.4rem; margin-left: -0.4rem;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline; gap: 0.2rem 0.75rem; width: 100%;
+  padding: 0.5rem 0.4rem; margin-left: -0.4rem;
   background: none; border: 0; border-radius: var(--radius);
   font: inherit; text-align: left; cursor: pointer;
 }
 .finding + .finding { border-top: 1px solid var(--border); }
 .finding:hover { background: var(--surface-sunken); }
-.finding-gene { font-weight: 700; white-space: nowrap; }
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.finding-gene {
+  font-size: var(--step-1); font-weight: 700; letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.finding-disease { font-size: var(--step-0); color: var(--ink); text-wrap: pretty; }
+.finding-disease.absent { color: var(--ink-muted); font-style: italic; }
+.finding-more { color: var(--ink-muted); font-style: normal; }
 .finding-change {
+  grid-column: 1 / -1;
   font-family: var(--font-mono); font-size: var(--step--1); color: var(--ink-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* The disease is the answer to "pathogenic for what", so it gets its own line
-   rather than being squeezed into the row. Flush left, not indented to the change
-   column: that column's start moves with the gene symbol's length, so indenting
-   left the disease lines ragged down the list. */
-.finding-disease {
-  grid-column: 1 / -1; font-size: var(--step--1);
-  color: var(--ink); text-wrap: pretty;
-}
-.finding-disease.absent { color: var(--ink-muted); font-style: italic; }
 .priority-more { font-size: var(--step--1); color: var(--ink-muted); margin-top: 0.45rem; }
 .priority-none { font-size: var(--step-0); color: var(--ink-muted); margin-top: 1rem; }
 .ov-actions { margin-top: 1.75rem; }
-
-/* ── charts ───────────────────────────────────────────────────────────────── */
-/* Sticky, because the findings column is much taller than this one: the profile of
-   the review set stays on screen while a reader works down the list rather than
-   scrolling away and leaving half the page empty. */
-.charts {
-  display: flex; flex-direction: column; gap: 1.5rem;
-  position: sticky; top: 4.75rem;
-}
-.chart {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 0.9rem 1rem 1rem; background: var(--surface);
-}
-.chart h3 { font-size: var(--step-0); font-weight: 600; }
-.chart-why { font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.6rem; }
-.chart-empty { font-size: var(--step--1); color: var(--ink-muted); }
-
-.bar-row {
-  display: grid; grid-template-columns: minmax(0,17ch) 1fr 5ch;
-  align-items: center; gap: 0.6rem; padding: 0.13rem 0;
-}
-.bar-label {
-  font-size: var(--step--1); overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
-}
-.bar-track { height: 9px; background: var(--surface-sunken); border-radius: 2px; }
-.bar-fill { display: block; height: 100%; border-radius: 2px; }
-.bar-fill.tone-accent { background: var(--accent); }
-.bar-fill.tone-p      { background: var(--sig-p); }
-.bar-fill.tone-lp     { background: var(--sig-lp); }
-.bar-fill.tone-vus    { background: var(--sig-vus); }
-.bar-fill.tone-nc     { background: var(--sig-nc); }
-.bar-n {
-  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: var(--step--1); text-align: right; color: var(--ink-muted);
-}
-
-/* ── case summary ─────────────────────────────────────────────────────────── */
-.summary {
-  display: flex; flex-wrap: wrap; gap: 0 2.5rem;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-.summary-block { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.25rem 0; }
-.summary-label {
-  font-size: var(--step--1); color: var(--ink-muted);
-}
-.summary-value {
-  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: var(--step-3); font-weight: 600; line-height: 1.1;
-}
-.summary-note { font-size: var(--step--1); color: var(--ink-muted); }
-.summary-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 
 /* ── control bar ──────────────────────────────────────────────────────────── */
 .controls {
@@ -661,16 +702,16 @@ table.variants tbody td.col-af { text-align: right; }
   #scroller { max-height: 60vh; border-right: none; }
 }
 
-@media (max-width: 980px) {
-  .overview { grid-template-columns: minmax(0, 1fr); }
-  .charts { flex-direction: row; flex-wrap: wrap; }
-  .chart { flex: 1 1 260px; }
+@media (max-width: 860px) {
+  .band { grid-template-columns: minmax(0, 1fr); }
+  .masthead-logo { height: 58px; }
 }
 
 @media print {
   .no-print, #view-table { display: none !important; }
-  .overview { grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr); }
   .priority-open { display: none; }
+  /* The band is the document's identity; it has to survive the printer. */
+  .band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 """
 
@@ -705,7 +746,7 @@ PAGE_JS = r"""
   function clinvarChip(v) {
     var s = (v || "").toLowerCase(), cls = "sig-nc", code = "NC", note = "not classified";
     if (absent(v)) { /* defaults */ }
-    else if (s.indexOf("conflict") >= 0) { cls = "sig-vus"; code = "CONF"; note = "conflicting"; }
+    else if (s.indexOf("conflict") >= 0) { cls = "sig-vus"; code = "VUS"; note = "conflicting interpretations"; }
     else if (s.indexOf("likely") >= 0 && s.indexOf("patho") >= 0) { cls = "sig-lp"; code = "LP"; note = "likely pathogenic"; }
     else if (s.indexOf("likely") >= 0 && s.indexOf("benign") >= 0) { cls = "sig-lb"; code = "LB"; note = "likely benign"; }
     else if (s.indexOf("patho") >= 0) { cls = "sig-p"; code = "P"; note = "pathogenic"; }
@@ -714,17 +755,22 @@ PAGE_JS = r"""
     return { cls: cls, code: code, note: note };
   }
 
-  var CONF = { HP: "high", IP: "intermediate", LP: "low" };
+  // ReNOVo's six classes fold onto the same five-step scale ClinVar is read on, so a
+  // reader comparing the two columns is not translating between vocabularies. Mirrors
+  // RENOVO_SCALE in musa_report_style.py; the two must not drift.
+  var RENOVO_SCALE = {
+    "hp pathogenic": ["sig-p",   "P",   "ReNOVo pathogenic, high confidence"],
+    "ip pathogenic": ["sig-lp",  "LP",  "ReNOVo pathogenic, intermediate confidence"],
+    "lp pathogenic": ["sig-vus", "VUS", "ReNOVo pathogenic, low confidence"],
+    "lp benign":     ["sig-vus", "VUS", "ReNOVo benign, low confidence"],
+    "ip benign":     ["sig-lb",  "LB",  "ReNOVo benign, intermediate confidence"],
+    "hp benign":     ["sig-b",   "B",   "ReNOVo benign, high confidence"]
+  };
   function renovoChip(v) {
-    if (absent(v)) return { cls: "sig-nc", code: "--", note: "no ReNOVo call" };
-    var parts = String(v).split(" ");
-    if (parts.length !== 2 || !CONF[parts[0]]) return { cls: "sig-nc", code: v, note: v };
-    var patho = parts[1].toLowerCase().indexOf("patho") === 0;
-    return {
-      cls: patho ? "sig-p" : "sig-b",
-      code: patho ? "PATH" : "BEN",
-      note: (patho ? "pathogenic" : "benign") + ", " + CONF[parts[0]] + " confidence"
-    };
+    if (absent(v)) return { cls: "sig-nc", code: "NC", note: "no ReNOVo call" };
+    var hit = RENOVO_SCALE[String(v).replace(/\s+/g, " ").trim().toLowerCase()];
+    if (!hit) return { cls: "sig-nc", code: v, note: v };
+    return { cls: hit[0], code: hit[1], note: hit[2] };
   }
 
   // Allele frequency reads as a figure, not a chip. In the review set every variant is
@@ -783,9 +829,13 @@ PAGE_JS = r"""
            '<span class="stars-note">' + esc(STARS[String(v).trim()]) + "</span>";
   }
 
-  function chipHTML(c) {
-    return '<span class="chip ' + c.cls + '"><b>' + esc(c.code) + '</b>' +
-           '<span class="sr-only"> ' + esc(c.note) + '</span></span>';
+  // src is set where the two chips sit side by side without a column heading to say
+  // which classifier produced which; inside the table the header already does that.
+  function chipHTML(c, src) {
+    return '<span class="chip ' + c.cls + '">' +
+           (src ? '<span class="chip-src">' + esc(src) + "</span>" : "") +
+           "<b>" + esc(c.code) + "</b>" +
+           '<span class="sr-only"> ' + esc(c.note) + "</span></span>";
   }
 
   // Franklin URLs are derived here rather than embedded: one URL per variant would
@@ -901,8 +951,8 @@ PAGE_JS = r"""
     parts.push('<h3>' + esc(absent(gene) ? "Unnamed gene" : gene) + '</h3>');
     parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + '</p>');
     parts.push('<div class="panel-chips">' +
-      chipHTML(clinvarChip(col("encoded_CLNSIG")[i])) +
-      chipHTML(renovoChip(col("RENOVO_Class")[i])) +
+      chipHTML(clinvarChip(col("encoded_CLNSIG")[i]), "ClinVar") +
+      chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") +
       '</div>');
 
     parts.push("<dl>");
@@ -1177,53 +1227,24 @@ __PAGE_CSS__
   </div>
 </header>
 
-<section class="summary">
-  <div class="summary-block">
-    <span class="summary-label">In review set</span>
-    <span class="summary-value">__REVIEW__</span>
-    <span class="summary-note">rare and either ClinVar-flagged or protein-affecting</span>
+<section class="band">
+  <div class="band-figure">
+    <span class="band-n">__REVIEW__</span>
+    <span class="band-label">variants in the review set</span>
+    <span class="band-note">Rare, and either flagged by ClinVar or protein-affecting.
+    Drawn from __TOTAL__ annotated, all of which are in this document.</span>
   </div>
-  <div class="summary-block">
-    <span class="summary-label">Annotated in total</span>
-    <span class="summary-value">__TOTAL__</span>
-    <span class="summary-note">every variant is in this document</span>
-  </div>
-  <div class="summary-block">
-    <span class="summary-label">ClinVar</span>
-    <span class="summary-chips">__CLINVAR_CHIPS__</span>
-    <span class="summary-note">across all annotated variants</span>
-  </div>
-  <div class="summary-block">
-    <span class="summary-label">ReNOVo</span>
-    <span class="summary-chips">__RENOVO_CHIPS__</span>
-    <span class="summary-note">MuSA's own pathogenicity call</span>
-  </div>
+  <div class="band-scales">__SCALES__</div>
 </section>
 
 <main class="view" id="view-overview">
   <section class="overview">
-    <div class="ov-main">
-      <div class="ov-head">
-        <h2>Findings</h2>
-        <p class="findings-sub">__LEDE_SUB__</p>
-      </div>
-      <div class="priority">__PRIORITY__</div>
-      <div class="ov-actions no-print">
-        <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
-      </div>
+    <h2>Findings</h2>
+    <p class="findings-sub">__LEDE_SUB__</p>
+    <div class="priority">__PRIORITY__</div>
+    <div class="ov-actions no-print">
+      <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
     </div>
-    <aside class="charts" aria-label="Shape of the review set">
-      <div class="chart">
-        <h3>Consequence profile</h3>
-        <p class="chart-why">What kind of change the review set is made of.</p>
-        __CSQ_BARS__
-      </div>
-      <div class="chart">
-        <h3>Population frequency</h3>
-        <p class="chart-why">How rare the review set is. Absence from gnomAD is itself evidence.</p>
-        __AF_BARS__
-      </div>
-    </aside>
   </section>
 </main>
 
@@ -1283,20 +1304,36 @@ __PAGE_JS__
 """
 
 
-def _bars(items, total, tone="accent", limit=8, scale=None):
-    """Horizontal proportional bars. Plain HTML, no chart library, no SVG path data."""
-    rows = []
-    top = scale or max([n for _, n in items[:limit]] or [1])
-    for label, n in items[:limit]:
-        pct = n / top * 100
-        rows.append(
-            '<div class="bar-row">'
-            f'<span class="bar-label">{html_escape(str(label).replace("_", " "))}</span>'
-            f'<span class="bar-track"><span class="bar-fill tone-{tone}" style="width:{pct:.2f}%"></span></span>'
-            f'<span class="bar-n">{n:,}</span>'
-            "</div>"
-        )
-    return "".join(rows)
+SIG_WORDS = {
+    "P": "pathogenic", "LP": "likely pathogenic", "VUS": "uncertain significance",
+    "LB": "likely benign", "B": "benign", "NC": "not classified",
+}
+SIG_CLASS = {"P": "sig-p", "LP": "sig-lp", "VUS": "sig-vus",
+             "LB": "sig-lb", "B": "sig-b", "NC": "sig-nc"}
+
+
+def _scale_html(name, counts, meta=""):
+    """One classifier as a proportional spectrum plus a legend.
+
+    The spectrum is the figure and the legend is the reading of it: colour is never
+    the only carrier, so every band that exists also appears as a code and a count.
+    """
+    order = [k for k in style.SIG_SCALE + ["NC"] if counts.get(k)]
+    if not order:
+        return ""
+    spoken = ", ".join(f"{counts[k]} {SIG_WORDS[k]}" for k in order)
+    segs = "".join(
+        f'<span class="{SIG_CLASS[k]}" style="flex-grow:{counts[k]}"></span>' for k in order)
+    keys = "".join(
+        f'<li class="key {SIG_CLASS[k]}"><b>{k}</b>'
+        f'<span class="key-n">{counts[k]:,}</span></li>' for k in order)
+    return (
+        f'<div class="scale"><div class="scale-head"><span class="scale-name">{name}</span>'
+        f'<span class="scale-meta">{meta}</span></div>'
+        f'<div class="spectrum" role="img" aria-label="{html_escape(name)} over the review set: '
+        f'{html_escape(spoken)}">{segs}</div>'
+        f'<ul class="scale-legend">{keys}</ul></div>'
+    )
 
 
 def html_escape(s):
@@ -1343,27 +1380,30 @@ def _finding_rows(df, indices, limit=6):
         gdna = get("genome_change", i)
         cvc, cvcode, cvnote = style.clinvar_chip(get("encoded_CLNSIG", i))
         rnc, rncode, rnnote = style.renovo_chip(get("RENOVO_Class", i))
-        change = prot if prot not in (".", "nan", "") else gdna
-        disease = disease_label(get("CLNDN", i))
-        disease_html = (f'<span class="finding-disease">{html_escape(disease)}</span>'
-                        if disease else
-                        '<span class="finding-disease absent">no ClinVar disease recorded</span>')
+        terms = disease_terms(get("CLNDN", i))
+        if terms:
+            head = terms[0]
+            if len(head) > 78:
+                head = head[:77].rstrip() + "…"
+            extra = (f' <i class="finding-more">+{len(terms) - 1} more</i>'
+                     if len(terms) > 1 else "")
+            disease_html = f'<span class="finding-disease">{html_escape(head)}{extra}</span>'
+        else:
+            disease_html = '<span class="finding-disease absent">no ClinVar disease recorded</span>'
+        coords = " · ".join(x for x in (prot, gdna) if x not in (".", "nan", ""))
         out.append(
             f'<button class="finding" type="button" data-goto="{i}">'
+            f'<span class="finding-head">'
             f'<span class="finding-gene">{html_escape(gene if gene != "." else "—")}</span>'
-            f'<span class="finding-change">{html_escape(change)}</span>'
-            f'<span class="chip {cvc}"><b>{cvcode}</b><span class="sr-only"> ClinVar {cvnote}</span></span>'
-            f'<span class="chip {rnc}"><b>{rncode}</b><span class="sr-only"> ReNOVo {rnnote}</span></span>'
-            f'{disease_html}'
+            f'{disease_html}</span>'
+            f'<span class="chip {cvc}"><span class="chip-src">ClinVar</span><b>{cvcode}</b>'
+            f'<span class="sr-only"> {cvnote}</span></span>'
+            f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
+            f'<span class="sr-only"> {rnnote}</span></span>'
+            f'<span class="finding-change">{html_escape(coords)}</span>'
             "</button>"
         )
     return "".join(out)
-
-
-def _chip(cls, code, note, count):
-    return (f'<span class="chip {cls}"><b>{code}</b>'
-            f'<span class="chip-note">{count:,}</span>'
-            f'<span class="sr-only"> {note}</span></span>')
 
 
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode):
@@ -1375,28 +1415,12 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             if logo_b64
             else '<span class="masthead-wordmark">MuSA</span>')
 
-    cv = stats["clinvar"]
-    clinvar_chips = "".join(
-        _chip(cls, code, note, cv.get(code, 0))
-        for code, cls, note in [
-            ("P", "sig-p", "pathogenic"),
-            ("LP", "sig-lp", "likely pathogenic"),
-            ("VUS", "sig-vus", "uncertain significance"),
-            ("CONF", "sig-vus", "conflicting interpretations"),
-            ("LB", "sig-lb", "likely benign"),
-            ("B", "sig-b", "benign"),
-            ("NC", "sig-nc", "not classified"),
-        ] if cv.get(code, 0)
-    ) or '<span class="summary-note">no ClinVar annotation present</span>'
-
-    rn = stats["renovo"]
-    renovo_chips = "".join(
-        _chip(cls, code, note, rn.get(code, 0))
-        for code, cls, note in [
-            ("PATH", "sig-p", "ReNOVo pathogenic"),
-            ("BEN", "sig-b", "ReNOVo benign"),
-        ] if rn.get(code, 0)
-    ) or '<span class="summary-note">no ReNOVo call present</span>'
+    n_conf = stats["conflicting"]
+    scales = (
+        _scale_html("ClinVar", stats["clinvar"],
+                    f"{n_conf} conflicting" if n_conf else "")
+        + _scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier")
+    )
 
     n_unobs = ov["bands"]["not observed"]
     lede_sub = (f'<b>{ov["n_review"]:,}</b> variants are in the review set, drawn from '
@@ -1433,15 +1457,6 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
         '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
         'pathogenic by ReNOVo. The full variant table is still one click away.</p>')
 
-    # Rarity is the point of this chart, so each band carries its own tone rather than
-    # one colour scaled by count, which made the *commonest* band the loudest bar.
-    af_tones = {"not observed": "p", "under 0.01%": "lp",
-                "0.01% to 0.1%": "vus", "0.1% to 1%": "nc"}
-    af_bars = "".join(
-        _bars([(k, v)], ov["n_review"], tone=af_tones[k], scale=max(ov["bands"].values()) or 1)
-        for k, v in ov["bands"].items() if v
-    )
-
     headers = "".join(
         f'<th scope="col" tabindex="0" data-key="{c["k"]}">{c["label"]}'
         f'<span class="sort-mark" aria-hidden="true">&#8597;</span></th>'
@@ -1455,12 +1470,9 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__PAGE_JS__", PAGE_JS)
             .replace("__LEDE_SUB__", lede_sub)
             .replace("__PRIORITY__", priority_html)
-            .replace("__CSQ_BARS__", _bars(ov["consequences"], ov["n_review"]))
-            .replace("__AF_BARS__", af_bars)
+            .replace("__SCALES__", scales)
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
-            .replace("__CLINVAR_CHIPS__", clinvar_chips)
-            .replace("__RENOVO_CHIPS__", renovo_chips)
             .replace("__REVIEW__", f"{stats['review']:,}")
             .replace("__TOTAL__", f"{stats['total']:,}")
             .replace("__GENERATED__", now)

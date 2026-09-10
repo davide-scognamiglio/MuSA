@@ -16,7 +16,7 @@ process BUILD_SETUP_REPORT {
 
     script:
     """
-    logo="${projectDir}/assets/MuSA_logo_light.png"
+    logo="${projectDir}/assets/MuSA_logo_masthead.png"
     build_setup_report.py ${merged_yaml} setup_report.html \$logo
     """
 }

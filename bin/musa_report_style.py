@@ -43,6 +43,19 @@ TOKENS = """
   --sig-b:    oklch(0.47 0.08 165);
   --sig-nc:   oklch(0.55 0.008 255);
 
+  /* The same ramp lifted for the inked band, where the ground is near-black instead
+     of white. Not a second palette: same hues, same order, relit. */
+  --band:        oklch(0.255 0.035 292);
+  --band-ink:    oklch(0.970 0.005 292);
+  --band-muted:  oklch(0.760 0.020 292);
+  --band-line:   oklch(0.380 0.035 292);
+  --sig-p-lift:   oklch(0.78 0.15  25);
+  --sig-lp-lift:  oklch(0.82 0.13  45);
+  --sig-vus-lift: oklch(0.86 0.12  90);
+  --sig-lb-lift:  oklch(0.80 0.10 230);
+  --sig-b-lift:   oklch(0.83 0.11 165);
+  --sig-nc-lift:  oklch(0.72 0.012 255);
+
   --font-serif: ui-serif, "Iowan Old Style", Palatino, "Book Antiqua", Georgia, serif;
   --font-sans:  ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono:  ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -53,6 +66,8 @@ TOKENS = """
   --step-2:  1.125rem;
   --step-3:  1.375rem;
   --step-4:  1.75rem;
+  --step-5:  2.25rem;
+  --step-6:  3rem;
 
   --radius: 5px;
 
@@ -67,7 +82,9 @@ TOKENS = """
 BASE_CSS = """
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { -webkit-text-size-adjust: 100%; }
+/* These are read for hours at desk distance on lab monitors, so the whole rem scale
+   is set 10% up from browser default rather than each size being nudged by hand. */
+html { -webkit-text-size-adjust: 100%; font-size: 110%; }
 
 body {
   background: var(--bg);
@@ -106,7 +123,9 @@ a:hover { text-decoration-thickness: 2px; }
   border-bottom: 1px solid var(--border);
 }
 .masthead-id { display: flex; align-items: center; gap: 0.875rem; min-width: 0; }
-.masthead-logo { height: 44px; width: auto; display: block; }
+/* The asset carries a wide margin of its own and sets the tagline small, so the
+   wordmark only becomes readable at a height that looks generous for a logo box. */
+.masthead-logo { height: 78px; width: auto; display: block; }
 .masthead-wordmark {
   font-family: var(--font-serif); font-size: var(--step-2); font-weight: 600;
   letter-spacing: -0.01em;
@@ -150,6 +169,14 @@ h2.section-title {
 }
 .chip b { font-weight: 700; letter-spacing: 0.02em; }
 .chip .chip-note { font-weight: 400; opacity: 0.75; }
+/* Both classifiers now report on the same five-step scale, which is the point, but
+   it means a bare pair of chips reading "P  LB" no longer says which said which.
+   Anywhere the two appear side by side outside a headed table column, they are
+   named. */
+.chip .chip-src {
+  font-family: var(--font-sans); font-weight: 400;
+  color: var(--ink-muted); margin-right: 0.1rem;
+}
 
 .chip.sig-p   { color: var(--sig-p);   background: color-mix(in oklab, var(--sig-p)   8%, transparent); }
 .chip.sig-lp  { color: var(--sig-lp);  background: color-mix(in oklab, var(--sig-lp)  8%, transparent); }
@@ -213,13 +240,23 @@ h2.section-title {
 # Both reports and the review-set filter read from here, so a label can never
 # disagree with the colour it is shown in.
 
+def is_conflicting(value):
+    """ClinVar's 'conflicting classifications of pathogenicity'.
+
+    It shares the VUS chip, because the five-step scale is what both classifiers are
+    read on, but it is not the same finding as an uncertain classification: it means
+    submitters disagree. Anything that needs to tell them apart asks here.
+    """
+    return "conflict" in (value or "").strip().lower()
+
+
 def clinvar_chip(value):
     """Map an encoded_CLNSIG value to (css_class, code, spoken_label)."""
     v = (value or "").strip().lower()
     if not v or v in (".", "nan", "none"):
         return ("sig-nc", "NC", "not classified")
     if "conflict" in v:
-        return ("sig-vus", "CONF", "conflicting interpretations")
+        return ("sig-vus", "VUS", "conflicting interpretations")
     if "likely" in v and "patho" in v:
         return ("sig-lp", "LP", "likely pathogenic")
     if "likely" in v and "benign" in v:
@@ -237,21 +274,37 @@ def clinvar_chip(value):
 
 # ReNOVo reports confidence and direction in one string: "<HP|IP|LP> <Pathogenic|Benign>",
 # where the prefix is high / intermediate / low prediction confidence.
-_RENOVO_CONF = {"HP": "high", "IP": "intermediate", "LP": "low"}
+#
+# Both classifiers are shown side by side on every row, so they must speak the same
+# language: a reader comparing a "P" against a "PATH" is doing translation work in
+# their head. ReNOVo's six classes therefore fold onto the same five-step ACMG scale
+# ClinVar uses, with confidence carrying the strength of the call: a low-confidence
+# call in either direction is exactly what "uncertain significance" means.
+RENOVO_SCALE = {
+    "HP Pathogenic": ("sig-p",   "P",   "pathogenic, high confidence"),
+    "IP Pathogenic": ("sig-lp",  "LP",  "pathogenic, intermediate confidence"),
+    "LP Pathogenic": ("sig-vus", "VUS", "pathogenic, low confidence"),
+    "LP Benign":     ("sig-vus", "VUS", "benign, low confidence"),
+    "IP Benign":     ("sig-lb",  "LB",  "benign, intermediate confidence"),
+    "HP Benign":     ("sig-b",   "B",   "benign, high confidence"),
+}
+
+_RENOVO_LOOKUP = {k.lower(): v for k, v in RENOVO_SCALE.items()}
+
+# The five-step scale, strongest first. Both chip readers order their legends by it.
+SIG_SCALE = ["P", "LP", "VUS", "LB", "B"]
 
 
 def renovo_chip(value):
     """Map a RENOVO_Class value to (css_class, code, spoken_label)."""
-    v = (value or "").strip()
+    v = " ".join((value or "").split())
     if not v or v in (".", "nan", "None"):
-        return ("sig-nc", "--", "no ReNOVo call")
-    parts = v.split()
-    if len(parts) != 2 or parts[0] not in _RENOVO_CONF:
-        return ("sig-nc", v, v)
-    conf, call = _RENOVO_CONF[parts[0]], parts[1].lower()
-    if call.startswith("patho"):
-        return ("sig-p", "PATH", f"ReNOVo pathogenic, {conf} confidence")
-    return ("sig-b", "BEN", f"ReNOVo benign, {conf} confidence")
+        return ("sig-nc", "NC", "no ReNOVo call")
+    hit = _RENOVO_LOOKUP.get(v.lower())
+    if hit:
+        cls, code, note = hit
+        return (cls, code, f"ReNOVo {note}")
+    return ("sig-nc", v, v)
 
 
 def af_band(value):
