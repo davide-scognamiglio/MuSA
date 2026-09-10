@@ -1,208 +1,83 @@
 #!/usr/bin/env python3
+"""MuSA: per-patient variant review report.
+
+Emits one self-contained HTML document per patient. No network dependency of any kind at read
+time: no CDN, no webfont, no remote script. MuSA runs offline by default and these reports are
+opened on lab desktops that may have no route out.
+
+Why this file looks the way it does
+-----------------------------------
+The previous implementation rendered every variant as a <tr> and embedded a complete HTML detail
+table inside a data-child attribute on each row. For a 68,338-variant exome that produced 683,381
+DOM elements and a 167 MB file which took minutes to open, and it depended on jQuery, DataTables
+and Google Fonts over the network.
+
+This version embeds the same data as columnar, dictionary-encoded JSON (~26 MB for the same
+patient) and renders through a virtual scroller, so the DOM holds a few hundred nodes regardless
+of variant count. Design tokens live in musa_report_style.py, shared with the setup report.
+
+Filtering contract
+------------------
+This script does not filter variants out of the document. It reads <patient>.filtered.maf (falling
+back to <patient>.raw.maf when the filtered file is header-only) and embeds every row. The default
+*view* is the review set, defined in review_flags() below; the full set is one click away and the
+count of both is stated in the header.
+
+Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe> [logo]
 """
-MuSA · Annotate Reporter (Python)
-Generates a patient variant-analysis HTML dashboard from MAF files.
 
-Usage:
-    annotate_reporter.py <patient_code> <use_vep_plugins> <offline> <skip_genebe> [logo.png]
-
-About MAF filtering
--------------------
-This script does NOT perform variant filtering.  That responsibility belongs
-entirely to the upstream Nextflow pipeline steps, which write two files:
-
-    <patient>.filtered.maf  – primary source (already filtered upstream)
-    <patient>.raw.maf       – fallback used only when filtered MAF is header-only
-
-The script simply picks the best available file and renders it as-is.
-No rows are dropped here beyond what was already excluded upstream.
-"""
-
-import sys
-import os
 import base64
 import datetime
-import io
-import re
-import warnings
-
-warnings.filterwarnings("ignore")
+import json
+import os
+import sys
 
 import pandas as pd
-import numpy as np
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  THEME  (identical to build_setup_report.py)
-# ══════════════════════════════════════════════════════════════════════════════
-THEME = {
-    "bg":           "#0b0d14",
-    "surface":      "#121520",
-    "surface2":     "#1a1f2e",
-    "border":       "#2a2f42",
-    "border2":      "#4a5070",
-    "text":         "#e6e8f2",
-    "muted":        "#9aa0b8",
-    "ok":           "#3aad82",
-    "ok_dim":       "#3aad821a",
-    "ok_border":    "#3aad8255",
-    "fail":         "#d94f5c",
-    "fail_dim":     "#d94f5c15",
-    "fail_border":  "#d94f5c55",
-    "pend":         "#d4a43a",
-    "pend_dim":     "#d4a43a15",
-    "pend_border":  "#d4a43a55",
-    "accent":       "#6c5fff",
-    "font_display": "'Poppins', sans-serif",
-    "font_body":    "'Poppins', sans-serif",
-    "font_mono":    "'DM Mono', 'Courier New', monospace",
-    "google_fonts": (
-        "https://fonts.googleapis.com/css2?"
-        "family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400"
-        "&family=DM+Mono:wght@400;500&display=swap"
-    ),
-    "radius": "8px",
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  COLUMN CONFIGURATION
-#
-#  Keys are ORIGINAL MAF column names.
-#  display_names maps original → pretty label used in the HTML table header.
-#  Plots always receive df_raw and use original column names directly.
-# ══════════════════════════════════════════════════════════════════════════════
-COLUMN_CONFIG = {
-    # Columns shown in the main table (order is preserved)
-    "main": {
-        "online": [
-            "Hugo_Symbol", "HGVSc", "HGVSp_VEP",
-            "encoded_CLNSIG", "renovo_adj_acmg_score", "clinvar_trait",
-            "MAX_AF","PUBMED", "Franklin" # Franklin is computed, not in the MAF
-        ],
-        "offline": [
-            "Hugo_Symbol", "HGVSc", "genome_change", "HGVSp_VEP",
-            "encoded_CLNSIG", "MAX_AF",
-            "PUBMED", "Franklin"
-        ],
-    },
-    # Columns shown only in expandable child rows
-    "details": {
-        "with_plugins": [
-            "genome_change","ref_context","bioinfo_params",
-            "MAX_AF_POPS", "clinvar_OMIM_id","clinvar_id", 
-            "acmg_criteria", "encoded_CLNREVSTAT",
-            "PhenotypeOrthologous_Mouse_phenotype",
-            "PhenotypeOrthologous_Rat_phenotype"
-        ],
-        "without_plugins": [
-            "genome_change","ref_context","bioinfo_params",
-            "clinvar_OMIM_id","clinvar_id", "acmg_criteria", "encoded_CLNREVSTAT"
-        ],
-    },
-    # Pretty labels for table headers (original MAF name -> display name)
-    "display_names": {
-        "Hugo_Symbol":            "gene",
-        "genome_change":          "gDNA",
-        "ref_context":            "Reference context",
-        "bioinfo_params":         "Variant quality",
-        "HGVSp_VEP":              "a.a.",
-        "Consequence":            "consequence",
-        "encoded_CLNSIG": "Clinvar class",
-        "renovo_adj_acmg_score":  "MuSA class",
-        "acmg_criteria":          "GeneBe ACMG criteria",
-        "MAX_AF":                 "max AF",
-        "MAX_AF_POPS":            "max AF pop",
-        "PL_score":               "Renovo score",
-        "PUBMED":                 "PUBMED",
-        "HGVSc":                  "cDNA",
-        "Franklin":               "Franklin",
-        "clinvar_OMIM_id":        "OMIM",
-        "clinvar_id":        "Clinvar ID",
-        "encoded_CLNREVSTAT": "Clinvar review",
-        "clinvar_trait":          "Clinvar trait",
-        "PhenotypeOrthologous_Mouse_phenotype": "Mouse phenotype",
-        "PhenotypeOrthologous_Rat_phenotype":   "Rat phenotype",
-    },
-}
-
-# Colour map for Consequence VALUES (used in both plots and table badges)
-VC_COLOURS = {
-    "Missense_Mutation":       "#6c5fff",
-    "Nonsense_Mutation":       "#d94f5c",
-    "Frame_Shift_Del":         "#d4a43a",
-    "Frame_Shift_Ins":         "#e8855a",
-    "In_Frame_Del":            "#3aad82",
-    "In_Frame_Ins":            "#3a8fad",
-    "Splice_Site":             "#ad3a82",
-    "Silent":                  "#4a5070",
-    "3'UTR":                   "#2a5070",
-    "5'UTR":                   "#2a3d70",
-    "Intron":                  "#333a52",
-    "RNA":                     "#5a3370",
-    "IGR":                     "#2a2f42",
-    "Translation_Start_Site":  "#c45fff",
-    "Nonstop_Mutation":        "#ff5f5f",
-}
+import musa_report_style as style
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  CSS HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-def css_vars(t: dict) -> str:
-    mapping = {
-        "bg": "bg", "surface": "surface", "surface2": "surface2",
-        "border": "border", "border2": "border2", "text": "text",
-        "muted": "muted", "ok": "ok", "ok_dim": "ok-dim",
-        "ok_border": "ok-border", "fail": "fail", "fail_dim": "fail-dim",
-        "fail_border": "fail-border", "pend": "pend", "pend_dim": "pend-dim",
-        "pend_border": "pend-border", "accent": "accent",
-        "font_display": "font-display", "font_body": "font-body",
-        "font_mono": "font-mono", "radius": "radius",
-    }
-    lines = ["  :root {"]
-    for key, css_name in mapping.items():
-        lines.append(f"    --{css_name}: {t[key]};")
-    lines.append("  }")
-    return "\n".join(lines)
+# ── column configuration ──────────────────────────────────────────────────────
+# Keys are original MAF column names. The report embeds every column listed here
+# that exists in the MAF; anything absent is skipped with a warning rather than
+# rendered as a blank field, so a missing column is visible as a missing column.
+
+MAIN_COLUMNS = [
+    ("Hugo_Symbol",    "Gene",        "gene"),
+    ("genome_change",  "gDNA",        "mono"),
+    ("HGVSc",          "cDNA",        "mono"),
+    ("HGVSp_VEP",      "Protein",     "mono"),
+    ("Consequence",    "Consequence", "consequence"),
+    ("encoded_CLNSIG", "ClinVar",     "clinvar"),
+    ("RENOVO_Class",   "ReNOVo",      "renovo"),
+    ("MAX_AF",         "Max AF",      "af"),
+]
+
+DETAIL_COLUMNS = [
+    ("Consequence",          "All consequences"),
+    ("clinvar_id",           "ClinVar variation ID"),
+    ("clinvar_OMIM_id",      "OMIM"),
+    ("encoded_CLNREVSTAT",   "ClinVar review status"),
+    ("clinvar_trait",        "ClinVar trait"),
+    ("PUBMED",               "PubMed"),
+    ("MAX_AF_POPS",          "Max AF population"),
+    ("PL_score",             "ReNOVo pathogenicity score"),
+    ("ref_context",          "Reference context"),
+    ("bioinfo_params",       "Variant quality"),
+    ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
+    ("PhenotypeOrthologous_Rat_phenotype",   "Rat orthologue phenotype"),
+    # Present only when GeneBe ran (online mode).
+    ("acmg_criteria",          "GeneBe ACMG criteria"),
+    ("renovo_adj_acmg_score",  "GeneBe ACMG score"),
+]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  LOGO
-#  Accepted as an explicit CLI argument so the Nextflow module can pass
-#  ${projectDir}/assets/MuSA_logo.png without relying on __file__ location.
-# ══════════════════════════════════════════════════════════════════════════════
-def load_logo_base64(logo_path: str):
-    """Return (b64_string, mime_type) or (None, None) if path is invalid."""
-    if not logo_path or not os.path.isfile(logo_path):
-        if logo_path:
-            print(f"  WARNING: Logo not found at: {logo_path}", file=sys.stderr)
-        return None, None
-    ext  = os.path.splitext(logo_path)[1].lower().lstrip(".")
-    mime = {"png": "image/png", "svg": "image/svg+xml",
-            "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
-    with open(logo_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return b64, mime
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  ARGUMENT PARSING
-#
-#  Args: patient_code  use_vep_plugins  offline  skip_genebe  [logo_path]
-#  Note: 'workflow' has been removed — it is deprecated and no longer used.
-# ══════════════════════════════════════════════════════════════════════════════
+# ── arguments ─────────────────────────────────────────────────────────────────
 def parse_args():
     args = sys.argv[1:]
     if len(args) < 4:
-        print(
-            "Usage: annotate_reporter.py <patient_code> <use_vep_plugins> "
-            "<offline> <skip_genebe> [logo_path]"
-        )
-        sys.exit(1)
+        sys.exit("Usage: build_annotate_report.py <patient_code> <use_vep_plugins> "
+                 "<offline> <skip_genebe> [logo_path]")
 
     def _bool(v):
         return str(v).strip().upper() in ("TRUE", "1", "YES")
@@ -216,21 +91,23 @@ def parse_args():
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MAF READING
-#
-#  Filtering contract
-#  ------------------
-#  This script does NOT filter variants.  The pipeline produces two files:
-#    * <patient>.filtered.maf  -- primary source (already filtered upstream)
-#    * <patient>.raw.maf       -- fallback when filtered file is header-only
-#  We pick whichever file has actual data and render it as-is.
-# ══════════════════════════════════════════════════════════════════════════════
-_HEADER_ONLY = object()   # sentinel — avoids DataFrame truthiness pitfalls
+def load_logo_base64(logo_path):
+    if not logo_path or not os.path.isfile(logo_path):
+        if logo_path:
+            print(f"  WARNING: logo not found at {logo_path}", file=sys.stderr)
+        return None, None
+    ext = os.path.splitext(logo_path)[1].lower().lstrip(".")
+    mime = {"png": "image/png", "svg": "image/svg+xml",
+            "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
+    with open(logo_path, "rb") as fh:
+        return base64.b64encode(fh.read()).decode(), mime
 
 
-def _read_maf_file(path: str):
-    """Return DataFrame, _HEADER_ONLY sentinel, or None on failure."""
+# ── MAF loading ───────────────────────────────────────────────────────────────
+_HEADER_ONLY = object()
+
+
+def _read_maf_file(path):
     if not os.path.isfile(path):
         return None
     try:
@@ -238,981 +115,765 @@ def _read_maf_file(path: str):
         df = df.loc[:, ~df.columns.duplicated()]
         if df.empty:
             return _HEADER_ONLY
-        print(f"  Loaded {len(df):,} rows x {len(df.columns)} cols from {path}",
-              file=sys.stderr)
+        print(f"  Loaded {len(df):,} rows x {len(df.columns)} cols from {path}", file=sys.stderr)
         return df
     except Exception as exc:
-        print(f"  WARNING: Could not read {path}: {exc}", file=sys.stderr)
+        print(f"  WARNING: could not read {path}: {exc}", file=sys.stderr)
         return None
 
 
-def load_maf_data(patient_code: str) -> pd.DataFrame:
-    filtered = f"{patient_code}.filtered.maf"
-    raw      = f"{patient_code}.raw.maf"
-
-    result = _read_maf_file(filtered)
+def load_maf_data(patient_code):
+    result = _read_maf_file(f"{patient_code}.filtered.maf")
     if result is _HEADER_ONLY or result is None:
         if result is _HEADER_ONLY:
-            print("  Filtered MAF is header-only, falling back to raw MAF",
-                  file=sys.stderr)
-        result = _read_maf_file(raw)
-
+            print("  Filtered MAF is header-only, falling back to raw MAF", file=sys.stderr)
+        result = _read_maf_file(f"{patient_code}.raw.maf")
     if result is None or result is _HEADER_ONLY:
         raise RuntimeError(f"No usable MAF found for patient '{patient_code}'")
-
-    # Warn about any expected columns that are missing so users can diagnose issues
-    expected = set(COLUMN_CONFIG["display_names"].keys()) - {"Franklin"}
-    missing  = expected - set(result.columns)
-    if missing:
-        print(f"  WARNING: Columns not in MAF (will be skipped): "
-              f"{', '.join(sorted(missing))}", file=sys.stderr)
     return result
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  FRANKLIN URL BUILDER
-# ══════════════════════════════════════════════════════════════════════════════
-def make_franklin_url(genome_change: str) -> str:
-    if not genome_change or pd.isna(genome_change) or genome_change.strip() == "":
-        return ""
-    gc = re.sub(r"^g\.", "", genome_change.strip())
-    m  = re.match(r"chr([^:]+):", gc)
-    if not m:
-        return ""
-    chrom = m.group(1)
+# ── review set ────────────────────────────────────────────────────────────────
+def review_flags(df):
+    """Return a list of 0/1 per row: is this variant in the default review view?
 
-    snv = re.search(r":([0-9]+)([ACGT])>([ACGT])$", gc)
-    if snv:
-        pos, ref, alt = snv.group(1), snv.group(2), snv.group(3)
-        return (f"https://franklin.genoox.com/clinical-db/variant/snp/"
-                f"chr{chrom}-{pos}-{ref}-{alt}-hg38")
+    Definition: rare (MAX_AF < 1%, absent counts as rare) AND (ClinVar-flagged as
+    P/LP/VUS/conflicting OR protein-affecting consequence).
 
-    ins = re.search(r":([0-9]+)_[0-9]+ins([ACGT]+)$", gc)
-    if ins:
-        pos, ins_seq = ins.group(1), ins.group(2)
-        ref_m = re.search(r":([ACGT])_", gc)
-        ref   = ref_m.group(1) if ref_m else "N"
-        return (f"https://franklin.genoox.com/clinical-db/variant/snp/"
-                f"chr{chrom}-{pos}-{ref}-{ref+ins_seq}-hg38")
-
-    del_m = re.search(r":([0-9]+)_[0-9]+del([ACGT]*)$", gc)
-    if del_m:
-        pos, del_seq = del_m.group(1), del_m.group(2)
-        ref = del_seq if del_seq else "N"
-        alt = ref[0] if ref else "N"
-        return (f"https://franklin.genoox.com/clinical-db/variant/snp/"
-                f"chr{chrom}-{pos}-{ref}-{alt}-hg38")
-
-    return ""
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  DATA PREPARATION
-#
-#  Returns:
-#    df_display   -- renamed, subsetted DataFrame for the HTML table
-#    main_display -- ordered list of display-name column headers (main table)
-#    det_display  -- ordered list of display-name column headers (child rows)
-#
-#  Design: plots and stats are generated separately from df_raw using original
-#  MAF column names, so they are completely independent of the display selection.
-# ══════════════════════════════════════════════════════════════════════════════
-def prepare_display_data(df: pd.DataFrame, offline: bool, use_vep_plugins: bool):
-    cfg = COLUMN_CONFIG
-    dn  = cfg["display_names"]
-
-    main_src = list(cfg["main"]["offline"] if offline else cfg["main"]["online"])
-    det_src  = list(cfg["details"]["with_plugins"] if use_vep_plugins
-                    else cfg["details"]["without_plugins"])
-
-    # Franklin is computed below; exclude it from the MAF column existence check
-    franklin_requested = "Franklin" in main_src
-    main_src_maf = [c for c in main_src if c != "Franklin" and c in df.columns]
-    det_src      = [c for c in det_src if c in df.columns]
-
-    # Work on a copy with NAs filled as empty strings
-    df = df.copy().fillna("")
-    # Normalize HGVSp_VEP: take first transcript if multiple (semicolon-separated)
-    if "HGVSp_VEP" in df.columns:
-        df["HGVSp_VEP"] = df["HGVSp_VEP"].apply(
-            lambda x: x.split(";")[0] if x else x
-        )
-    # Compute Franklin URL from genome_change (original column name)
-    if "genome_change" in df.columns and franklin_requested:
-        df["Franklin"] = df["genome_change"].apply(make_franklin_url)
-        main_src_final = main_src_maf + ["Franklin"]
-    else:
-        main_src_final = main_src_maf
-
-    # Build the display subset in the configured column order
-    all_src = main_src_final + [c for c in det_src if c not in main_src_final]
-    subset  = df[[c for c in all_src if c in df.columns]].copy()
-
-    # Rename columns to pretty display names
-    rename_map = {col: dn.get(col, col.replace("_", " ")) for col in subset.columns}
-    subset.rename(columns=rename_map, inplace=True)
-
-
-    # Build ordered header lists for the table builder
-    main_display = [rename_map[c] for c in main_src_final if c in rename_map]
-    det_display  = [rename_map[c] for c in det_src        if c in rename_map]
-
-    return subset, main_display, det_display
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  CELL RENDERING  (HTML badges / links for specific display columns)
-# ══════════════════════════════════════════════════════════════════════════════
-def _render_max_af(val: str) -> str:
-    if not val:
-        return '<span class="af-badge private">Private</span>'
-    try:
-        f = float(val)
-        if f > 0.05:
-            return f'<span class="af-badge common">Common ({val})</span>'
-        return f'<span class="af-badge rare">Rare ({val})</span>'
-    except ValueError:
-        return val
-
-
-def _render_acmg(val) -> str:
-    try:
-        f = float(val)
-    except (TypeError, ValueError):
-        return '<span class="acmg-badge vus">VUS</span>'
-    if   f <= -7: cls, lbl = "benign",            f"B ({f:.2f})"
-    elif f <= -1: cls, lbl = "likely-benign",     f"LB ({f:.2f})"
-    elif f <=  5: cls, lbl = "vus",               f"VUS ({f:.2f})"
-    elif f <=  9: cls, lbl = "likely-pathogenic", f"LP ({f:.2f})"
-    else:         cls, lbl = "pathogenic",        f"P ({f:.2f})"
-    return f'<span class="acmg-badge {cls}">{lbl}</span>'
-
-
-def _render_clinvar(val: str) -> str:
-    if not val:
-        return ""
-    vl = val.lower()
-    if "pathogenic" in vl and "likely" not in vl and "benign" not in vl:
-        cls, label = "cv-pathogenic", "P"
-    elif "likely_pathogenic" in vl or "likely pathogenic" in vl:
-        cls, label = "cv-likely-pathogenic", "LP"
-    elif "benign" in vl and "likely" not in vl and "pathogenic" not in vl:
-        cls, label = "cv-benign", "B"
-    elif "likely_benign" in vl or "likely benign" in vl:
-        cls, label = "cv-likely-benign", "LB"
-    elif "uncertain" in vl or "vus" in vl:
-        cls, label = "cv-vus", "VUS"
-    elif "not classified" in vl:
-        cls, label = "cv-notclassified", "NC"
-    else:
-        cls, label = "cv-other", val  # fallback: show raw
-    return f'<span class="cv-badge {cls}">{label}</span>'
-
-
-def _render_pubmed(val: str) -> str:
-    if not val:
-        return ""
-    ids   = [x.strip() for x in str(val).split(",") if x.strip()]
-    links = [
-        f'<a class="pubmed-link" href="https://pubmed.ncbi.nlm.nih.gov/{i}/" '
-        f'target="_blank">{i}</a>'
-        for i in ids
-    ]
-    return ", ".join(links)
-
-
-def _render_franklin(val: str) -> str:
-    if not val:
-        return ""
-    return (f'<a class="franklin-link" href="{val}" target="_blank" '
-            f'rel="noopener noreferrer">Link Franklin</a>')
-
-
-def _render_omim(val: str) -> str:
-    if not val:
-        return ""
-
-    ids = [x.strip() for x in str(val).split(",") if x.strip()]
-    links = [
-        f'<a class="omim-link" '
-        f'href="https://www.omim.org/entry/{i}?search={i}&highlight={i}" '
-        f'target="_blank" rel="noopener noreferrer">{i}</a>'
-        for i in ids
-    ]
-    return ", ".join(links)
-
-def _render_clinvar_id(val: str) -> str:
-    if not val:
-        return ""
-
-    ids = [x.strip() for x in str(val).split(",") if x.strip()]
-    links = [
-        f'<a class="omim-link" '
-        f'href="https://www.ncbi.nlm.nih.gov/clinvar/variation/{i}?term={i}&%5BVariation+ID%5D" '
-        f'target="_blank" rel="noopener noreferrer">{i}</a>'
-        for i in ids
-    ]
-    return ", ".join(links)
-
-def _render_vc(val: str) -> str:
-    if not val:
-        return ""
-    color = VC_COLOURS.get(val, THEME["border2"])
-    return (f'<span class="vc-badge" style="border-color:{color};color:{color};">'
-            f'{val.replace("_", " ")}</span>')
-
-
-def _render_phenotype(val: str) -> str:
-    if not val:
-        return ""
-    items = [i.strip().replace("_", " ") for i in val.split(",") if i.strip()]
-    return ", ".join(dict.fromkeys(items))   # deduplicate, preserve order
-
-
-_PHENOTYPE_DISPLAY = {"Mouse phenotype", "Rat phenotype"}
-
-
-def _cell_html(col: str, val) -> str:
-    """Convert a raw cell value to its rendered HTML string.
-    col is the DISPLAY name (after renaming).
-    For 'MuSA class' returns a (sort_key, html) tuple so the caller
-    can emit  <td data-order="sort_key">html</td>  for correct numeric sorting."""
-    s = "" if (pd.isna(val) or str(val) in ("nan", "None", "")) else str(val)
-    if col == "max AF":           return _render_max_af(s)
-    if col == "MuSA class":
-        html = _render_acmg(s)
-        try:
-            sort_key = float(s)
-        except (ValueError, TypeError):
-            sort_key = -999.0   # put unparseable values at the bottom
-        return (sort_key, html)
-    if col == "Clinvar class":    return _render_clinvar(s)
-    if col == "PUBMED":           return _render_pubmed(s)
-    if col == "Franklin":         return _render_franklin(s)
-    if col == "OMIM":             return _render_omim(s)
-    if col == "Clinvar ID":       return _render_clinvar_id(s)
-    if col == "type":             return _render_vc(s)
-    if col in _PHENOTYPE_DISPLAY: return _render_phenotype(s)
-    return s
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  TABLE HTML  (DataTables.js, dark-themed)
-# ══════════════════════════════════════════════════════════════════════════════
-def build_table_html(df: pd.DataFrame, main_cols: list, det_cols: list) -> str:
+    Measured on four clinical exomes this yields 420-789 variants out of 65,000-73,000. The
+    intent is the set a reviewer actually works through, not a claim that nothing else matters,
+    which is why the full set stays in the document and one control away.
     """
-    Build a self-contained <table> + <script> block.
-    df must already be renamed to display names.
-    main_cols / det_cols are ordered lists of DISPLAY names.
+    af = df["MAX_AF"] if "MAX_AF" in df.columns else pd.Series([""] * len(df))
+    sig = df["encoded_CLNSIG"] if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
+    csq = df["Consequence"] if "Consequence" in df.columns else pd.Series([""] * len(df))
+
+    af_num = pd.to_numeric(af, errors="coerce")
+    rare = af_num.isna() | (af_num < 0.01)
+
+    flagged = sig.fillna("").map(lambda v: style.clinvar_chip(v)[0] in ("sig-p", "sig-lp", "sig-vus"))
+    coding = csq.fillna("").map(style.is_protein_affecting)
+
+    flags = (rare & (flagged | coding)).astype(int).tolist()
+    print(f"  Review set: {sum(flags):,} of {len(flags):,} variants", file=sys.stderr)
+    return flags
+
+
+# ── payload ───────────────────────────────────────────────────────────────────
+def build_payload(df, main_cols, detail_cols, flags):
+    """Columnar, per-column dictionary-encoded JSON.
+
+    Row-oriented JSON for a 68k exome is 66 MB; this is 26 MB, and it stays plain JSON that any
+    browser can parse and any text editor can grep. Compression was considered and rejected: it
+    would need either DecompressionStream (too new for some institutional browsers) or a vendored
+    decompressor, and the DOM node count was the real cost, not the bytes.
     """
-    main_cols = [c for c in main_cols if c in df.columns]
-    det_cols  = [c for c in det_cols  if c in df.columns]
-    has_child = bool(det_cols)
+    cols = [c for c, _, _ in main_cols] + [c for c, _ in detail_cols]
+    data = {}
+    for col in cols:
+        values = df[col].fillna(".").astype(str).tolist() if col in df.columns else ["."] * len(df)
+        uniq = sorted(set(values))
+        if len(uniq) <= len(values) / 3:
+            index = {v: i for i, v in enumerate(uniq)}
+            data[col] = {"d": uniq, "i": [index[v] for v in values]}
+        else:
+            data[col] = {"v": values}
+    return {
+        "n": len(df),
+        "main": [{"k": k, "label": lbl, "kind": kind} for k, lbl, kind in main_cols],
+        "detail": [{"k": k, "label": lbl} for k, lbl in detail_cols],
+        "data": data,
+        "review": flags,
+    }
 
-    # thead
-    expand_th = "<th></th>" if has_child else ""
-    th_html   = expand_th + "".join(f"<th>{c}</th>" for c in main_cols)
 
-    # tbody
-    rows_html = []
-    for _, row in df.iterrows():
-        cells = []
-        if has_child:
-            child_rows = "".join(
-                f"<tr><td class='det-label'>{c}</td>"
-                f"<td class='det-val'>{_cell_html(c, row.get(c, ''))}</td></tr>"
-                for c in det_cols
-            )
-            child_html = (
-                f"<table class='child-table'>"
-                f"<colgroup><col style='width:160px'><col></colgroup>"
-                f"{child_rows}</table>"
-            )
-            # Embed in data-attribute — escape double-quotes for HTML attribute context
-            child_attr = child_html.replace('"', "&quot;")
-            cells.append(f'<td class="expand-cell" data-child="{child_attr}">&#9654;</td>')
-        for col in main_cols:
-            rendered = _cell_html(col, row.get(col, ""))
-            if isinstance(rendered, tuple):
-                sort_key, html = rendered
-                cells.append(f'<td data-order="{sort_key}">{html}</td>')
-            else:
-                cells.append(f"<td>{rendered}</td>")
-        rows_html.append(f"<tr>{''.join(cells)}</tr>")
+def summarise(df, flags):
+    total = len(df)
+    out = {"total": total, "review": sum(flags)}
+    if "encoded_CLNSIG" in df.columns:
+        classes = df["encoded_CLNSIG"].fillna("").map(lambda v: style.clinvar_chip(v)[1])
+        counts = classes.value_counts().to_dict()
+    else:
+        counts = {}
+    out["clinvar"] = {k: int(counts.get(k, 0)) for k in ("P", "LP", "VUS", "CONF", "LB", "B", "NC")}
+    if "RENOVO_Class" in df.columns:
+        rc = df["RENOVO_Class"].fillna("").map(lambda v: style.renovo_chip(v)[1])
+        rcounts = rc.value_counts().to_dict()
+    else:
+        rcounts = {}
+    out["renovo"] = {"PATH": int(rcounts.get("PATH", 0)), "BEN": int(rcounts.get("BEN", 0))}
+    return out
 
-    tbody_html = "\n".join(rows_html)
 
-    # Default sort: prefer "suggested classification" desc, then "Renovo score" desc
-    sort_idx = -1
-    for cand in ("MuSA class", "Renovo score"):
-        if cand in main_cols:
-            sort_idx = main_cols.index(cand) + (1 if has_child else 0)
-            break
-    sort_js    = f"[{sort_idx}, 'desc']" if sort_idx >= 0 else "[0, 'asc']"
-    no_sort_js = "{ orderable: false, targets: 0 }," if has_child else ""
+# ── page CSS ──────────────────────────────────────────────────────────────────
+PAGE_CSS = """
+/* ── case summary ─────────────────────────────────────────────────────────── */
+.summary {
+  display: flex; flex-wrap: wrap; gap: 0 2.5rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.summary-block { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.25rem 0; }
+.summary-label {
+  font-size: var(--step--1); color: var(--ink-muted);
+}
+.summary-value {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-3); font-weight: 600; line-height: 1.1;
+}
+.summary-note { font-size: var(--step--1); color: var(--ink-muted); }
+.summary-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
 
-    return f"""
-<table id="variantTable" class="display compact nowrap" style="width:100%">
-  <thead><tr>{th_html}</tr></thead>
-  <tbody>{tbody_html}</tbody>
-</table>
-<script>
-(function(){{
-  const table = new DataTable('#variantTable', {{
-    order: [{sort_js}],
-    pageLength: 5,
-    lengthMenu: [5, 10, 15, 25, 50],
-    scrollX: true,
-    autoWidth: false,
-    columnDefs: [
-      {{ targets: '_all', defaultContent: '' }},
-      {no_sort_js}
-    ],
-    language: {{
-      search: '',
-      searchPlaceholder: 'Search variants\u2026',
-      emptyTable: 'No variants match the current filter.',
-      paginate: {{ first: '\u00ab', last: '\u00bb', next: '\u203a', previous: '\u2039' }}
-    }}
-  }});
+/* ── control bar ──────────────────────────────────────────────────────────── */
+.controls {
+  position: sticky; top: 0; z-index: var(--z-sticky);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  padding: 0.6rem 1.5rem;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+.controls-group { display: flex; align-items: center; gap: 0.35rem; }
+.controls-sep { width: 1px; height: 20px; background: var(--border-strong); }
+#search { min-width: 260px; }
+.result-count {
+  margin-left: auto;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step--1); color: var(--ink-muted);
+}
 
-  document.querySelector('#variantTable tbody').addEventListener('click', function(e) {{
-    const td = e.target.closest('.expand-cell');
-    if (!td) return;
-    const tr  = td.closest('tr');
-    const row = table.row(tr);
-    if (row.child.isShown()) {{
-      row.child.hide();
-      td.innerHTML = '&#9654;';
-      tr.classList.remove('shown');
-    }} else {{
-      row.child(td.dataset.child).show();
-      td.innerHTML = '&#9660;';
-      tr.classList.add('shown');
-    }}
-  }});
-}})();
-</script>
+/* ── table + panel ────────────────────────────────────────────────────────── */
+.workspace { display: flex; align-items: stretch; min-height: 0; }
+.table-region { flex: 1 1 auto; min-width: 0; }
+#scroller {
+  height: calc(100vh - 210px); min-height: 320px;
+  overflow: auto; background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+table.variants {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: var(--step-0);
+}
+table.variants thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface-sunken);
+  text-align: left; font-weight: 600; font-size: var(--step--1);
+  color: var(--ink-muted);
+  padding: 0.45rem 0.6rem; white-space: nowrap;
+  border-bottom: 1px solid var(--border-strong);
+  cursor: pointer; user-select: none;
+}
+table.variants thead th:hover { color: var(--ink); }
+table.variants thead th .sort-mark { opacity: 0.35; margin-left: 0.25rem; }
+table.variants thead th[aria-sort="ascending"],
+table.variants thead th[aria-sort="descending"] { color: var(--accent); }
+table.variants thead th[aria-sort] .sort-mark { opacity: 1; }
+#padTop td, #padBottom td { padding: 0; border: 0; }
+table.variants tbody td {
+  height: 30px; padding: 0 0.6rem; border-bottom: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch;
+}
+table.variants tbody td.col-gene { font-weight: 600; max-width: 14ch; }
+table.variants tbody td.col-mono,
+table.variants tbody td.col-af { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+table.variants tbody tr { cursor: pointer; }
+table.variants tbody tr:hover td { background: var(--surface-sunken); }
+table.variants tbody tr[aria-selected="true"] td {
+  background: var(--accent-weak);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.csq { font-size: var(--step--1); color: var(--ink-muted); }
+table.variants tbody td.col-af { text-align: right; }
+.af-value { color: var(--ink); }
+.af-absent {
+  font-family: var(--font-sans); font-style: italic;
+  color: var(--sig-p); font-size: var(--step--1);
+}
+.stars { color: var(--sig-vus); letter-spacing: 0.06em; }
+/* The hollow stars are aria-hidden decoration beside the spelled-out review status,
+   but they still have to be legible: --border-strong sat at 1.74:1. */
+.stars-empty { color: oklch(0.53 0.01 255); }
+.stars-note { color: var(--ink-muted); font-family: var(--font-sans); }
+.panel dd.plain { font-family: var(--font-sans); }
+
+/* ── detail panel ─────────────────────────────────────────────────────────── */
+.panel {
+  flex: 0 0 380px; max-width: 380px;
+  height: calc(100vh - 210px); min-height: 320px;
+  overflow: auto; background: var(--surface); padding: 1rem 1.25rem;
+}
+.panel-empty { color: var(--ink-muted); font-size: var(--step-0); }
+.panel-empty kbd {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  padding: 0.05rem 0.3rem; border: 1px solid var(--border-strong);
+  border-radius: 3px; background: var(--surface-sunken);
+}
+.panel h3 {
+  font-family: var(--font-serif); font-size: var(--step-2); font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+.panel-gdna {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  color: var(--ink-muted); word-break: break-all; margin-bottom: 0.75rem;
+}
+.panel-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1rem; }
+.panel dl { display: grid; grid-template-columns: minmax(0,1fr); gap: 0.6rem; }
+.panel dt {
+  font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.1rem;
+}
+.panel dd {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  word-break: break-word; white-space: pre-wrap;
+}
+.panel dd.absent { font-family: var(--font-sans); color: var(--ink-muted); font-style: italic; }
+.panel-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+.panel-links a {
+  font-size: var(--step--1); padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  text-decoration: none; color: var(--accent);
+}
+.panel-links a:hover { background: var(--accent-weak); }
+
+@media (max-width: 1100px) {
+  .workspace { flex-direction: column; }
+  .panel { flex: 1 1 auto; max-width: none; height: auto; border-top: 1px solid var(--border); }
+  #scroller { height: 60vh; border-right: none; }
+}
 """
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MATPLOTLIB PLOTS
-#
-#  IMPORTANT: all plot functions receive df_raw (original MAF column names).
-#  This decouples plot generation from the display column selection completely,
-#  so plots are always generated regardless of online/offline/plugin flags.
-# ══════════════════════════════════════════════════════════════════════════════
-def _fig_to_b64(fig) -> str:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight",
-                facecolor=fig.get_facecolor(), dpi=140)
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+# ── page JS ───────────────────────────────────────────────────────────────────
+PAGE_JS = r"""
+(function () {
+  "use strict";
 
+  var P = window.__MUSA__;
+  var ROW_H = 30;          // must match the CSS row height for the scroller maths
+  var OVERSCAN = 8;
 
-def _apply_dark_style(ax, fig):
-    fig.patch.set_facecolor(THEME["surface"])
-    ax.set_facecolor(THEME["bg"])
-    ax.tick_params(colors=THEME["muted"], labelsize=8)
-    ax.xaxis.label.set_color(THEME["muted"])
-    ax.yaxis.label.set_color(THEME["muted"])
-    ax.title.set_color(THEME["text"])
-    for spine in ax.spines.values():
-        spine.set_edgecolor(THEME["border2"])
-        spine.set_linewidth(0.6)
+  // Dictionary-encoded columns are expanded lazily, once, on first access.
+  var cache = {};
+  function col(key) {
+    if (cache[key]) return cache[key];
+    var c = P.data[key];
+    if (!c) { cache[key] = []; return cache[key]; }
+    cache[key] = c.v ? c.v : c.i.map(function (i) { return c.d[i]; });
+    return cache[key];
+  }
 
+  function absent(v) { return !v || v === "." || v === "nan" || v === "None"; }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
 
-def plot_vc_distribution(df_raw: pd.DataFrame) -> str:
-    """Horizontal bar chart using Consequence (original MAF name)."""
-    col = "Consequence"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    counts = (
-        df_raw[col]
-        .replace("", np.nan)
-        .dropna()
-        .str.split("&")
-        .str[0]
-        .value_counts()
-    )
-    if counts.empty:
-        return ""
+  // ── renderers, mirroring musa_report_style.py so labels and colours agree ──
+  function clinvarChip(v) {
+    var s = (v || "").toLowerCase(), cls = "sig-nc", code = "NC", note = "not classified";
+    if (absent(v)) { /* defaults */ }
+    else if (s.indexOf("conflict") >= 0) { cls = "sig-vus"; code = "CONF"; note = "conflicting"; }
+    else if (s.indexOf("likely") >= 0 && s.indexOf("patho") >= 0) { cls = "sig-lp"; code = "LP"; note = "likely pathogenic"; }
+    else if (s.indexOf("likely") >= 0 && s.indexOf("benign") >= 0) { cls = "sig-lb"; code = "LB"; note = "likely benign"; }
+    else if (s.indexOf("patho") >= 0) { cls = "sig-p"; code = "P"; note = "pathogenic"; }
+    else if (s.indexOf("benign") >= 0) { cls = "sig-b"; code = "B"; note = "benign"; }
+    else if (s.indexOf("vus") >= 0 || s.indexOf("uncertain") >= 0) { cls = "sig-vus"; code = "VUS"; note = "uncertain significance"; }
+    return { cls: cls, code: code, note: note };
+  }
 
-    fig, ax = plt.subplots(figsize=(8, max(3, len(counts) * 0.42)))
-    colours = [VC_COLOURS.get(c, THEME["accent"]) for c in counts.index]
-    bars = ax.barh(counts.index, counts.values, color=colours, height=0.65, edgecolor="none")
-    mx = counts.values.max()
-    for bar, val in zip(bars, counts.values):
-        ax.text(bar.get_width() + mx * 0.01, bar.get_y() + bar.get_height() / 2,
-                str(val), va="center", ha="left", color=THEME["muted"],
-                fontsize=7.5, fontfamily="monospace")
-    ax.set_xlabel("Count", fontsize=8)
-    ax.set_title("Variant Classification", fontsize=10, fontweight="600", pad=10)
-    ax.invert_yaxis()
-    ax.set_yticks(range(len(counts.index)))
-    ax.set_yticklabels([l.replace("_", " ") for l in counts.index], fontsize=8)
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    _apply_dark_style(ax, fig)
-    fig.tight_layout(pad=1.2)
-    return _fig_to_b64(fig)
-
-
-def plot_top_genes(df_raw: pd.DataFrame, n: int = 20) -> str:
-    """Horizontal bar chart using Hugo_Symbol (original MAF name)."""
-    col = "Hugo_Symbol"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    counts = df_raw[col].replace("", np.nan).dropna().value_counts().head(n)
-    if counts.empty:
-        return ""
-
-    fig, ax = plt.subplots(figsize=(9, max(3, len(counts) * 0.42)))
-    colours = [THEME["ok"] if i < 3 else THEME["accent"] for i in range(len(counts))]
-    bars = ax.barh(counts.index, counts.values, color=colours, height=0.65, edgecolor="none")
-    mx = counts.values.max()
-    for bar, val in zip(bars, counts.values):
-        ax.text(bar.get_width() + mx * 0.01, bar.get_y() + bar.get_height() / 2,
-                str(val), va="center", ha="left", color=THEME["muted"],
-                fontsize=7.5, fontfamily="monospace")
-    ax.set_xlabel("Variant count", fontsize=8)
-    ax.set_title(f"Top {n} Mutated Genes", fontsize=10, fontweight="600", pad=10)
-    ax.invert_yaxis()
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    _apply_dark_style(ax, fig)
-    fig.tight_layout(pad=1.2)
-    return _fig_to_b64(fig)
-
-
-def plot_clinvar_pie(df_raw: pd.DataFrame) -> str:
-    """Donut chart using CLIN_SIG (original MAF name)."""
-    col = "encoded_CLNSIG"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    sig = df_raw[col].replace("", np.nan).dropna()
-    if sig.empty:
-        return ""
-
-    counts = sig.value_counts()
-    colour_map = {
-        "pathogenic":             THEME["fail"],
-        "likely_pathogenic":      "#e87a5a",
-        "uncertain_significance": THEME["pend"],
-        "likely_benign":          "#3a8fad",
-        "benign":                 THEME["ok"],
-    }
-    colours = []
-    for idx in counts.index:
-        matched = THEME["border2"]
-        for k, v in colour_map.items():
-            if k in idx.lower():
-                matched = v
-                break
-        colours.append(matched)
-
-    fig, ax = plt.subplots(figsize=(6.5, 5))
-    wedges, _, autotexts = ax.pie(
-        counts.values, labels=None, colors=colours, autopct="%1.1f%%",
-        startangle=90, pctdistance=0.78,
-        wedgeprops={"edgecolor": THEME["surface"], "linewidth": 2},
-    )
-    for at in autotexts:
-        at.set_color(THEME["text"])
-        at.set_fontsize(7.5)
-        at.set_fontfamily("monospace")
-    ax.add_patch(plt.Circle((0, 0), 0.55, fc=THEME["surface"]))
-    ax.legend(wedges, [l.replace("_", " ") for l in counts.index],
-              loc="center left", bbox_to_anchor=(1, 0.5),
-              fontsize=8, frameon=False, labelcolor=THEME["muted"])
-    ax.set_title("ClinVar Significance", fontsize=10, fontweight="600", pad=10,
-                 color=THEME["text"])
-    fig.patch.set_facecolor(THEME["surface"])
-    ax.set_facecolor(THEME["surface"])
-    fig.tight_layout(pad=1)
-    return _fig_to_b64(fig)
-
-
-def plot_acmg_histogram(df_raw: pd.DataFrame) -> str:
-    """Histogram using acmg_score (original MAF name)."""
-    col = "renovo_adj_acmg_score"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    vals = pd.to_numeric(df_raw[col], errors="coerce").dropna()
-    if vals.empty:
-        return ""
-
-    fig, ax = plt.subplots(figsize=(7, 3.8))
-    bins = np.linspace(vals.min() - 1, vals.max() + 1, 30)
-    _, bin_edges, patches = ax.hist(vals, bins=bins, edgecolor="none", color=THEME["accent"])
-    for patch, left in zip(patches, bin_edges[:-1]):
-        if   left <= -7: patch.set_facecolor(THEME["ok"])
-        elif left <= -1: patch.set_facecolor("#3a8fad")
-        elif left <=  5: patch.set_facecolor(THEME["pend"])
-        elif left <=  9: patch.set_facecolor("#e87a5a")
-        else:            patch.set_facecolor(THEME["fail"])
-
-    y_top = ax.get_ylim()[1]
-    for cutoff, label, col_c in [
-        (-7, "Benign",   THEME["ok"]),
-        (-1, "L.Benign", "#3a8fad"),
-        ( 5, "VUS-LP",   THEME["pend"]),
-        ( 9, "LP-P",     "#e87a5a"),
-    ]:
-        ax.axvline(cutoff, color=col_c, lw=0.8, linestyle="--", alpha=0.6)
-        ax.text(cutoff + 0.1, y_top * 0.92, label,
-                color=col_c, fontsize=6.5, fontfamily="monospace", va="top")
-
-    ax.set_xlabel("ACMG Score", fontsize=8)
-    ax.set_ylabel("Count", fontsize=8)
-    ax.set_title("Suggested Classification Distribution", fontsize=10,
-                 fontweight="600", pad=10)
-    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    _apply_dark_style(ax, fig)
-    fig.tight_layout(pad=1.2)
-    return _fig_to_b64(fig)
-
-
-def generate_all_plots(df_raw: pd.DataFrame) -> dict:
-    """
-    Generate all four analysis plots from the raw MAF DataFrame.
-
-    Receives df_raw (not df_display) so that plots are completely independent
-    of the display column selection (online/offline/plugin flags) and always
-    use the original MAF column names.
-    """
-    plots = {}
-    print("  Generating variant classification plot...", file=sys.stderr)
-    plots["vc"]      = plot_vc_distribution(df_raw)
-    print("  Generating top-genes plot...", file=sys.stderr)
-    plots["genes"]   = plot_top_genes(df_raw)
-    print("  Generating ClinVar plot...", file=sys.stderr)
-    plots["clinvar"] = plot_clinvar_pie(df_raw)
-    print("  Generating ACMG histogram...", file=sys.stderr)
-    plots["acmg"]    = plot_acmg_histogram(df_raw)
-    return plots
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  SUMMARY STATISTICS  (uses df_raw / original MAF column names)
-# ══════════════════════════════════════════════════════════════════════════════
-def compute_stats(df_raw: pd.DataFrame) -> dict:
-    sample_col = "Tumor_Sample_Barcode"   if "Tumor_Sample_Barcode"   in df_raw.columns else None
-    sig_col    = "encoded_CLNSIG" if "encoded_CLNSIG" in df_raw.columns else None
-
-    total_variants = len(df_raw)
-    total_samples  = df_raw[sample_col].replace("", np.nan).nunique() if sample_col else 1
-    pathogenic     = (
-        df_raw[sig_col].str.lower().str.contains("pathogenic", na=False).sum()
-        if sig_col else 0
-    )
-    vus     = (
-        df_raw[sig_col].str.lower().str.contains("vus", na=False).sum()
-        if sig_col else 0
-    )
+  var CONF = { HP: "high", IP: "intermediate", LP: "low" };
+  function renovoChip(v) {
+    if (absent(v)) return { cls: "sig-nc", code: "--", note: "no ReNOVo call" };
+    var parts = String(v).split(" ");
+    if (parts.length !== 2 || !CONF[parts[0]]) return { cls: "sig-nc", code: v, note: v };
+    var patho = parts[1].toLowerCase().indexOf("patho") === 0;
     return {
-        "total_samples":  total_samples,
-        "total_variants": total_variants,
-        "vus":            int(vus),
-        "pathogenic":     int(pathogenic),
+      cls: patho ? "sig-p" : "sig-b",
+      code: patho ? "PATH" : "BEN",
+      note: (patho ? "pathogenic" : "benign") + ", " + CONF[parts[0]] + " confidence"
+    };
+  }
+
+  // Allele frequency reads as a figure, not a chip. In the review set every variant is
+  // rare by construction, so chipping the column produced a solid wall of warm colour
+  // that carried no information. Only absence from the population databases, which is
+  // the genuinely notable case, gets emphasis.
+  function afCell(v) {
+    if (absent(v)) return '<span class="af-absent">not observed</span>';
+    var f = parseFloat(v);
+    if (isNaN(f)) return esc(v);
+    var label = f < 1e-4 ? f.toExponential(1) : f.toPrecision(2);
+    return '<span class="af-value">' + esc(label) + "</span>";
+  }
+
+  // Several consequences per variant: MuSA's MAF joins with ',', VEP's VCF with '&'.
+  function firstConsequence(v) {
+    if (absent(v)) return "—";
+    return String(v).split(/[,&]/)[0].replace(/_/g, " ");
+  }
+
+  var STARS = {
+    "0": "no assertion criteria provided",
+    "1": "criteria provided, single submitter",
+    "2": "criteria provided, multiple submitters, no conflicts",
+    "3": "reviewed by expert panel",
+    "4": "practice guideline"
+  };
+  // encoded_CLNREVSTAT is a 0-4 gold-star rating. A bare "2" tells a reader nothing.
+  function starsHTML(v) {
+    if (!STARS.hasOwnProperty(String(v).trim())) return null;
+    var n = parseInt(v, 10);
+    return '<span class="stars" aria-hidden="true">' +
+           "★".repeat(n) + '<span class="stars-empty">' + "☆".repeat(4 - n) + "</span></span> " +
+           '<span class="stars-note">' + esc(STARS[String(v).trim()]) + "</span>";
+  }
+
+  function chipHTML(c) {
+    return '<span class="chip ' + c.cls + '"><b>' + esc(c.code) + '</b>' +
+           '<span class="sr-only"> ' + esc(c.note) + '</span></span>';
+  }
+
+  // Franklin URLs are derived here rather than embedded: one URL per variant would
+  // add a 68,000-entry unique column to the payload for data we can recompute.
+  function franklinURL(gc) {
+    if (absent(gc)) return "";
+    var g = String(gc).replace(/^g\./, "");
+    var m = /^chr([^:]+):/.exec(g);
+    if (!m) return "";
+    var chrom = m[1], snv = /:([0-9]+)([ACGT])>([ACGT])$/.exec(g);
+    if (snv) return "https://franklin.genoox.com/clinical-db/variant/snp/chr" +
+                    chrom + "-" + snv[1] + "-" + snv[2] + "-" + snv[3] + "-hg38";
+    return "";
+  }
+
+  // ── state ────────────────────────────────────────────────────────────────
+  var view = "review";
+  var query = "";
+  var sortKey = null, sortDir = 1;
+  var order = [];
+  var selected = -1;
+
+  var SEARCH_KEYS = ["Hugo_Symbol", "genome_change", "HGVSc", "HGVSp_VEP"];
+
+  function rebuild() {
+    var n = P.n, review = P.review, out = [];
+    var q = query.trim().toLowerCase();
+    var searchCols = q ? SEARCH_KEYS.map(col) : null;
+
+    for (var i = 0; i < n; i++) {
+      if (view === "review" && !review[i]) continue;
+      if (q) {
+        var hit = false;
+        for (var c = 0; c < searchCols.length; c++) {
+          var val = searchCols[c][i];
+          if (val && val.toLowerCase().indexOf(q) >= 0) { hit = true; break; }
+        }
+        if (!hit) continue;
+      }
+      out.push(i);
     }
 
+    if (sortKey) {
+      var vals = col(sortKey);
+      var numeric = sortKey === "MAX_AF" || sortKey === "PL_score";
+      out.sort(function (a, b) {
+        var x = vals[a], y = vals[b];
+        if (numeric) {
+          var fx = parseFloat(x), fy = parseFloat(y);
+          if (isNaN(fx)) fx = -Infinity;
+          if (isNaN(fy)) fy = -Infinity;
+          return (fx - fy) * sortDir;
+        }
+        return String(x).localeCompare(String(y)) * sortDir;
+      });
+    }
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  HTML PAGE BUILDER
-# ══════════════════════════════════════════════════════════════════════════════
-def _plot_card(title: str, icon: str, b64: str) -> str:
-    if not b64:
-        return ""
-    return (
-        f'<div class="card">'
-        f'<div class="card-header"><span class="card-icon">{icon}</span>'
-        f'<h2 class="card-title">{title}</h2></div>'
-        f'<div class="plot-container">'
-        f'<img src="data:image/png;base64,{b64}" alt="{title}"/>'
-        f'</div></div>'
-    )
+    order = out;
+    document.getElementById("resultCount").textContent =
+      out.length.toLocaleString() + (out.length === 1 ? " variant" : " variants");
+    scroller.scrollTop = 0;
+    render();
+  }
+
+  // ── virtual rendering ────────────────────────────────────────────────────
+  var scroller = document.getElementById("scroller");
+  var tbody = document.getElementById("tbody");
+  var padTop = document.getElementById("padTop");
+  var padBottom = document.getElementById("padBottom");
+
+  function render() {
+    var total = order.length;
+    var viewH = scroller.clientHeight;
+    var first = Math.max(0, Math.floor(scroller.scrollTop / ROW_H) - OVERSCAN);
+    var count = Math.min(total - first, Math.ceil(viewH / ROW_H) + OVERSCAN * 2);
+
+    padTop.style.height = (first * ROW_H) + "px";
+    padBottom.style.height = Math.max(0, (total - first - count) * ROW_H) + "px";
+
+    var gene = col("Hugo_Symbol"), gdna = col("genome_change"), cdna = col("HGVSc"),
+        prot = col("HGVSp_VEP"), csq = col("Consequence"),
+        cvs = col("encoded_CLNSIG"), rnv = col("RENOVO_Class"), maf = col("MAX_AF");
+
+    var html = [];
+    for (var k = 0; k < count; k++) {
+      var i = order[first + k];
+      html.push(
+        '<tr data-row="' + i + '" role="row" aria-selected="' + (i === selected) + '">' +
+        '<td class="col-gene">' + esc(absent(gene[i]) ? "—" : gene[i]) + '</td>' +
+        '<td class="col-mono">' + esc(absent(gdna[i]) ? "—" : gdna[i]) + '</td>' +
+        '<td class="col-mono">' + esc(absent(cdna[i]) ? "—" : cdna[i]) + '</td>' +
+        '<td class="col-mono">' + esc(absent(prot[i]) ? "—" : prot[i]) + '</td>' +
+        '<td class="csq">' + esc(firstConsequence(csq[i])) + '</td>' +
+        '<td>' + chipHTML(clinvarChip(cvs[i])) + '</td>' +
+        '<td>' + chipHTML(renovoChip(rnv[i])) + '</td>' +
+        '<td class="col-af">' + afCell(maf[i]) + '</td>' +
+        '</tr>'
+      );
+    }
+    tbody.innerHTML = html.join("");
+  }
+
+  // ── detail panel ─────────────────────────────────────────────────────────
+  function select(i) {
+    selected = i;
+    var panel = document.getElementById("panel");
+    if (i < 0) {
+      panel.innerHTML = '<p class="panel-empty">Select a variant to see its full evidence.<br><br>' +
+        'Use <kbd>&uarr;</kbd> and <kbd>&darr;</kbd> to walk the list without losing your place.</p>';
+      return;
+    }
+    var gene = col("Hugo_Symbol")[i], gdna = col("genome_change")[i];
+    var parts = [];
+    parts.push('<h3>' + esc(absent(gene) ? "Unnamed gene" : gene) + '</h3>');
+    parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + '</p>');
+    parts.push('<div class="panel-chips">' +
+      chipHTML(clinvarChip(col("encoded_CLNSIG")[i])) +
+      chipHTML(renovoChip(col("RENOVO_Class")[i])) +
+      '</div>');
+
+    parts.push("<dl>");
+    P.detail.forEach(function (d) {
+      var v = col(d.k)[i];
+      parts.push("<dt>" + esc(d.label) + "</dt>");
+      if (absent(v)) { parts.push('<dd class="absent">not reported</dd>'); return; }
+      if (d.k === "encoded_CLNREVSTAT") {
+        var st = starsHTML(v);
+        parts.push('<dd class="plain">' + (st || esc(v)) + "</dd>");
+        return;
+      }
+      if (d.k.indexOf("PhenotypeOrthologous") === 0) {
+        var seen = {}, items = [];
+        String(v).split(",").forEach(function (t) {
+          t = t.trim().replace(/^_+/, "").replace(/_/g, " ");
+          if (t && !seen[t]) { seen[t] = 1; items.push(t); }
+        });
+        parts.push('<dd class="plain">' + esc(items.join(", ")) + "</dd>");
+        return;
+      }
+      if (d.k === "Consequence") {
+        parts.push('<dd class="plain">' + esc(String(v).split(/[,&]/).join(", ").replace(/_/g, " ")) + "</dd>");
+        return;
+      }
+      parts.push("<dd>" + esc(v).replace(/,/g, ", ") + "</dd>");
+    });
+    parts.push("</dl>");
+
+    var links = [];
+    var fu = franklinURL(gdna);
+    if (fu) links.push('<a href="' + fu + '" target="_blank" rel="noopener noreferrer">Open in Franklin</a>');
+    var cvid = col("clinvar_id")[i];
+    if (!absent(cvid)) {
+      String(cvid).split(",").forEach(function (id) {
+        id = id.trim();
+        if (id) links.push('<a href="https://www.ncbi.nlm.nih.gov/clinvar/variation/' + encodeURIComponent(id) +
+                           '" target="_blank" rel="noopener noreferrer">ClinVar ' + esc(id) + '</a>');
+      });
+    }
+    var omim = col("clinvar_OMIM_id")[i];
+    if (!absent(omim)) {
+      String(omim).split(",").forEach(function (id) {
+        id = id.trim();
+        if (id) links.push('<a href="https://www.omim.org/entry/' + encodeURIComponent(id) +
+                           '" target="_blank" rel="noopener noreferrer">OMIM ' + esc(id) + '</a>');
+      });
+    }
+    var pm = col("PUBMED")[i];
+    if (!absent(pm)) {
+      String(pm).split(",").slice(0, 6).forEach(function (id) {
+        id = id.trim();
+        if (id) links.push('<a href="https://pubmed.ncbi.nlm.nih.gov/' + encodeURIComponent(id) +
+                           '/" target="_blank" rel="noopener noreferrer">PMID ' + esc(id) + '</a>');
+      });
+    }
+    if (links.length) parts.push('<div class="panel-links">' + links.join("") + "</div>");
+
+    panel.innerHTML = parts.join("");
+    render();
+  }
+
+  // ── events ───────────────────────────────────────────────────────────────
+  scroller.addEventListener("scroll", render, { passive: true });
+  window.addEventListener("resize", render);
+
+  tbody.addEventListener("click", function (e) {
+    var tr = e.target.closest("tr[data-row]");
+    if (tr) select(parseInt(tr.dataset.row, 10));
+  });
+
+  document.getElementById("search").addEventListener("input", function (e) {
+    query = e.target.value;
+    rebuild();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (btn) {
+    btn.addEventListener("click", function () {
+      view = btn.dataset.view;
+      Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
+        b.setAttribute("aria-pressed", String(b === btn));
+      });
+      rebuild();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("th[data-key]"), function (th) {
+    th.addEventListener("click", function () {
+      var key = th.dataset.key;
+      if (sortKey === key) sortDir = -sortDir;
+      else { sortKey = key; sortDir = 1; }
+      Array.prototype.forEach.call(document.querySelectorAll("th[data-key]"), function (t) {
+        t.removeAttribute("aria-sort");
+      });
+      th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+      rebuild();
+    });
+    th.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); th.click(); }
+    });
+  });
+
+  // Arrow keys walk the list with the panel pinned, which is the point of docking
+  // it rather than expanding rows inline.
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT") return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    var pos = order.indexOf(selected);
+    if (pos < 0) pos = e.key === "ArrowDown" ? -1 : order.length;
+    var next = pos + (e.key === "ArrowDown" ? 1 : -1);
+    if (next < 0 || next >= order.length) return;
+    select(order[next]);
+    var top = next * ROW_H, bottom = top + ROW_H;
+    if (top < scroller.scrollTop) scroller.scrollTop = top;
+    else if (bottom > scroller.scrollTop + scroller.clientHeight)
+      scroller.scrollTop = bottom - scroller.clientHeight;
+  });
+
+  select(-1);
+  rebuild();
+})();
+"""
 
 
-def build_html_page(
-    patient_code: str,
-    table_html: str,
-    stats: dict,
-    logo_b64,
-    logo_mime,
-) -> str:
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    t   = THEME
-
-    logo_header = (
-        f'<img src="data:{logo_mime};base64,{logo_b64}" class="header-logo" alt="MuSA"/>'
-        if logo_b64 else ""
-    )
-    logo_hero = (
-        f'<img src="data:{logo_mime};base64,{logo_b64}" class="hero-logo" alt="MuSA"/>'
-        if logo_b64 else '<span class="logo-fallback">MuSA</span>'
-    )
-
-    stat_items = [
-        ("total_variants", "Total Variants",    "total"),
-        ("total_samples",  "Samples",           "total"),
-        ("vus",            "Clinvar VUS",       "pend"),
-        ("pathogenic",     "Clinvar Pathogenic","fail"),
-    ]
-    stats_html = "".join(
-        f'<div class="stat {cls}">'
-        f'<span class="stat-num">{stats.get(k, 0):,}</span>'
-        f'<span class="stat-label">{label}</span></div>'
-        for k, label, cls in stat_items
-    )
-
-    return f"""<!DOCTYPE html>
+# ── page assembly ─────────────────────────────────────────────────────────────
+PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>MuSA &middot; Variants Report &middot; {patient_code.upper()}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="{t['google_fonts']}" rel="stylesheet"/>
-<link rel="stylesheet" href="https://cdn.datatables.net/2.0.7/css/dataTables.dataTables.min.css"/>
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.datatables.net/2.0.7/js/dataTables.min.js"></script>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>__PATIENT__ &middot; MuSA variant review</title>
 <style>
-{css_vars(t)}
-
-*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-
-body {{
-  background: var(--bg); color: var(--text);
-  font-family: var(--font-body); min-height: 100vh;
-  overflow-x: hidden; font-size: 14px; line-height: 1.6;
-}}
-body::before {{
-  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, var(--border2) 1px, transparent 1px);
-  background-size: 24px 24px; opacity: .18;
-}}
-
-/* header */
-header {{
-  position: relative; z-index: 10; border-bottom: 1px solid var(--border);
-  padding: 0 2.5rem; display: flex; align-items: center;
-  justify-content: space-between; height: 56px;
-  background: var(--surface); box-shadow: 0 1px 0 var(--border);
-}}
-.header-left  {{ display: flex; align-items: center; gap: .75rem; }}
-.header-logo  {{ height: 28px; width: auto; display: block; opacity: .9; }}
-.header-title {{
-  font-size: .75rem; font-weight: 500; color: var(--muted);
-  letter-spacing: .06em; text-transform: uppercase;
-  border-left: 1px solid var(--border2); padding-left: .75rem;
-}}
-.header-right {{
-  font-family: var(--font-mono); font-size: .68rem; color: var(--muted);
-  display: flex; gap: 1.8rem; align-items: center;
-}}
-.header-right span {{ display: flex; gap: .35rem; align-items: center; }}
-.header-right b    {{ color: var(--text); font-weight: 500; }}
-
-/* hero */
-.hero {{
-  position: relative; z-index: 5; padding: 3rem 2.5rem 2.5rem;
-  border-bottom: 1px solid var(--border); overflow: hidden;
-  background: linear-gradient(135deg, #141828 0%, var(--bg) 60%);
-}}
-.hero::after {{
-  content: "MuSA"; position: absolute; right: -1rem; bottom: -1.5rem;
-  font-family: var(--font-display); font-size: 11rem; font-weight: 700;
-  line-height: 1; color: var(--accent); opacity: .04;
-  pointer-events: none; letter-spacing: -.04em; user-select: none;
-}}
-.hero-top {{ display: flex; align-items: center; gap: 2rem; margin-bottom: 1.6rem; }}
-.hero-logo     {{ height: 12rem; width: auto; flex-shrink: 0; filter: brightness(1.05); }}
-.logo-fallback {{
-  font-family: var(--font-display); font-size: 2.4rem; font-weight: 700;
-  color: var(--accent); letter-spacing: -.02em; flex-shrink: 0;
-}}
-.hero h1 {{
-  font-family: var(--font-display);
-  font-size: clamp(2.5rem, 3vw, 2.6rem);
-  font-weight: 600; line-height: 1.2; letter-spacing: -.02em; color: var(--text);
-}}
-.hero h1 em {{ font-style: italic; font-weight: 300; color: var(--accent); }}
-.hero-meta {{
-  color: var(--muted); font-size: 1rem; margin-bottom: 2rem;
-  font-family: var(--font-mono); letter-spacing: .03em;
-  display: flex; gap: 1.5rem; flex-wrap: wrap;
-}}
-.hero-meta span {{ display: flex; gap: .4rem; align-items: center; }}
-.hero-meta b    {{ color: var(--text); font-weight: 500; }}
-
-/* stats grid */
-.stats {{
-  display: grid; grid-template-columns: repeat(4,1fr);
-  gap: 1px; background: var(--border);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.3);
-}}
-.stat {{
-  background: var(--surface); padding: 1.1rem 1.4rem;
-  display: flex; flex-direction: column; gap: .2rem;
-}}
-.stat-num {{
-  font-family: var(--font-display); font-size: 2.4rem; font-weight: 700;
-  line-height: 1; letter-spacing: -.03em;
-}}
-.stat-label {{
-  font-family: var(--font-mono); font-size: .62rem;
-  text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
-}}
-.stat.ok    .stat-num {{ color: var(--ok); }}
-.stat.fail  .stat-num {{ color: var(--fail); }}
-.stat.pend  .stat-num {{ color: var(--pend); }}
-.stat.total .stat-num {{ color: var(--text); }}
-
-/* content */
-.content {{
-  position: relative; z-index: 5; padding: 1.5rem 2.5rem 4rem;
-  display: flex; flex-direction: column; gap: 1.5rem;
-}}
-.card {{
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface); overflow: hidden;
-  animation: slideIn .3s ease both;
-}}
-@keyframes slideIn {{ from{{opacity:0;transform:translateY(6px)}} to{{opacity:1;transform:translateY(0)}} }}
-.card-header {{
-  padding: .75rem 1.4rem; display: flex; align-items: center; gap: .75rem;
-  border-bottom: 1px solid var(--border); background: var(--surface2);
-}}
-.card-icon  {{ font-size: 1.1rem; }}
-.card-title {{ font-weight: 600; font-size: 1rem; color: var(--text); margin: 0; }}
-
-/* table */
-.table-wrap {{ padding: 1rem 1.2rem; overflow-x: auto; }}
-#variantTable_wrapper .dt-search input,
-#variantTable_wrapper select {{
-  background: var(--surface2) !important; color: var(--text) !important;
-  border: 1px solid var(--border2) !important; border-radius: 99px !important;
-  padding: .28rem 1rem !important; font-family: var(--font-mono) !important;
-  font-size: .72rem !important; outline: none !important;
-}}
-#variantTable_wrapper .dt-search input:focus {{
-  border-color: var(--accent) !important; box-shadow: 0 0 0 3px #6c5fff20 !important;
-}}
-#variantTable_wrapper .dt-search input::placeholder {{ color: var(--muted) !important; }}
-table.dataTable {{
-  border-collapse: collapse !important; font-family: var(--font-mono);
-  font-size: .7rem; width: 100% !important; color: var(--text);
-}}
-table.dataTable thead th {{
-  background: var(--surface2) !important; color: var(--ok) !important;
-  border-bottom: 1px solid var(--border2) !important;
-  font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
-  padding: .55rem .75rem; white-space: nowrap;
-}}
-table.dataTable tbody tr {{
-  background: var(--surface) !important; border-bottom: 1px solid var(--border) !important;
-  transition: background .12s;
-}}
-table.dataTable tbody tr:hover {{ background: var(--surface2) !important; }}
-table.dataTable tbody tr.shown {{ background: var(--surface2) !important; }}
-table.dataTable tbody td {{
-  padding: .45rem .75rem !important; border-right: 1px solid var(--border) !important;
-  vertical-align: middle; white-space: nowrap;
-}}
-.dt-container .dt-paging .dt-paging-button {{
-  background: var(--surface2) !important; color: var(--muted) !important;
-  border: 1px solid var(--border) !important; border-radius: 4px !important;
-  font-family: var(--font-mono) !important; font-size: .7rem !important; margin: 0 2px !important;
-}}
-.dt-container .dt-paging .dt-paging-button.current,
-.dt-container .dt-paging .dt-paging-button:hover {{
-  background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important;
-}}
-.dt-container .dt-info  {{ color: var(--muted) !important; font-size: .68rem; font-family: var(--font-mono); }}
-.dt-container .dt-length label {{ color: var(--muted) !important; font-size: .68rem; font-family: var(--font-mono); }}
-.expand-cell {{
-  cursor: pointer; text-align: center; color: var(--accent);
-  font-size: .75rem; width: 28px; user-select: none;
-}}
-.child-table {{ width: 100%; border-collapse: collapse; }}
-.child-table td {{ padding: .35rem .8rem; border-bottom: 1px solid var(--border); font-size: .7rem; }}
-.det-label {{
-  color: var(--muted); font-size: .62rem;
-  text-transform: uppercase; letter-spacing: .08em; min-width: 160px;
-}}
-.det-val {{ color: var(--text); word-break: break-word; white-space: normal; }}
-
-/* badges */
-.af-badge {{
-  font-family: var(--font-mono); font-size: .6rem;
-  padding: .15rem .45rem; border-radius: 4px; white-space: nowrap;
-}}
-.af-badge.private {{ background: var(--fail-dim); color: var(--fail); border: 1px solid var(--fail-border); }}
-.af-badge.common  {{ background: var(--ok-dim);   color: var(--ok);    border: 1px solid var(--ok-border); }}
-.af-badge.rare   {{var(--pend-dim); color: var(--pend);  border: 1px solid var(--pend-border); }} 
-.acmg-badge {{
-  font-family: var(--font-mono); font-size: .6rem;
-  padding: .15rem .5rem; border-radius: 4px; white-space: nowrap; font-weight: 600;
-}}
-.acmg-badge.benign            {{ background: var(--ok-dim);   color: var(--ok);   border: 1px solid var(--ok-border); }}
-.acmg-badge.likely-benign     {{ background: #3a8fad1a;       color: #3a8fad;     border: 1px solid #3a8fad55; }}
-.acmg-badge.vus               {{ background: var(--pend-dim); color: var(--pend); border: 1px solid var(--pend-border); }}
-.acmg-badge.likely-pathogenic {{ background: #e87a5a1a;       color: #e87a5a;     border: 1px solid #e87a5a55; }}
-.acmg-badge.pathogenic        {{ background: var(--fail-dim); color: var(--fail); border: 1px solid var(--fail-border); }}
-
-.cv-badge {{
-  font-family: var(--font-mono); font-size: .58rem;
-  padding: .12rem .42rem; border-radius: 4px; white-space: nowrap;
-}}
-.cv-pathogenic        {{ background: var(--fail-dim); color: var(--fail); border: 1px solid var(--fail-border); font-weight: 600; }}
-.cv-likely-pathogenic {{ background: #e87a5a1a; color: #e87a5a; border: 1px solid #e87a5a55; }}
-.cv-benign            {{ background: var(--ok-dim);   color: var(--ok);   border: 1px solid var(--ok-border); }}
-.cv-likely-benign     {{ background: #3a8fad1a; color: #3a8fad; border: 1px solid #3a8fad55; }}
-.cv-vus               {{ background: var(--pend-dim); color: var(--pend); border: 1px solid var(--pend-border); }}
-.cv-notclassified     {{ background: var(--pend-surface2); color: var(--pend); border: 1px solid var(--pend-border); }}
-.cv-other             {{ background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }}
-
-.vc-badge {{
-  font-family: var(--font-mono); font-size: .6rem; padding: .12rem .42rem;
-  border-radius: 4px; border: 1px solid; white-space: nowrap; background: transparent;
-}}
-.pubmed-link {{
-  color: var(--accent); text-decoration: none;
-  font-family: var(--font-mono); font-size: .65rem;
-}}
-.pubmed-link:hover {{ text-decoration: underline; }}
-.franklin-link {{
-  color: var(--ok); text-decoration: none; font-weight: 600; font-size: .7rem;
-}}
-.franklin-link:hover {{ text-decoration: underline; }}
-
-/* plot grid */
-.plot-grid {{
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(420px,1fr)); gap: 1.2rem;
-}}
-.plot-container {{ padding: 1rem 1.2rem; }}
-.plot-container img {{ width: 100%; height: auto; display: block; border-radius: 6px; }}
-
-/* footer */
-footer {{
-  position: relative; z-index: 5; border-top: 1px solid var(--border);
-  padding: .9rem 2.5rem; display: flex; justify-content: space-between;
-  align-items: center; font-family: var(--font-mono); font-size: .62rem;
-  color: var(--muted); background: var(--surface);
-}}
-
-@media (max-width: 680px) {{
-  .stats {{ grid-template-columns: repeat(2,1fr); }}
-  .hero-top {{ flex-direction: column; align-items: flex-start; gap: 1rem; }}
-  .hero-logo {{ height: 3rem; }}
-  header, .hero, .content, footer {{ padding-left: 1rem; padding-right: 1rem; }}
-  .hero::after {{ font-size: 6rem; }}
-  .plot-grid {{ grid-template-columns: 1fr; }}
-}}
+__TOKENS__
+__BASE_CSS__
+__PAGE_CSS__
 </style>
 </head>
 <body>
 
-<header>
-  <div class="header-left">
-    {logo_header}
-    <span class="header-title">Variants Report</span>
+<header class="masthead">
+  <div class="masthead-id">
+    __LOGO__
+    <span class="masthead-doc">Variant review</span>
   </div>
-  <div class="header-right">
-    <span>patient <b>{patient_code.upper()}</b></span>
-    <span>generated <b>{now}</b></span>
+  <div class="masthead-meta">
+    <span>Patient <b>__PATIENT__</b></span>
+    <span>Assembly <b>hg38</b></span>
+    <span>Generated <b>__GENERATED__</b></span>
+    <span>Mode <b>__MODE__</b></span>
   </div>
 </header>
 
-<div class="hero">
-  <div class="hero-top">
-    {logo_hero}
-    <h1>{patient_code.upper()}<br/><em>Variants Report</em></h1>
+<section class="summary">
+  <div class="summary-block">
+    <span class="summary-label">In review set</span>
+    <span class="summary-value">__REVIEW__</span>
+    <span class="summary-note">rare and either ClinVar-flagged or protein-affecting</span>
   </div>
-  <div class="hero-meta">
-    <span>patient <b>{patient_code.upper()}</b></span>
-    <span>reference <b>hg38</b></span>
-    <span>{stats['total_variants']:,} variants</span>
+  <div class="summary-block">
+    <span class="summary-label">Annotated in total</span>
+    <span class="summary-value">__TOTAL__</span>
+    <span class="summary-note">every variant is in this document</span>
   </div>
-  <div class="stats">{stats_html}</div>
+  <div class="summary-block">
+    <span class="summary-label">ClinVar</span>
+    <span class="summary-chips">__CLINVAR_CHIPS__</span>
+    <span class="summary-note">across all annotated variants</span>
+  </div>
+  <div class="summary-block">
+    <span class="summary-label">ReNOVo</span>
+    <span class="summary-chips">__RENOVO_CHIPS__</span>
+    <span class="summary-note">MuSA's own pathogenicity call</span>
+  </div>
+</section>
+
+<div class="controls no-print">
+  <div class="controls-group" role="group" aria-label="Which variants to show">
+    <button class="btn" type="button" data-view="review" aria-pressed="true">Review set</button>
+    <button class="btn" type="button" data-view="all" aria-pressed="false">All variants</button>
+  </div>
+  <div class="controls-sep" aria-hidden="true"></div>
+  <label class="sr-only" for="search">Search by gene, coordinate, cDNA or protein change</label>
+  <input class="field" id="search" type="search" placeholder="Gene, coordinate, cDNA or protein change"/>
+  <span class="result-count" id="resultCount" role="status" aria-live="polite"></span>
 </div>
 
-<div class="content">
-  <div class="card">
-    <div class="card-header">
-      <span class="card-icon">&#128203;</span>
-      <h2 class="card-title">Variants browser</h2>
+<div class="workspace">
+  <div class="table-region">
+    <div id="scroller">
+      <table class="variants">
+        <thead><tr>__HEADERS__</tr></thead>
+        <tbody id="tbody-pad-top-holder">
+          <tr id="padTop" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
+        </tbody>
+        <tbody id="tbody"></tbody>
+        <tbody>
+          <tr id="padBottom" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
+        </tbody>
+      </table>
     </div>
-    <div class="table-wrap">{table_html}</div>
   </div>
+  <aside class="panel" id="panel" aria-live="polite" aria-label="Variant detail"></aside>
 </div>
-<footer>
-  <span>MuSA &middot; Multi Source Variant Annotation</span>
-  <span>Patient <b>{patient_code.upper()}</b> &middot; {now}</span>
-  <span>Made with &#10084; at IRCCS Istituto Ortopedico Rizzoli, Bologna, Italy</span>
+
+<footer class="doc-footer">
+  <span>MuSA &middot; multi-source variant annotation &middot; patient __PATIENT__</span>
+  <span>__GENERATED__</span>
+  <span>IRCCS Istituto Ortopedico Rizzoli, Bologna</span>
 </footer>
 
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+window.__MUSA__ = JSON.parse(document.getElementById("payload").textContent);
+__PAGE_JS__
+</script>
 </body>
-</html>"""
+</html>
+"""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MAIN
-# ══════════════════════════════════════════════════════════════════════════════
-def main():
-    params = parse_args()
-    patient_code    = params["patient_code"]
-    use_vep_plugins = params["use_vep_plugins"]
-    offline         = params["offline"] or params["skip_genebe"]
-    logo_path       = params["logo_path"]
+def _chip(cls, code, note, count):
+    return (f'<span class="chip {cls}"><b>{code}</b>'
+            f'<span class="chip-note">{count:,}</span>'
+            f'<span class="sr-only"> {note}</span></span>')
 
-    print("MuSA: Annotate Reporter", file=sys.stderr)
-    print(f"  patient        : {patient_code}",    file=sys.stderr)
-    print(f"  offline        : {offline}",          file=sys.stderr)
-    print(f"  use_vep_plugins: {use_vep_plugins}",  file=sys.stderr)
-    print(f"  logo_path      : {logo_path}",        file=sys.stderr)
 
-    logo_b64, logo_mime = load_logo_base64(logo_path)
+def build_html_page(patient_code, payload, stats, logo_b64, logo_mime, mode):
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    print("Loading MAF data...", file=sys.stderr)
-    df_raw = load_maf_data(patient_code)
+    # assets/MuSA_logo_dark.png is the dark-ink wordmark (correct on a light ground);
+    # when it is present it *is* the wordmark, so the text version would be a duplicate.
+    logo = (f'<img class="masthead-logo" src="data:{logo_mime};base64,{logo_b64}" alt="MuSA"/>'
+            if logo_b64
+            else '<span class="masthead-wordmark">MuSA</span>')
 
-    print("Preparing display data...", file=sys.stderr)
-    df_display, main_cols, det_cols = prepare_display_data(
-        df_raw, offline, use_vep_plugins
+    cv = stats["clinvar"]
+    clinvar_chips = "".join(
+        _chip(cls, code, note, cv.get(code, 0))
+        for code, cls, note in [
+            ("P", "sig-p", "pathogenic"),
+            ("LP", "sig-lp", "likely pathogenic"),
+            ("VUS", "sig-vus", "uncertain significance"),
+            ("CONF", "sig-vus", "conflicting interpretations"),
+            ("LB", "sig-lb", "likely benign"),
+            ("B", "sig-b", "benign"),
+            ("NC", "sig-nc", "not classified"),
+        ] if cv.get(code, 0)
+    ) or '<span class="summary-note">no ClinVar annotation present</span>'
+
+    rn = stats["renovo"]
+    renovo_chips = "".join(
+        _chip(cls, code, note, rn.get(code, 0))
+        for code, cls, note in [
+            ("PATH", "sig-p", "ReNOVo pathogenic"),
+            ("BEN", "sig-b", "ReNOVo benign"),
+        ] if rn.get(code, 0)
+    ) or '<span class="summary-note">no ReNOVo call present</span>'
+
+    headers = "".join(
+        f'<th scope="col" tabindex="0" data-key="{c["k"]}">{c["label"]}'
+        f'<span class="sort-mark" aria-hidden="true">&#8597;</span></th>'
+        for c in payload["main"]
     )
 
-    # Stats and plots both use df_raw (original column names)
-    print("Computing statistics...", file=sys.stderr)
-    stats = compute_stats(df_raw)
+    return (PAGE_HTML
+            .replace("__TOKENS__", style.TOKENS)
+            .replace("__BASE_CSS__", style.BASE_CSS)
+            .replace("__PAGE_CSS__", PAGE_CSS)
+            .replace("__PAGE_JS__", PAGE_JS)
+            .replace("__NCOL__", str(len(payload["main"])))
+            .replace("__HEADERS__", headers)
+            .replace("__CLINVAR_CHIPS__", clinvar_chips)
+            .replace("__RENOVO_CHIPS__", renovo_chips)
+            .replace("__REVIEW__", f"{stats['review']:,}")
+            .replace("__TOTAL__", f"{stats['total']:,}")
+            .replace("__GENERATED__", now)
+            .replace("__MODE__", mode)
+            .replace("__LOGO__", logo)
+            .replace("__PATIENT__", patient_code.upper())
+            .replace("__PAYLOAD__", json.dumps(payload, separators=(",", ":"))))
 
-    print("Generating plots...", file=sys.stderr)
-    plots = generate_all_plots(df_raw)
 
-    print("Building table...", file=sys.stderr)
-    table_html = build_table_html(df_display, main_cols, det_cols)
+# ── main ──────────────────────────────────────────────────────────────────────
+def main():
+    params = parse_args()
+    patient = params["patient_code"]
+    offline = params["offline"] or params["skip_genebe"]
 
-    print("Assembling HTML...", file=sys.stderr)
+    print("MuSA: annotation report", file=sys.stderr)
+    print(f"  patient        : {patient}", file=sys.stderr)
+    print(f"  offline        : {offline}", file=sys.stderr)
+    print(f"  use_vep_plugins: {params['use_vep_plugins']}", file=sys.stderr)
+
+    logo_b64, logo_mime = load_logo_base64(params["logo_path"])
+    df = load_maf_data(patient)
+
+    main_cols = [c for c in MAIN_COLUMNS if c[0] in df.columns]
+    detail_cols = [c for c in DETAIL_COLUMNS if c[0] in df.columns]
+
+    missing = [c[0] for c in MAIN_COLUMNS + DETAIL_COLUMNS if c[0] not in df.columns]
+    if missing:
+        print(f"  Columns absent from MAF, omitted from the report: {', '.join(missing)}",
+              file=sys.stderr)
+
+    flags = review_flags(df)
+    payload = build_payload(df, main_cols, detail_cols, flags)
+    stats = summarise(df, flags)
+
     html = build_html_page(
-        patient_code=patient_code,
-        table_html=table_html,
+        patient_code=patient,
+        payload=payload,
         stats=stats,
         logo_b64=logo_b64,
         logo_mime=logo_mime,
+        mode="offline" if offline else "online",
     )
 
-    out_file = f"{patient_code}_maf_dashboard.html"
-    with open(out_file, "w", encoding="utf-8") as f:
-        f.write(html)
-    print(f"OK  Report written: {out_file}", file=sys.stderr)
+    out_file = f"{patient}_maf_dashboard.html"
+    with open(out_file, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    print(f"OK  Report written: {out_file} ({os.path.getsize(out_file) / 1e6:.1f} MB)",
+          file=sys.stderr)
 
-    # lib/ directory expected by Nextflow output tuple
+    # lib/ directory expected by the Nextflow output tuple
     os.makedirs("lib", exist_ok=True)
     open("lib/.keep", "w").close()
 
