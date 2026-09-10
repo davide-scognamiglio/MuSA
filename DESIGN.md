@@ -186,6 +186,26 @@ The band has three parts: the case, then the review-set count as a single large 
 classifier as a row of labelled count boxes (`P 4`, `VUS 106`, `NC 657`), then an **index of the
 findings blocks** with their counts, each one jumping to its block.
 
+The three parts are the same height and separated by full-height rules: a rule that stops short of
+the block beside it reads as a rendering fault. What makes the middle block reach is its last row,
+the **annotation provenance** — which VEP release and which weekly ClinVar produced these calls. It
+belongs beside the counts rather than with the case, because it qualifies them directly: a
+classification is only as current as the release it came from. The VEP release is the tag of
+`params.vep_container`, which the VEP module also runs, so the report cannot name a release the run
+did not use. The ClinVar date is the `##fileDate` of the VCF actually mounted at
+`/data/vep_data/ClinVar/clinvar.vcf.gz`, not the manifest entry, which a later setup run can have
+already replaced on disk.
+
+**The band is sticky; the masthead is not.** Only one of the two can follow the reader without
+taking a third of the viewport. The masthead says "MuSA v1.1.0", worth reading once; the band says
+which patient, which review set, what was found in it, and how to jump to any of it, which is worth
+having at every scroll position. Its measured height is published as `--band-h` and everything that
+has to clear it reads from there: the evidence panel's sticky offset and max height, the table's
+control bar, `scroll-padding-top`, and the findings blocks' `scroll-margin-top`. It is measured
+rather than assumed because the band grows with the HPO list and the number of findings blocks.
+Below 1280px wide or 760px tall the band goes back to scrolling with the page — it wraps to two rows
+there, and a sticky element that owns a third of a short screen is a worse trade than scrolling.
+
 The index answers "what did this case turn up, and how much of it" before a row is read, and it
 saves scrolling past four blocks to reach the fifth. It works from the table view too, so it is also
 the way back to a particular block rather than to the top of the page.

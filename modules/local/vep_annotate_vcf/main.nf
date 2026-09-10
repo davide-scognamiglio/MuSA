@@ -11,7 +11,7 @@ process VEP_ANNOTATE_VCF {
     errorStrategy 'retry'
     maxRetries 3
     memory { 8.GB * task.attempt }
-    container "dsbioinfo/ensembl-vep:115.2"
+    container params.vep_container
 
     input:
         tuple val(meta), file(vcf)

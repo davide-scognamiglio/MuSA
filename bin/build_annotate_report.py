@@ -24,11 +24,12 @@ back to <patient>.raw.maf when the filtered file is header-only) and embeds ever
 count of both is stated in the header.
 
 Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe>
-                                [logo] [pipeline_version] [hpo_terms]
+                                [logo] [pipeline_version] [hpo_terms] [vep_image] [data_root]
 """
 
 import base64
 import datetime
+import gzip
 import json
 import os
 import re
@@ -129,6 +130,11 @@ def parse_args():
         "logo_path":       args[4] if len(args) > 4 else None,
         "version":         args[5] if len(args) > 5 else "",
         "hpo":             args[6] if len(args) > 6 else "",
+        # The VEP image the pipeline declares, and the mount the reference data is
+        # under. Both only exist inside a pipeline run; built by hand they are absent
+        # and the band simply carries no provenance row.
+        "vep_image":       args[7] if len(args) > 7 else "",
+        "data_root":       args[8] if len(args) > 8 else "",
     }
 
 
@@ -496,6 +502,21 @@ def summarise(df, flags):
 PAGE_CSS = """
 [hidden] { display: none !important; }
 
+/* What follows the reader down the page is the case, not the software. The masthead
+   says "MuSA v1.1.0", which is worth reading once; the band says which patient, which
+   review set, and what was found in it, which is worth having at every scroll
+   position. Only one of the two can be sticky without stealing a third of the
+   viewport, so the band takes it and the masthead scrolls away.
+
+   --band-h is the band's measured height, set from JS and used by everything that has
+   to clear it: the evidence panel, the table's control bar, and the scroll target of
+   the findings index. It is a measurement rather than a constant because the band
+   grows with the HPO list and the number of findings blocks. */
+:root { --band-h: 0px; }
+.masthead { position: static; }
+.band { position: sticky; top: 0; z-index: var(--z-sticky); }
+html { scroll-padding-top: calc(var(--band-h) + 1rem); }
+
 /* ── inked band ───────────────────────────────────────────────────────────── */
 /* The one large field of colour in either document, and the only place the palette
    is used decoratively rather than semantically. It earns that: a white masthead
@@ -507,11 +528,13 @@ PAGE_CSS = """
    identity used to sit in the masthead beside the logo, which is the wrong place for
    it — the masthead identifies the software, the band identifies the patient. */
 .band {
-  display: grid; gap: 1.5rem 2rem; align-items: start;
+  display: grid; gap: 1.5rem 2rem; align-items: stretch;
   grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.5fr) minmax(0, 0.85fr);
   padding: 1.4rem 1.5rem;
   background: var(--band); color: var(--band-ink);
 }
+/* stretch, not start: the two rules are the division between the three blocks, and a
+   rule that stops short of the block beside it reads as a rendering accident. */
 .band-case, .band-stats {
   border-right: 1px solid var(--band-line); padding-right: 2rem;
 }
@@ -544,9 +567,28 @@ PAGE_CSS = """
 .case-hpo-terms a:hover { border-color: var(--band-link); }
 .case-hpo-none { font-size: var(--step--1); color: var(--band-muted); font-style: italic; }
 
+/* Three rows: the figure and the two scales share the first, the middle one is the
+   slack that makes this block as tall as the two beside it, and the provenance sits on
+   the baseline of the band. */
 .band-stats {
   display: grid; gap: 1.25rem 2.5rem; align-items: center;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* Which release of VEP and which weekly ClinVar produced these calls. It belongs with
+   the counts rather than in the case block: it qualifies the numbers directly above
+   it, and a classification is only as current as the database it came from. */
+.band-versions {
+  grid-column: 1 / -1; grid-row: 3; align-self: end;
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.9rem;
+  padding-top: 1rem; border-top: 1px solid var(--band-line);
+  font-size: var(--step--1);
+}
+.band-versions dt { color: var(--band-muted); }
+.band-versions dd {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
 .band-figure { display: grid; gap: 0.1rem; }
 .band-n {
@@ -626,9 +668,12 @@ PAGE_CSS = """
   padding: 1.75rem 1.5rem 2.5rem;
   background: var(--surface);
 }
+/* Sticky under a sticky band: the offset has to be the band's real height or the
+   variant's name and its classification chips sit behind it, which is the half of the
+   panel that says whether this variant is worth the read. */
 .ov-detail {
-  position: sticky; top: 1rem;
-  max-height: calc(100vh - 2rem); overflow: auto;
+  position: sticky; top: calc(var(--band-h) + 1rem);
+  max-height: calc(100vh - var(--band-h) - 2rem); overflow: auto;
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 1rem 1.15rem 1.25rem;
   background: var(--surface);
@@ -641,9 +686,9 @@ PAGE_CSS = """
 .priority-group {
   border: 1px solid var(--border-strong); border-radius: var(--radius);
   background: var(--surface); overflow: hidden;
-  /* The masthead is sticky, so a block jumped to from the index would otherwise
-     land with its header underneath it. */
-  scroll-margin-top: 5rem;
+  /* The band is sticky, so a block jumped to from the index would otherwise land with
+     its header underneath it. */
+  scroll-margin-top: calc(var(--band-h) + 1rem);
 }
 .priority-head {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
@@ -727,7 +772,9 @@ PAGE_CSS = """
 
 /* ── control bar ──────────────────────────────────────────────────────────── */
 .controls {
-  position: sticky; top: 0; z-index: var(--z-sticky);
+  /* Under the band, never over it: same sticky layer, and the control bar comes later
+     in the document, so it needs the lower index explicitly. */
+  position: sticky; top: var(--band-h); z-index: calc(var(--z-sticky) - 1);
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
   padding: 0.6rem 1.5rem;
   background: var(--surface-sunken);
@@ -765,7 +812,7 @@ PAGE_CSS = """
    clientHeight, which converges either way because the pad rows carry the real
    height of the row set. */
 #scroller {
-  height: auto; max-height: 72vh; min-height: 180px;
+  height: auto; max-height: calc(100vh - var(--band-h) - 6rem); min-height: 180px;
   overflow: auto; background: var(--surface);
   border-right: 1px solid var(--border);
 }
@@ -819,7 +866,7 @@ table.variants tbody td.col-af { text-align: right; }
    the list without the page reflowing, and inside the dialog the findings open. */
 .panel {
   flex: 0 0 380px; max-width: 380px;
-  max-height: 72vh; min-height: 180px;
+  max-height: calc(100vh - var(--band-h) - 6rem); min-height: 180px;
   overflow: auto; background: var(--surface); padding: 1rem 1.25rem;
 }
 .panel-empty { color: var(--ink-muted); font-size: var(--step-0); }
@@ -914,6 +961,14 @@ table.qual td {
   .ov-detail { position: static; max-height: none; }
 }
 
+/* The band is worth keeping on screen only while it costs a band's height. Below this
+   width it wraps to two rows, and on a short screen it would take a third of the
+   viewport, so it goes back to scrolling with the page. JS reads the computed position
+   and zeroes --band-h, so everything measuring against it follows. */
+@media (max-width: 1280px), (max-height: 760px) {
+  .band { position: static; }
+}
+
 @media (max-width: 1280px) {
   .band { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); }
   .band-stats { border-right: 0; padding-right: 0; }
@@ -931,8 +986,10 @@ table.qual td {
 @media print {
   .no-print, #view-table { display: none !important; }
   .priority-open { display: none; }
-  /* The band is the document's identity; it has to survive the printer. */
-  .band { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* The band is the document's identity; it has to survive the printer. Static, so it
+     prints once at the top instead of being repeated or clipped. */
+  .band { position: static; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .ov-detail { position: static; max-height: none; }
 }
 """
 
@@ -1574,6 +1631,20 @@ PAGE_JS = r"""
     });
   });
 
+  // The sticky band's height, published as --band-h so the CSS can clear it. It is
+  // measured rather than assumed: the block grows with the HPO list and with how many
+  // findings blocks the case has, and the media queries drop the band back to static on
+  // a narrow or short screen, in which case nothing has to clear anything.
+  var band = document.querySelector(".band");
+  function measureBand() {
+    var stuck = window.getComputedStyle(band).position === "sticky";
+    document.documentElement.style.setProperty(
+      "--band-h", (stuck ? band.offsetHeight : 0) + "px");
+  }
+  measureBand();
+  if (window.ResizeObserver) new ResizeObserver(measureBand).observe(band);
+  window.addEventListener("resize", measureBand);
+
   // The band's index jumps to a block on the findings page. It works from the table
   // view too, so it doubles as the way back to a specific block rather than to the
   // top of the page.
@@ -1689,6 +1760,7 @@ __PAGE_CSS__
       <span class="band-label" title="Rare, protein-affecting, and not called benign or likely benign by ClinVar. Drawn from __TOTAL__ annotated, all of which are in this document.">variants in the review set</span>
     </div>
     <div class="band-scales">__SCALES__</div>
+    __VERSIONS__
   </div>
   <nav class="band-index" aria-label="Findings blocks">__INDEX__</nav>
 </section>
@@ -1904,6 +1976,74 @@ def _finding_tags(df, i):
     return f'<span class="finding-tags">{"".join(tags)}</span>' if tags else ""
 
 
+# ── annotation source versions ────────────────────────────────────────────────
+# Which VEP and which ClinVar produced these calls. Neither is written into the MAF,
+# so both are read back from what the run was actually pointed at: the VEP image
+# reference the pipeline declares, and the ClinVar VCF sitting in the mounted data
+# directory. A classification is only as current as the release it came from, and a
+# report that does not say which release is not reproducible evidence.
+
+def vep_version(image):
+    """The tag of the VEP container reference, e.g. dsbioinfo/ensembl-vep:115.2."""
+    ref = (image or "").strip()
+    if not ref or ":" not in ref:
+        return ""
+    tag = ref.rsplit(":", 1)[1].strip()
+    # A registry port, not a tag: host:5000/image has no tag at all.
+    return "" if "/" in tag else tag
+
+
+def clinvar_version(data_root):
+    """The release date of the ClinVar VCF VEP was given as a --custom source.
+
+    The VCF's own ##fileDate is the authority: the file is installed under a fixed
+    name so the VEP command line never changes, and the manifest can name a release
+    that a later run has already replaced on disk.
+    """
+    if not data_root:
+        return ""
+    vcf = os.path.join(data_root, "vep_data", "ClinVar", "clinvar.vcf.gz")
+    try:
+        with gzip.open(vcf, "rt", errors="replace") as fh:
+            for line in fh:
+                if not line.startswith("##"):
+                    break
+                if line.startswith("##fileDate="):
+                    return line.split("=", 1)[1].strip()
+    except OSError as exc:
+        print(f"  ClinVar version unavailable ({exc}); falling back to the manifest",
+              file=sys.stderr)
+
+    # Fall back to the installed manifest. Parsed by hand rather than with PyYAML:
+    # the report container does not ship it, and this is two flat keys deep.
+    path = os.path.join(data_root, "dbs_manifest.yaml")
+    try:
+        with open(path, errors="replace") as fh:
+            in_entry = False
+            for line in fh:
+                if re.match(r"^\s{2}\S", line):
+                    in_entry = line.strip().rstrip(":") == "clinvar"
+                elif in_entry:
+                    m = re.match(r'^\s+version:\s*"?([^"\s]+)"?', line)
+                    if m:
+                        return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
+def _versions_html(vep, clinvar):
+    rows = ""
+    if vep:
+        rows += f"<dt>VEP</dt><dd>{html_escape(vep)}</dd>"
+    if clinvar:
+        rows += f"<dt>ClinVar</dt><dd>{html_escape(clinvar)}</dd>"
+    if not rows:
+        return ""
+    return (f'<dl class="band-versions" aria-label="Annotation source versions">'
+            f'{rows}</dl>')
+
+
 def _hpo_html(terms):
     if not terms:
         return ('<div class="case-hpo"><span class="case-hpo-none">'
@@ -1918,7 +2058,7 @@ def _hpo_html(terms):
 
 
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
-                    version="", hpo=(), assets_dir=None):
+                    version="", hpo=(), assets_dir=None, vep="", clinvar=""):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
@@ -1982,6 +2122,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__PRIORITY__", priority_html)
             .replace("__INDEX__", index_html)
             .replace("__SCALES__", scales)
+            .replace("__VERSIONS__", _versions_html(vep, clinvar))
             .replace("__HPO__", _hpo_html(hpo))
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
@@ -2007,6 +2148,11 @@ def main():
     hpo = parse_hpo(params["hpo"])
     print(f"  HPO terms      : {len(hpo)}"
           + (f" ({', '.join(hpo)})" if hpo else " (none in samplesheet)"), file=sys.stderr)
+
+    vep = vep_version(params["vep_image"])
+    clinvar = clinvar_version(params["data_root"])
+    print(f"  VEP            : {vep or 'unknown'}", file=sys.stderr)
+    print(f"  ClinVar        : {clinvar or 'unknown'}", file=sys.stderr)
 
     logo_b64, logo_mime = load_logo_base64(params["logo_path"])
     df = load_maf_data(patient)
@@ -2048,6 +2194,8 @@ def main():
         # The typefaces live beside the logo, in the same assets directory the module
         # already passes in, so no new argument has to be threaded through Nextflow.
         assets_dir=(os.path.dirname(params["logo_path"]) if params["logo_path"] else None),
+        vep=vep,
+        clinvar=clinvar,
     )
 
     out_file = f"{patient}_maf_dashboard.html"

@@ -97,6 +97,12 @@
                     "fa_icon": "fas fa-microchip",
                     "default": false
                 },
+                "vep_container": {
+                    "type": "string",
+                    "description": "Ensembl VEP container image. Its tag is also printed as the annotation provenance in the patient report.",
+                    "fa_icon": "fas fa-docker",
+                    "default": "dsbioinfo/ensembl-vep:115.2"
+                },
                 "download_vep_plugins": {
                     "type": "boolean",
                     "description": "Download VEP plugins",
