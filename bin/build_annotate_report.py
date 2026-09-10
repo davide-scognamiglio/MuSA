@@ -682,7 +682,10 @@ html { scroll-padding-top: calc(var(--band-h) + 1rem); }
 /* Each block is its own bounded object. They were separated only by a hairline and a
    gap, which left five lists reading as one long list; a reader could not see where
    one reason to look ended and the next began. */
-.priority { display: flex; flex-direction: column; gap: 1.75rem; margin-top: 1.5rem; }
+/* No top margin: .priority is .ov-main's first child, and .ov-main sits beside
+   .ov-detail in the same grid row. Any margin here pushed the first block down while
+   the evidence panel started flush, so the two never lined up at the top. */
+.priority { display: flex; flex-direction: column; gap: 1.75rem; }
 .priority-group {
   border: 1px solid var(--border-strong); border-radius: var(--radius);
   background: var(--surface); overflow: hidden;
