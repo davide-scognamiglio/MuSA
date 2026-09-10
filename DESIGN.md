@@ -171,8 +171,19 @@ problem handed to a reader who came for an answer.
 evidence in a panel on the right.
 
 The masthead is the square mark plus a wordmark set in type, with the version taken from
-`workflow.manifest.version` at run time, and nothing else. The banner asset had "v1.0" drawn into
-the pixels, which was already wrong for the next tag and could only be corrected by re-drawing art.
+`workflow.manifest.version` at run time, and nothing else on the left. The banner asset had "v1.0"
+drawn into the pixels, which was already wrong for the next tag and could only be corrected by
+re-drawing art. On the right, a single inline SVG octocat links to the pipeline's own repository —
+an `<img>` or icon font is not worth a second asset for a mark this simple in a document that
+promises no network route at read time. Both reports share it through `masthead-right`, a wrapper
+around whatever else sits on that side (the setup report's assembly/generated pair) so the badge is
+always the right-most thing regardless of what else the masthead carries.
+
+The footer names who built the pipeline and how to cite it, in that order, as two rows: the credit
+line never wraps mid-sentence — a name split across lines by an accident of container width reads as
+a fault, not a choice — and the citation sits below it on its own full-width row with a hairline
+above, since the two serve different readers (this deployment, versus a reference for a manuscript)
+and neither should be mistaken for a continuation of the other.
 
 The band has two halves, divided by a rule: **the case on the left, what was found in it on the
 right.** The case identity used to sit in the masthead, which is the wrong place for it — the
@@ -309,11 +320,15 @@ embeds more as `[MIM:615413]Disease name`. All three are read, plus MONDO, Orpha
 PubMed, gnomAD and ClinVar itself — by variation ID where present, by allele ID where not
 (`clinvar_id` is populated on 3,372 rows against `ALLELEID`'s 20,321). Beyond ten, they fold away.
 
-Then the fields, grouped in the order the decision is made: the change, the population, the disease,
-the gene's constraint, the prediction, the call quality, the model organisms. Absent fields are
-omitted rather than printed as "not reported"; `bioinfo_params` is parsed into a small table, since
-the two things anyone asks of it — the zygosity, and whether there were enough reads to believe the
-call — were buried mid-way through a 150-character run-on.
+Then the fields, grouped in the order the decision is made: variant details, population, disease,
+the gene's constraint, prediction, call parameters, model organisms. Absent fields are omitted
+rather than printed as "not reported"; `bioinfo_params` is parsed into a small table under **Call
+parameters**, since the two things anyone asks of it — the zygosity, and whether there were enough
+reads to believe the call — were buried mid-way through a 150-character run-on. That section used
+to be called "Call quality" and hold a field also labelled "Call quality" (`bioinfo_params`), so the
+panel read the same two words twice in a row; the section is the only one of the two that changed
+name. The first section was "The change", which read as unfinished sentence fragment rather than a
+label; it is now "Variant details", matching the register of the sections beside it.
 
 ## Data rendering
 

@@ -97,7 +97,7 @@ DETAIL_COLUMNS = [
 # disease and gene it belongs to, what the literature says, and only then the
 # sequencing detail and the animal models.
 DETAIL_SECTIONS = [
-    ("The change",     ["HGVSc", "HGVSp_VEP", "Consequence", "IMPACT", "VARIANT_CLASS"]),
+    ("Variant details", ["HGVSc", "HGVSp_VEP", "Consequence", "IMPACT", "VARIANT_CLASS"]),
     ("Population",     ["MAX_AF", "MAX_AF_POPS"]),
     ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinGen_GeneDisease_Disease",
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
@@ -106,7 +106,7 @@ DETAIL_SECTIONS = [
     ("Prediction",     ["PL_score", "acmg_criteria", "renovo_adj_acmg_score"]),
     # No "References" section: every accession in the MAF is rendered as a link at the
     # top of the panel instead, so listing the raw strings again would be noise.
-    ("Call quality",   ["bioinfo_params", "ref_context"]),
+    ("Call parameters", ["bioinfo_params", "ref_context"]),
     ("Model organisms", ["PhenotypeOrthologous_Mouse_phenotype",
                          "PhenotypeOrthologous_Rat_phenotype"]),
 ]
@@ -1742,6 +1742,7 @@ __PAGE_CSS__
 
 <header class="masthead">
   __MASTHEAD_ID__
+  <div class="masthead-right">__GITHUB__</div>
 </header>
 
 <section class="band">
@@ -1813,11 +1814,8 @@ __PAGE_CSS__
 
 <footer class="doc-footer">
   <span>MuSA &middot; multi-source variant annotation</span>
-  <span class="doc-credit">Developed by
-    <a href="https://davide-scognamiglio.github.io/" target="_blank" rel="noopener noreferrer">D. Scognamiglio</a>
-    and
-    <a href="https://orcid.org/0000-0001-7462-3874" target="_blank" rel="noopener noreferrer">E. Bonetti</a>
-    at IRCCS Istituto Ortopedico Rizzoli, Bologna.</span>
+  __DOC_CREDIT__
+  __DOC_CITATION__
 </footer>
 
 <script id="payload" type="application/json">__PAYLOAD__</script>
@@ -2131,6 +2129,9 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__GENERATED__", now)
             .replace("__MODE__", mode)
             .replace("__MASTHEAD_ID__", masthead)
+            .replace("__GITHUB__", style.github_badge(style.MUSA_REPO_URL))
+            .replace("__DOC_CREDIT__", style.DOC_CREDIT_HTML)
+            .replace("__DOC_CITATION__", style.DOC_CITATION_HTML)
             .replace("__PATIENT__", patient_code.upper())
             .replace("__PAYLOAD__", json.dumps(payload, separators=(",", ":"))))
 

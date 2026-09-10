@@ -242,9 +242,12 @@ __PAGE_CSS__
 
 <header class="masthead">
   __MASTHEAD_ID__
-  <div class="masthead-meta">
-    <span>Assembly <b>__GENOME__</b></span>
-    <span>Generated <b>__GENERATED__</b></span>
+  <div class="masthead-right">
+    <div class="masthead-meta">
+      <span>Assembly <b>__GENOME__</b></span>
+      <span>Generated <b>__GENERATED__</b></span>
+    </div>
+    __GITHUB__
   </div>
 </header>
 
@@ -302,11 +305,8 @@ __PAGE_CSS__
 
 <footer class="doc-footer">
   <span>MuSA &middot; multi-source variant annotation</span>
-  <span class="doc-credit">Developed by
-    <a href="https://davide-scognamiglio.github.io/" target="_blank" rel="noopener noreferrer">D. Scognamiglio</a>
-    and
-    <a href="https://orcid.org/0000-0001-7462-3874" target="_blank" rel="noopener noreferrer">E. Bonetti</a>
-    at IRCCS Istituto Ortopedico Rizzoli, Bologna.</span>
+  __DOC_CREDIT__
+  __DOC_CITATION__
 </footer>
 
 <script>__PAGE_JS__</script>
@@ -415,7 +415,10 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
             .replace("__PENDING_CLASS__", "is-pending" if counts["pending"] else "")
             .replace("__GENOME__", html.escape(_assembly_label(genome)))
             .replace("__GENERATED__", now)
-            .replace("__MASTHEAD_ID__", masthead))
+            .replace("__MASTHEAD_ID__", masthead)
+            .replace("__GITHUB__", style.github_badge(style.MUSA_REPO_URL))
+            .replace("__DOC_CREDIT__", style.DOC_CREDIT_HTML)
+            .replace("__DOC_CITATION__", style.DOC_CITATION_HTML))
 
     with open(output_path, "w", encoding="utf-8") as fh:
         fh.write(page)

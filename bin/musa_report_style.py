@@ -189,6 +189,12 @@ a:hover { text-decoration-thickness: 2px; }
 }
 .masthead-meta b { color: var(--ink); font-weight: 600; }
 
+.masthead-right { display: flex; align-items: center; gap: 1.25rem; }
+.masthead-github {
+  display: flex; color: var(--ink-muted); line-height: 0;
+}
+.masthead-github:hover { color: var(--ink); }
+
 /* ── page frame ───────────────────────────────────────────────────────────── */
 .wrap { padding: 1.5rem; max-width: 1800px; margin-inline: auto; }
 
@@ -266,10 +272,22 @@ h2.section-title {
   justify-content: space-between;
   font-size: var(--step--1); color: var(--ink-muted);
 }
-/* The credit line is the only place the authors are named, so it stays on one
-   readable measure rather than stretching across a 1700px page. */
-.doc-credit { max-width: 62ch; }
+/* The credit line stays on one line, never wrapping mid-sentence: a name split across
+   two rows by a container that happens to be narrow reads as a rendering fault, not as
+   a design choice. It can outgrow the footer's own width on a narrow screen; the
+   footer scrolls that one line rather than breaking it or forcing the whole page wide. */
+.doc-credit { white-space: nowrap; }
 .doc-credit a { color: var(--accent); }
+.doc-citation {
+  flex-basis: 100%; order: 3;
+  padding-top: 0.5rem; border-top: 1px solid var(--border);
+  text-wrap: pretty;
+}
+.doc-citation a { color: var(--accent); }
+
+@media (max-width: 700px) {
+  .doc-credit { overflow-x: auto; max-width: 100%; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -439,3 +457,54 @@ def masthead_id(logo_b64, logo_mime, version, doc_label):
     return (f'<div class="masthead-id">{mark}'
             f'<span class="masthead-wordmark">MuSA{ver}</span>'
             f'<span class="masthead-doc">{doc_label}</span></div>')
+
+
+# A single inline path, not an icon font or an <img>: the whole point of this document
+# is that it opens with no network route, and a glyph this simple is not worth a base64
+# round trip. currentColor lets it sit in --ink-muted at rest and follow --ink on hover
+# without a second asset for the dark palette.
+_GITHUB_SVG = (
+    '<svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">'
+    '<path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 '
+    '0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 '
+    '1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 '
+    '0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 '
+    '2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 '
+    '1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 '
+    '2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>'
+)
+
+
+def github_badge(repo_url):
+    """Link out to the pipeline's own repository, from every report it produces."""
+    if not repo_url:
+        return ""
+    return (f'<a class="masthead-github" href="{repo_url}" target="_blank" '
+            f'rel="noopener noreferrer" aria-label="MuSA on GitHub">{_GITHUB_SVG}</a>')
+
+
+# One URL, read by both report builders and by the footer's citation block, so the
+# repository link can never drift between documents.
+MUSA_REPO_URL = "https://github.com/davide-scognamiglio/MuSA"
+MUSA_DOI_URL = "https://doi.org/10.1186/s12859-026-06513-0"
+MUSA_CITATION = (
+    "Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow "
+    "pipeline for deep, reproducible annotation and clinical ranking of genomic "
+    "variants. <em>BMC Bioinformatics</em>. 2026 Jun 16;27(1):199. doi: "
+    f'<a href="{MUSA_DOI_URL}" target="_blank" rel="noopener noreferrer">'
+    "10.1186/s12859-026-06513-0</a>."
+)
+
+# One line, deliberately: no line break inside the sentence at any width. Written as a
+# single unbroken string rather than an indented f-string, because HTML collapses
+# source newlines to a space but the previous multi-line source combined with the
+# credit's own max-width still wrapped the sentence across two lines.
+DOC_CREDIT_HTML = (
+    '<span class="doc-credit">Developed by '
+    '<a href="https://davide-scognamiglio.github.io/" target="_blank" rel="noopener noreferrer">D. Scognamiglio</a>'
+    ' and '
+    '<a href="https://orcid.org/0000-0001-7462-3874" target="_blank" rel="noopener noreferrer">E. Bonetti</a>'
+    ' at IRCCS Istituto Ortopedico Rizzoli, Bologna.</span>'
+)
+
+DOC_CITATION_HTML = f'<span class="doc-citation">Cite MuSA: {MUSA_CITATION}</span>'
