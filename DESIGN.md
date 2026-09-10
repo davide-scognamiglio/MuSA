@@ -104,35 +104,50 @@ distance, and a heading that reflows with the window looks worse, not better.
 
 ## Layout
 
-Both documents are a **fixed header over one scrolling working surface**. No card grids: the table
-*is* the page. Cards would add a frame around the only thing anyone came to read.
+The setup report is a **fixed header over one scrolling working surface**: masthead → integrity
+summary → provenance ledger, one row per resource. No card grid; the ledger *is* the page.
 
-Annotation report: sticky masthead → counts strip → **findings lede** → **priority findings** →
-**overview charts** → sticky control bar → virtual table.
-Setup report: masthead → integrity summary → provenance ledger, one row per resource.
+The annotation report is **two pages in one file**. It opens on findings and the variant table is a
+step away, not the bottom of the same scroll. A 68,000-row surface presented first is a search
+problem handed to a reader who came for an answer.
 
-The annotation report opens on a conclusion, not on data. The lede is a sentence assembled from
-what was actually found ("ReNOVo calls 34 variants pathogenic that ClinVar has never classified"),
-then the variants behind that sentence are listed as clickable findings grouped by *why* they are
-there, and only then does the table begin. A clinician who reads nothing else should still leave
-with the case's headline.
+**Page one, findings.** Masthead → counts strip → a two-column body: findings on the left, the shape
+of the review set on the right.
 
-Three charts, all plain HTML and CSS rather than SVG paths or a charting library:
+The left column is a bullet list of the four reasons a variant is worth a second look, counted from
+the actual data — *ClinVar flagged*, *ClinVar VUS escalated by ReNOVo*, *not classified by ClinVar*,
+*calls contradict*. Each block names its count, previews up to six of its variants, and its header is
+the control that opens the table filtered to exactly that block. One definition (`GROUPS` in
+`build_annotate_report.py`) drives the count, the preview and the filter, so they cannot disagree.
 
-- **ClinVar against ReNOVo** - a counts matrix. This is the figure specific to MuSA: nowhere else
-  does the report show where its own classifier and ClinVar disagree, or where MuSA has an opinion
-  and ClinVar has none. Off-diagonal cells are marked.
+Every preview row carries the **disease**, from ClinVar's `CLNDN`. "CPT2 p.Ser113Leu P" does not say
+what the variant is pathogenic *for*, which is the first thing a reader needs in order to decide
+whether it bears on the case in front of them. Previews prefer distinct genes: a group of 175 can
+otherwise open with six indels from one 60 bp window and say nothing about the other 169.
+
+The right column holds two charts, plain HTML and CSS rather than SVG paths or a charting library:
+
 - **Consequence profile** - proportional bars over the review set.
 - **Population frequency** - rarity bands, each with its own tone rather than one colour scaled by
   count, which made the commonest band the loudest bar.
 
-The table sorts on clinical priority by default: ClinVar rank, then a ReNOVo pathogenic call, then
-rarity. Opening the report puts the pathogenic calls on the first screen.
+They are sticky, because the findings column is far taller than they are.
 
-Full evidence for the selected variant lives in a panel docked to the right of the table, not in a
-modal and not in an expanding row. Two reasons: expansion gives rows variable height, which makes
-virtual scrolling fragile at 68,000 rows; and during review the panel stays put while arrow keys walk
-the list, so the reader compares variants without the page reflowing under them.
+**Page two, the table.** Sticky control bar → virtual table → docked evidence panel. The bar carries
+the way back, the review-set/all-variants switch, and, when the table was opened from a findings
+block, a named filter chip that says which block and carries the control that clears it.
+
+The table sorts on clinical priority by default: ClinVar rank, then a ReNOVo pathogenic call, then
+rarity. Opening the table puts the pathogenic calls on the first screen.
+
+Full evidence for one variant is a single block of markup with two homes. Clicking a finding on page
+one opens it as a **dialog**: that reader wants one variant, not a table. Clicking a row on page two
+fills the **panel docked beside the table**, which is deliberately not a modal and not an expanding
+row: expansion gives rows variable height, which makes virtual scrolling fragile at 68,000 rows, and
+during review the panel stays put while arrow keys walk the list.
+
+The dialog is a plain overlay rather than `<dialog>`: these open on lab desktops running whatever
+browser the institution froze, and `showModal()` is not universally present.
 
 ## Data rendering
 

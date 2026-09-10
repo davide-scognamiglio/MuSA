@@ -59,6 +59,7 @@ TOKENS = """
   --z-sticky:  10;
   --z-panel:   20;
   --z-toast:   30;
+  --z-modal:   40;
 }
 """
 

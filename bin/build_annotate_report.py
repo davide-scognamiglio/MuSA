@@ -30,6 +30,7 @@ import base64
 import datetime
 import json
 import os
+import re
 import sys
 
 import pandas as pd
@@ -54,11 +55,22 @@ MAIN_COLUMNS = [
 ]
 
 DETAIL_COLUMNS = [
+    # The first three are also table columns, but the detail view now opens on its own
+    # from the findings list, so it has to stand alone: a dialog that names the gene and
+    # the genomic coordinate and then omits the protein change and the frequency is not
+    # a variant record. Costs nothing in payload size, the columns are already embedded.
+    ("HGVSc",                "cDNA"),
+    ("HGVSp_VEP",            "Protein"),
+    ("MAX_AF",               "Max allele frequency"),
     ("Consequence",          "All consequences"),
+    ("CLNDN",                "ClinVar disease"),
     ("clinvar_id",           "ClinVar variation ID"),
     ("clinvar_OMIM_id",      "OMIM"),
     ("encoded_CLNREVSTAT",   "ClinVar review status"),
-    ("clinvar_trait",        "ClinVar trait"),
+    ("ClinGen_GeneDisease_Disease",        "ClinGen gene-disease"),
+    ("ClinGen_GeneDisease_MOI",            "Inheritance (ClinGen)"),
+    ("ClinGen_GeneDisease_Classification", "Gene-disease validity"),
+    ("gnomAD_pLI",           "gnomAD pLI"),
     ("PUBMED",               "PubMed"),
     ("MAX_AF_POPS",          "Max AF population"),
     ("PL_score",             "ReNOVo pathogenicity score"),
@@ -133,6 +145,60 @@ def load_maf_data(patient_code):
     return result
 
 
+# ── ClinVar disease names ─────────────────────────────────────────────────────
+# CLNDN is the field that answers "pathogenic for *what*". It arrives with spaces
+# replaced by underscores and terms joined by commas, while the terms themselves
+# contain commas ("Encephalopathy,_acute,_infection-induced,_susceptibility_to,_4").
+# A separator comma is therefore one *not* followed by an underscore.
+
+_DISEASE_NOISE = {
+    "not provided", "not specified", "not_provided", "not_specified",
+    "inborn genetic diseases", "see cases", "none provided",
+    "human phenotype ontology", "association", "other",
+}
+# Terms that name a disease rather than a symptom or an umbrella label. Used only to
+# choose which of several ClinVar terms to show first; nothing is discarded.
+_DISEASE_HINT = re.compile(
+    r"deficien|syndrome|disease|disorder|dystroph|anemi|anaemi|carcinom|cancer|"
+    r"neoplas|tumor|tumour|myopath|neuropath|atroph|dysplas|malformation", re.I)
+
+
+def disease_terms(value):
+    """CLNDN to a de-duplicated list of readable disease names, best-first."""
+    if not value or str(value) in (".", "nan", "None"):
+        return []
+    terms, seen = [], set()
+    for raw in re.split(r",(?!_)", str(value)):
+        term = raw.replace("_", " ").strip().strip(",").strip()
+        key = term.lower()
+        if not term or key in _DISEASE_NOISE or key in seen:
+            continue
+        if key.startswith("abnormality of"):      # generic HPO parent terms
+            continue
+        seen.add(key)
+        terms.append(term)
+    # A named disease beats a presenting sign ("Rhabdomyolysis" is true of the CPT2
+    # variant, but "carnitine palmitoyltransferase II deficiency" is what it *is*).
+    # Within that preference the shortest term is the least qualified one.
+    named = [t for t in terms if _DISEASE_HINT.search(t)]
+    if named:
+        best = min(named, key=len)
+        terms = [best] + [t for t in terms if t != best]
+    return terms
+
+
+def disease_label(value, limit=90):
+    terms = disease_terms(value)
+    if not terms:
+        return ""
+    label = terms[0]
+    if len(label) > limit:
+        label = label[:limit - 1].rstrip() + "…"
+    if len(terms) > 1:
+        label += f"  +{len(terms) - 1} more"
+    return label
+
+
 # ── review set ────────────────────────────────────────────────────────────────
 def review_flags(df):
     """Return a list of 0/1 per row: is this variant in the default review view?
@@ -159,8 +225,23 @@ def review_flags(df):
     return flags
 
 
+# The four reasons a variant is worth a second look, in the order a reviewer wants
+# them. One definition drives three things: the blocks on the overview, the filter
+# the table opens under when a block is clicked, and the label of that filter.
+GROUPS = [
+    ("flagged",   "ClinVar flagged",
+     "pathogenic, likely pathogenic or conflicting in ClinVar"),
+    ("escalated", "ClinVar VUS, ReNOVo pathogenic",
+     "uncertain to ClinVar, called pathogenic by MuSA"),
+    ("novel",     "Not classified by ClinVar",
+     "ReNOVo calls these pathogenic and ClinVar has never seen them"),
+    ("contested", "Calls contradict",
+     "ClinVar and ReNOVo point in opposite directions"),
+]
+
+
 # ── payload ───────────────────────────────────────────────────────────────────
-def build_payload(df, main_cols, detail_cols, flags, prio):
+def build_payload(df, main_cols, detail_cols, flags, prio, groups):
     """Columnar, per-column dictionary-encoded JSON.
 
     Row-oriented JSON for a 68k exome is 66 MB; this is 26 MB, and it stays plain JSON that any
@@ -185,6 +266,7 @@ def build_payload(df, main_cols, detail_cols, flags, prio):
         "data": data,
         "review": flags,
         "prio": prio,
+        "groups": groups,
     }
 
 
@@ -223,13 +305,6 @@ def overview(df, flags):
     cv = [style.clinvar_chip(sig.iloc[i])[1] for i in idx]
     rn = [style.renovo_chip(rnv.iloc[i])[1] for i in idx]
 
-    # Concordance between the two independent calls. This is the figure that is
-    # specific to MuSA: nothing else in the report shows where its own classifier
-    # and ClinVar disagree, or where it has an opinion and ClinVar has none.
-    matrix = {}
-    for c, r in zip(cv, rn):
-        matrix[(c, r)] = matrix.get((c, r), 0) + 1
-
     novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r == "PATH"]
     contested = [i for i, c, r in zip(idx, cv, rn)
                  if (c in ("P", "LP") and r == "BEN") or (c in ("B", "LB") and r == "PATH")]
@@ -243,10 +318,12 @@ def overview(df, flags):
             consequences[parts[0]] = consequences.get(parts[0], 0) + 1
 
     bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
+    unobserved = []
     for i in idx:
         a = af.iloc[i]
         if a != a or a is None:
             bands["not observed"] += 1
+            unobserved.append(i)
         elif a < 1e-4:
             bands["under 0.01%"] += 1
         elif a < 1e-3:
@@ -255,7 +332,7 @@ def overview(df, flags):
             bands["0.1% to 1%"] += 1
 
     return {
-        "matrix": matrix,
+        "unobserved": unobserved,
         "novel": novel,
         "contested": contested,
         "flagged": flagged,
@@ -286,56 +363,94 @@ def summarise(df, flags):
 
 # ── page CSS ──────────────────────────────────────────────────────────────────
 PAGE_CSS = """
-/* ── findings banner ──────────────────────────────────────────────────────── */
-/* The first thing on the page is a sentence, not a number. A clinician opening a
-   case wants the conclusion; the counts are the supporting detail underneath. */
-.findings {
-  padding: 1.5rem 1.5rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+[hidden] { display: none !important; }
+
+/* ── overview ─────────────────────────────────────────────────────────────── */
+/* Findings on the left, the shape of the review set on the right. The charts sit
+   beside the findings rather than under them so the first screen carries both the
+   list to act on and the context to read it against. */
+.overview {
+  display: grid; align-items: start; gap: 1.75rem 2.5rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  padding: 1.5rem 1.5rem 2rem;
   background: var(--surface);
 }
-.findings-lede {
-  font-family: var(--font-serif);
-  font-size: var(--step-3); line-height: 1.35;
-  max-width: 68ch; text-wrap: pretty;
+.ov-head h2 {
+  font-family: var(--font-serif); font-size: var(--step-3); font-weight: 600;
 }
-.findings-lede b { font-weight: 700; font-variant-numeric: tabular-nums; }
-.findings-lede .n-alert { color: var(--sig-p); }
-.findings-lede .n-novel { color: var(--accent); }
 .findings-sub {
-  margin-top: 0.4rem; color: var(--ink-muted);
-  font-size: var(--step-0); max-width: 68ch;
+  margin-top: 0.35rem; color: var(--ink-muted);
+  font-size: var(--step-0); max-width: 72ch; text-wrap: pretty;
 }
+.findings-sub b { color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* ── priority findings ────────────────────────────────────────────────────── */
-.priority { display: grid; gap: 1.25rem 2rem; padding: 1.25rem 1.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-  border-bottom: 1px solid var(--border); background: var(--surface); }
-.priority-group h3 {
-  font-size: var(--step-0); font-weight: 600; margin-bottom: 0.1rem;
-}
-.priority-why { font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.5rem; }
-.finding {
-  display: grid; grid-template-columns: minmax(6ch, max-content) minmax(0, 1fr) auto auto;
-  align-items: center; gap: 0.5rem; width: 100%;
-  padding: 0.3rem 0.4rem; margin-left: -0.4rem;
+.priority { display: flex; flex-direction: column; gap: 1.5rem; margin-top: 1.5rem; }
+.priority-group { border-top: 1px solid var(--border); padding-top: 0.85rem; }
+.priority-head {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline; gap: 0.65rem; width: 100%;
+  padding: 0.2rem 0.4rem 0.35rem; margin-left: -0.4rem;
   background: none; border: 0; border-radius: var(--radius);
   font: inherit; text-align: left; cursor: pointer;
 }
+.priority-head:hover { background: var(--surface-sunken); }
+.priority-head:hover .priority-open { color: var(--accent); text-decoration: underline; }
+.priority-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-2); font-weight: 600; line-height: 1;
+  min-width: 3ch; text-align: right;
+}
+.priority-group[data-tone="p"]   .priority-n { color: var(--sig-p); }
+.priority-group[data-tone="lp"]  .priority-n { color: var(--sig-lp); }
+.priority-group[data-tone="acc"] .priority-n { color: var(--accent); }
+.priority-title { font-size: var(--step-1); font-weight: 600; }
+.priority-open {
+  font-size: var(--step--1); color: var(--accent); white-space: nowrap;
+}
+.priority-why {
+  font-size: var(--step--1); color: var(--ink-muted);
+  margin: -0.15rem 0 0.55rem 3.65rem;
+}
+.finding {
+  display: grid;
+  grid-template-columns: minmax(6ch, max-content) minmax(0, 1fr) auto auto;
+  align-items: baseline; gap: 0.15rem 0.6rem; width: 100%;
+  padding: 0.35rem 0.4rem; margin-left: -0.4rem;
+  background: none; border: 0; border-radius: var(--radius);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.finding + .finding { border-top: 1px solid var(--border); }
 .finding:hover { background: var(--surface-sunken); }
 .finding-gene { font-weight: 700; white-space: nowrap; }
 .finding-change {
   font-family: var(--font-mono); font-size: var(--step--1); color: var(--ink-muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.priority-more { font-size: var(--step--1); color: var(--ink-muted); margin-top: 0.35rem; }
-.priority-none { font-size: var(--step--1); color: var(--ink-muted); }
+/* The disease is the answer to "pathogenic for what", so it gets its own line
+   rather than being squeezed into the row. Flush left, not indented to the change
+   column: that column's start moves with the gene symbol's length, so indenting
+   left the disease lines ragged down the list. */
+.finding-disease {
+  grid-column: 1 / -1; font-size: var(--step--1);
+  color: var(--ink); text-wrap: pretty;
+}
+.finding-disease.absent { color: var(--ink-muted); font-style: italic; }
+.priority-more { font-size: var(--step--1); color: var(--ink-muted); margin-top: 0.45rem; }
+.priority-none { font-size: var(--step-0); color: var(--ink-muted); margin-top: 1rem; }
+.ov-actions { margin-top: 1.75rem; }
 
 /* ── charts ───────────────────────────────────────────────────────────────── */
+/* Sticky, because the findings column is much taller than this one: the profile of
+   the review set stays on screen while a reader works down the list rather than
+   scrolling away and leaving half the page empty. */
 .charts {
-  display: grid; gap: 1.5rem 2rem; padding: 1.25rem 1.5rem 1.5rem;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  border-bottom: 1px solid var(--border); background: var(--surface);
+  display: flex; flex-direction: column; gap: 1.5rem;
+  position: sticky; top: 4.75rem;
+}
+.chart {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0.9rem 1rem 1rem; background: var(--surface);
 }
 .chart h3 { font-size: var(--step-0); font-weight: 600; }
 .chart-why { font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.6rem; }
@@ -360,37 +475,6 @@ PAGE_CSS = """
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
   font-size: var(--step--1); text-align: right; color: var(--ink-muted);
 }
-
-table.matrix { border-collapse: collapse; font-size: var(--step--1); }
-table.matrix th {
-  font-weight: 600; color: var(--ink-muted); padding: 0.2rem 0.5rem;
-  font-family: var(--font-mono);
-}
-table.matrix thead th { text-align: center; }
-table.matrix tbody th { text-align: right; }
-table.matrix td {
-  width: 5.5ch; height: 26px; text-align: center;
-  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  border: 1px solid var(--surface);
-  background: color-mix(in oklab, var(--accent) calc(var(--w, 0) * 100%), var(--surface-sunken));
-}
-table.matrix td.cell-disagree {
-  background: color-mix(in oklab, var(--sig-p) calc(var(--w, 0) * 100%), var(--surface-sunken));
-  outline: 1px solid var(--sig-p); outline-offset: -1px;
-}
-table.matrix td.cell-novel {
-  background: color-mix(in oklab, var(--sig-lp) calc(var(--w, 0) * 100%), var(--surface-sunken));
-}
-.matrix-legend {
-  display: flex; flex-wrap: wrap; gap: 0.75rem;
-  margin-top: 0.5rem; font-size: var(--step--1); color: var(--ink-muted);
-}
-.matrix-legend span::before {
-  content: ""; display: inline-block; width: 9px; height: 9px;
-  margin-right: 0.3rem; border-radius: 2px; vertical-align: baseline;
-}
-.matrix-legend .k-novel::before    { background: var(--sig-lp); }
-.matrix-legend .k-disagree::before { background: var(--sig-p); }
 
 /* ── case summary ─────────────────────────────────────────────────────────── */
 .summary {
@@ -421,6 +505,52 @@ table.matrix td.cell-novel {
 .controls-group { display: flex; align-items: center; gap: 0.35rem; }
 .controls-sep { width: 1px; height: 20px; background: var(--border-strong); }
 #search { min-width: 260px; }
+/* The active group filter is a removable object, not a mode you have to remember
+   you are in: it names itself and carries the control that clears it. */
+#filterChip {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.6rem;
+  font-size: var(--step--1);
+  background: var(--accent-weak); color: var(--accent);
+  border: 1px solid var(--accent-ring); border-radius: 999px;
+}
+#filterChip button {
+  font: inherit; line-height: 1; cursor: pointer; color: inherit;
+  background: none; border: 0; border-radius: 999px; padding: 0.15rem 0.35rem;
+}
+#filterChip button:hover { background: var(--surface); }
+
+/* ── variant detail dialog ────────────────────────────────────────────────── */
+/* A plain overlay rather than <dialog>: these open on lab desktops whose browser
+   is whatever the institution froze, and showModal() is not universally there. */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 5vh 1rem; overflow: auto;
+  background: oklch(0.26 0.012 255 / 0.45);
+}
+.modal-card {
+  width: min(560px, 100%);
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: 0 18px 48px oklch(0.26 0.012 255 / 0.22);
+  padding: 1.25rem 1.4rem 1.4rem;
+}
+.modal-close {
+  position: absolute; top: 0.6rem; right: 0.7rem;
+  font: inherit; font-size: var(--step-1); line-height: 1; cursor: pointer;
+  background: none; border: 0; color: var(--ink-muted); padding: 0.25rem 0.4rem;
+  border-radius: var(--radius);
+}
+.modal-close:hover { background: var(--surface-sunken); color: var(--ink); }
+.modal-card { position: relative; }
+/* The dialog is wide enough to set the evidence as a real two-column term list;
+   the docked panel is not, so it keeps the stacked one-column form. */
+.modal-card .detail dl {
+  grid-template-columns: minmax(120px, 0.7fr) minmax(0, 1.6fr);
+  column-gap: 1.25rem; row-gap: 0.55rem; align-items: baseline;
+}
+.modal-card .detail dt { margin-bottom: 0; }
 .result-count {
   margin-left: auto;
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
@@ -430,8 +560,12 @@ table.matrix td.cell-novel {
 /* ── table + panel ────────────────────────────────────────────────────────── */
 .workspace { display: flex; align-items: stretch; min-height: 0; }
 .table-region { flex: 1 1 auto; min-width: 0; }
+/* max-height rather than height: a filtered view of two rows should not leave two
+   thirds of a screen of empty table under it. The virtual scroller reads
+   clientHeight, which converges either way because the pad rows carry the real
+   height of the row set. */
 #scroller {
-  height: 72vh; min-height: 340px;
+  height: auto; max-height: 72vh; min-height: 180px;
   overflow: auto; background: var(--surface);
   border-right: 1px solid var(--border);
 }
@@ -479,12 +613,13 @@ table.variants tbody td.col-af { text-align: right; }
    but they still have to be legible: --border-strong sat at 1.74:1. */
 .stars-empty { color: oklch(0.53 0.01 255); }
 .stars-note { color: var(--ink-muted); font-family: var(--font-sans); }
-.panel dd.plain { font-family: var(--font-sans); }
 
-/* ── detail panel ─────────────────────────────────────────────────────────── */
+/* ── variant detail ───────────────────────────────────────────────────────── */
+/* One block of markup, two homes: docked beside the table, where arrow keys walk
+   the list without the page reflowing, and inside the dialog the findings open. */
 .panel {
   flex: 0 0 380px; max-width: 380px;
-  height: 72vh; min-height: 340px;
+  max-height: 72vh; min-height: 180px;
   overflow: auto; background: var(--surface); padding: 1rem 1.25rem;
 }
 .panel-empty { color: var(--ink-muted); font-size: var(--step-0); }
@@ -493,24 +628,25 @@ table.variants tbody td.col-af { text-align: right; }
   padding: 0.05rem 0.3rem; border: 1px solid var(--border-strong);
   border-radius: 3px; background: var(--surface-sunken);
 }
-.panel h3 {
+.detail h3 {
   font-family: var(--font-serif); font-size: var(--step-2); font-weight: 600;
-  margin-bottom: 0.15rem;
+  margin-bottom: 0.15rem; padding-right: 2rem;
 }
 .panel-gdna {
   font-family: var(--font-mono); font-size: var(--step--1);
   color: var(--ink-muted); word-break: break-all; margin-bottom: 0.75rem;
 }
 .panel-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1rem; }
-.panel dl { display: grid; grid-template-columns: minmax(0,1fr); gap: 0.6rem; }
-.panel dt {
+.detail dl { display: grid; grid-template-columns: minmax(0,1fr); gap: 0.6rem; }
+.detail dt {
   font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.1rem;
 }
-.panel dd {
+.detail dd {
   font-family: var(--font-mono); font-size: var(--step--1);
   word-break: break-word; white-space: pre-wrap;
 }
-.panel dd.absent { font-family: var(--font-sans); color: var(--ink-muted); font-style: italic; }
+.detail dd.plain { font-family: var(--font-sans); }
+.detail dd.absent { font-family: var(--font-sans); color: var(--ink-muted); font-style: italic; }
 .panel-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
 .panel-links a {
   font-size: var(--step--1); padding: 0.25rem 0.55rem;
@@ -521,8 +657,20 @@ table.variants tbody td.col-af { text-align: right; }
 
 @media (max-width: 1100px) {
   .workspace { flex-direction: column; }
-  .panel { flex: 1 1 auto; max-width: none; height: auto; border-top: 1px solid var(--border); }
-  #scroller { height: 60vh; border-right: none; }
+  .panel { flex: 1 1 auto; max-width: none; max-height: none; border-top: 1px solid var(--border); }
+  #scroller { max-height: 60vh; border-right: none; }
+}
+
+@media (max-width: 980px) {
+  .overview { grid-template-columns: minmax(0, 1fr); }
+  .charts { flex-direction: row; flex-wrap: wrap; }
+  .chart { flex: 1 1 260px; }
+}
+
+@media print {
+  .no-print, #view-table { display: none !important; }
+  .overview { grid-template-columns: minmax(0, 1.35fr) minmax(240px, 0.65fr); }
+  .priority-open { display: none; }
 }
 """
 
@@ -591,6 +739,28 @@ PAGE_JS = r"""
     return '<span class="af-value">' + esc(label) + "</span>";
   }
 
+  // CLNDN answers "pathogenic for what". It arrives underscored, with terms joined by
+  // commas while the terms themselves contain commas ("Encephalopathy,_acute,_..."),
+  // so a separator comma is one not followed by an underscore. Mirrors
+  // disease_terms() in build_annotate_report.py.
+  var DISEASE_NOISE = {
+    "not provided": 1, "not specified": 1, "none provided": 1,
+    "inborn genetic diseases": 1, "see cases": 1, "human phenotype ontology": 1,
+    "association": 1, "other": 1
+  };
+  function diseaseList(v) {
+    if (absent(v)) return [];
+    var out = [], seen = {};
+    String(v).split(/,(?!_)/).forEach(function (t) {
+      t = t.replace(/_/g, " ").trim().replace(/,$/, "").trim();
+      var k = t.toLowerCase();
+      if (!t || seen[k] || DISEASE_NOISE[k]) return;
+      seen[k] = 1;
+      out.push(t);
+    });
+    return out;
+  }
+
   // Several consequences per variant: MuSA's MAF joins with ',', VEP's VCF with '&'.
   function firstConsequence(v) {
     if (absent(v)) return "—";
@@ -637,6 +807,9 @@ PAGE_JS = r"""
   var sortKey = "__prio", sortDir = -1;   // ClinVar pathogenic first, on open
   var order = [];
   var selected = -1;
+  // Non-null when the table was opened from a findings block: the table then shows
+  // exactly the variants behind that block and says so.
+  var groupKey = null, groupSet = null;
 
   var SEARCH_KEYS = ["Hugo_Symbol", "genome_change", "HGVSc", "HGVSp_VEP"];
 
@@ -646,7 +819,8 @@ PAGE_JS = r"""
     var searchCols = q ? SEARCH_KEYS.map(col) : null;
 
     for (var i = 0; i < n; i++) {
-      if (view === "review" && !review[i]) continue;
+      if (groupSet) { if (!groupSet[i]) continue; }
+      else if (view === "review" && !review[i]) continue;
       if (q) {
         var hit = false;
         for (var c = 0; c < searchCols.length; c++) {
@@ -718,17 +892,12 @@ PAGE_JS = r"""
     tbody.innerHTML = html.join("");
   }
 
-  // ── detail panel ─────────────────────────────────────────────────────────
-  function select(i) {
-    selected = i;
-    var panel = document.getElementById("panel");
-    if (i < 0) {
-      panel.innerHTML = '<p class="panel-empty">Select a variant to see its full evidence.<br><br>' +
-        'Use <kbd>&uarr;</kbd> and <kbd>&darr;</kbd> to walk the list without losing your place.</p>';
-      return;
-    }
+  // ── variant detail ───────────────────────────────────────────────────────
+  // One renderer, two homes: the panel docked beside the table and the dialog the
+  // findings on the overview open.
+  function detailHTML(i) {
     var gene = col("Hugo_Symbol")[i], gdna = col("genome_change")[i];
-    var parts = [];
+    var parts = ['<div class="detail">'];
     parts.push('<h3>' + esc(absent(gene) ? "Unnamed gene" : gene) + '</h3>');
     parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + '</p>');
     parts.push('<div class="panel-chips">' +
@@ -759,6 +928,19 @@ PAGE_JS = r"""
         parts.push('<dd class="plain">' + esc(String(v).split(/[,&]/).join(", ").replace(/_/g, " ")) + "</dd>");
         return;
       }
+      if (d.k === "CLNDN") {
+        var ds = diseaseList(v);
+        parts.push(ds.length
+          ? '<dd class="plain">' + esc(ds.join(" · ")) + "</dd>"
+          : '<dd class="absent">not reported</dd>');
+        return;
+      }
+      if (d.k === "MAX_AF") { parts.push("<dd>" + afCell(v) + "</dd>"); return; }
+      // ClinVar packs several MIM numbers into one field, joined with '|'.
+      if (d.k === "clinvar_OMIM_id") {
+        parts.push("<dd>" + esc(String(v).split(/[,|]/).join(" · ")) + "</dd>");
+        return;
+      }
       parts.push("<dd>" + esc(v).replace(/,/g, ", ") + "</dd>");
     });
     parts.push("</dl>");
@@ -776,7 +958,8 @@ PAGE_JS = r"""
     }
     var omim = col("clinvar_OMIM_id")[i];
     if (!absent(omim)) {
-      String(omim).split(",").forEach(function (id) {
+      // ClinVar packs several MIM numbers per variant and joins them with '|'.
+      String(omim).split(/[,|]/).forEach(function (id) {
         id = id.trim();
         if (id) links.push('<a href="https://www.omim.org/entry/' + encodeURIComponent(id) +
                            '" target="_blank" rel="noopener noreferrer">OMIM ' + esc(id) + '</a>');
@@ -791,10 +974,43 @@ PAGE_JS = r"""
       });
     }
     if (links.length) parts.push('<div class="panel-links">' + links.join("") + "</div>");
+    parts.push("</div>");
+    return parts.join("");
+  }
 
-    panel.innerHTML = parts.join("");
+  function select(i) {
+    selected = i;
+    var panel = document.getElementById("panel");
+    panel.innerHTML = i < 0
+      ? '<p class="panel-empty">Select a variant to see its full evidence.<br><br>' +
+        'Use <kbd>&uarr;</kbd> and <kbd>&darr;</kbd> to walk the list without losing your place.</p>'
+      : detailHTML(i);
     render();
   }
+
+  // ── dialog ───────────────────────────────────────────────────────────────
+  var modal = document.getElementById("modal");
+  var modalBody = document.getElementById("modalBody");
+  var modalClose = document.getElementById("modalClose");
+  var lastFocus = null;
+
+  function openModal(i) {
+    lastFocus = document.activeElement;
+    modalBody.innerHTML = detailHTML(i);
+    modal.hidden = false;
+    modalClose.focus();
+  }
+
+  function closeModal() {
+    if (modal.hidden) return;
+    modal.hidden = true;
+    modalBody.innerHTML = "";
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  modalClose.addEventListener("click", closeModal);
+  // Only a click on the backdrop itself closes; a click inside the card must not.
+  modal.addEventListener("click", function (e) { if (e.target === modal) closeModal(); });
 
   // ── events ───────────────────────────────────────────────────────────────
   scroller.addEventListener("scroll", render, { passive: true });
@@ -805,19 +1021,77 @@ PAGE_JS = r"""
     if (tr) select(parseInt(tr.dataset.row, 10));
   });
 
+  // ── views ────────────────────────────────────────────────────────────────
+  // The table is a second page rather than the bottom of the first one. Opening a
+  // report should present findings; the 68,000-row surface is deliberately a step
+  // away, and it does not exist in the layout until it is asked for.
+  var overviewView = document.getElementById("view-overview");
+  var tableView = document.getElementById("view-table");
+  var chip = document.getElementById("filterChip");
+
+  function showView(which) {
+    var toTable = which === "table";
+    overviewView.hidden = toTable;
+    tableView.hidden = !toTable;
+    window.scrollTo(0, 0);
+    if (toTable) render();          // the scroller has no height while hidden
+  }
+
+  function setGroup(key) {
+    groupKey = key;
+    groupSet = null;
+    if (key && P.groups && P.groups[key]) {
+      groupSet = {};
+      P.groups[key].forEach(function (i) { groupSet[i] = 1; });
+    }
+    // The two view buttons stay live while a findings filter is on: clicking one is
+    // the obvious way out of the filter, and a disabled control that looks identical
+    // to an enabled one on this toolbar's ground is worse than no control.
+    Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
+      b.setAttribute("aria-pressed", String(!groupKey && b.dataset.view === view));
+    });
+    if (groupKey) {
+      var label = document.querySelector('[data-group="' + groupKey + '"]');
+      chip.innerHTML = "Showing: " + esc(label ? label.dataset.groupLabel : groupKey) +
+        ' <button type="button" id="clearFilter" aria-label="Clear this filter">&times;</button>';
+      chip.hidden = false;
+      document.getElementById("clearFilter").addEventListener("click", function () {
+        setGroup(null);
+        rebuild();
+      });
+    } else {
+      chip.hidden = true;
+      chip.innerHTML = "";
+    }
+  }
+
+  // A finding on the overview opens that variant's evidence and nothing else.
   Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (btn) {
     btn.addEventListener("click", function () {
-      var i = parseInt(btn.dataset.goto, 10);
-      if (view === "review" && !P.review[i]) {
-        document.querySelector('[data-view="all"]').click();
-      }
-      var pos = order.indexOf(i);
-      if (pos < 0) { query = ""; document.getElementById("search").value = ""; rebuild(); pos = order.indexOf(i); }
-      if (pos < 0) return;
-      scroller.scrollTop = Math.max(0, pos * ROW_H - scroller.clientHeight / 2);
-      select(i);
-      scroller.scrollIntoView({ block: "start" });
+      openModal(parseInt(btn.dataset.goto, 10));
     });
+  });
+
+  // A findings block header opens the table filtered to exactly that block.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-group]"), function (btn) {
+    btn.addEventListener("click", function () {
+      query = "";
+      document.getElementById("search").value = "";
+      setGroup(btn.dataset.group);
+      rebuild();
+      showView("table");
+      select(-1);
+    });
+  });
+
+  document.getElementById("openTable").addEventListener("click", function () {
+    setGroup(null);
+    rebuild();
+    showView("table");
+  });
+
+  document.getElementById("backToOverview").addEventListener("click", function () {
+    showView("overview");
   });
 
   document.getElementById("search").addEventListener("input", function (e) {
@@ -828,9 +1102,7 @@ PAGE_JS = r"""
   Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (btn) {
     btn.addEventListener("click", function () {
       view = btn.dataset.view;
-      Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
-        b.setAttribute("aria-pressed", String(b === btn));
-      });
+      setGroup(null);
       rebuild();
     });
   });
@@ -854,6 +1126,8 @@ PAGE_JS = r"""
   // Arrow keys walk the list with the panel pinned, which is the point of docking
   // it rather than expanding rows inline.
   document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { closeModal(); return; }
+    if (!modal.hidden || tableView.hidden) return;
     if (e.target.tagName === "INPUT") return;
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
     e.preventDefault();
@@ -869,6 +1143,7 @@ PAGE_JS = r"""
   });
 
   select(-1);
+  setGroup(null);
   rebuild();
 })();
 """
@@ -925,63 +1200,71 @@ __PAGE_CSS__
   </div>
 </section>
 
-<section class="findings">
-  <p class="findings-lede">__LEDE__</p>
-  <p class="findings-sub">__LEDE_SUB__</p>
-</section>
-
-<section class="priority" aria-label="Priority findings">__PRIORITY__</section>
-
-<section class="charts" aria-label="Overview">
-  <div class="chart">
-    <h3>ClinVar against ReNOVo</h3>
-    <p class="chart-why">Where the two independent calls agree, disagree, or where only MuSA has an
-    opinion. Review-set variants only.</p>
-    __MATRIX__
-    <div class="matrix-legend">
-      <span class="k-novel">ClinVar has no classification</span>
-      <span class="k-disagree">calls contradict each other</span>
+<main class="view" id="view-overview">
+  <section class="overview">
+    <div class="ov-main">
+      <div class="ov-head">
+        <h2>Findings</h2>
+        <p class="findings-sub">__LEDE_SUB__</p>
+      </div>
+      <div class="priority">__PRIORITY__</div>
+      <div class="ov-actions no-print">
+        <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
+      </div>
     </div>
-  </div>
-  <div class="chart">
-    <h3>Consequence profile</h3>
-    <p class="chart-why">What kind of change the review set is made of.</p>
-    __CSQ_BARS__
-  </div>
-  <div class="chart">
-    <h3>Population frequency</h3>
-    <p class="chart-why">How rare the review set is. Absence from gnomAD is itself evidence.</p>
-    __AF_BARS__
-  </div>
-</section>
+    <aside class="charts" aria-label="Shape of the review set">
+      <div class="chart">
+        <h3>Consequence profile</h3>
+        <p class="chart-why">What kind of change the review set is made of.</p>
+        __CSQ_BARS__
+      </div>
+      <div class="chart">
+        <h3>Population frequency</h3>
+        <p class="chart-why">How rare the review set is. Absence from gnomAD is itself evidence.</p>
+        __AF_BARS__
+      </div>
+    </aside>
+  </section>
+</main>
 
-<div class="controls no-print">
-  <div class="controls-group" role="group" aria-label="Which variants to show">
-    <button class="btn" type="button" data-view="review" aria-pressed="true">Review set</button>
-    <button class="btn" type="button" data-view="all" aria-pressed="false">All variants</button>
-  </div>
-  <div class="controls-sep" aria-hidden="true"></div>
-  <label class="sr-only" for="search">Search by gene, coordinate, cDNA or protein change</label>
-  <input class="field" id="search" type="search" placeholder="Gene, coordinate, cDNA or protein change"/>
-  <span class="result-count" id="resultCount" role="status" aria-live="polite"></span>
-</div>
-
-<div class="workspace">
-  <div class="table-region">
-    <div id="scroller">
-      <table class="variants">
-        <thead><tr>__HEADERS__</tr></thead>
-        <tbody id="tbody-pad-top-holder">
-          <tr id="padTop" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
-        </tbody>
-        <tbody id="tbody"></tbody>
-        <tbody>
-          <tr id="padBottom" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
-        </tbody>
-      </table>
+<main class="view" id="view-table" hidden>
+  <div class="controls no-print">
+    <button class="btn" type="button" id="backToOverview">&larr; Findings</button>
+    <div class="controls-sep" aria-hidden="true"></div>
+    <div class="controls-group" role="group" aria-label="Which variants to show">
+      <button class="btn" type="button" data-view="review" aria-pressed="true">Review set</button>
+      <button class="btn" type="button" data-view="all" aria-pressed="false">All variants</button>
     </div>
+    <span id="filterChip" hidden></span>
+    <label class="sr-only" for="search">Search by gene, coordinate, cDNA or protein change</label>
+    <input class="field" id="search" type="search" placeholder="Gene, coordinate, cDNA or protein change"/>
+    <span class="result-count" id="resultCount" role="status" aria-live="polite"></span>
   </div>
-  <aside class="panel" id="panel" aria-live="polite" aria-label="Variant detail"></aside>
+
+  <div class="workspace">
+    <div class="table-region">
+      <div id="scroller">
+        <table class="variants">
+          <thead><tr>__HEADERS__</tr></thead>
+          <tbody id="tbody-pad-top-holder">
+            <tr id="padTop" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
+          </tbody>
+          <tbody id="tbody"></tbody>
+          <tbody>
+            <tr id="padBottom" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite" aria-label="Variant detail"></aside>
+  </div>
+</main>
+
+<div class="modal-backdrop no-print" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-label="Variant detail">
+    <button class="modal-close" type="button" id="modalClose" aria-label="Close">&times;</button>
+    <div id="modalBody"></div>
+  </div>
 </div>
 
 <footer class="doc-footer">
@@ -1021,60 +1304,60 @@ def html_escape(s):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def _finding_rows(df, indices, limit=8):
-    """Compact clickable rows for the priority findings list."""
+def _pick_preview(df, indices, limit=6, per_gene=2):
+    """Choose which rows of a group to show, preferring distinct genes.
+
+    A group of 175 can begin with six indels in one gene (CFAP58 on patient 5724, a
+    cluster in one 60 bp window). Showing all six spends the whole preview on one
+    locus and tells the reader nothing about the other 169, so the preview takes at
+    most two per gene and backfills only if that leaves it short.
+    """
+    if "Hugo_Symbol" not in df.columns:
+        return indices[:limit]
+    genes = df["Hugo_Symbol"]
+    picked, counts, rest = [], {}, []
+    for i in indices:
+        g = str(genes.iloc[i])
+        if counts.get(g, 0) < per_gene:
+            counts[g] = counts.get(g, 0) + 1
+            picked.append(i)
+            if len(picked) == limit:
+                return picked
+        else:
+            rest.append(i)
+    return picked + rest[:limit - len(picked)]
+
+
+def _finding_rows(df, indices, limit=6):
+    """Compact clickable rows for a findings block. Clicking one opens its evidence.
+
+    The disease line is the reason this is a two-line row: "CPT2 p.Ser113Leu P" does
+    not tell a reader what the variant is pathogenic *for*, which is the first thing
+    they need in order to decide whether it is relevant to the case in front of them.
+    """
     get = lambda col, i: (str(df[col].iloc[i]) if col in df.columns else ".")
     out = []
-    for i in indices[:limit]:
+    for i in _pick_preview(df, indices, limit):
         gene = get("Hugo_Symbol", i)
         prot = get("HGVSp_VEP", i)
         gdna = get("genome_change", i)
         cvc, cvcode, cvnote = style.clinvar_chip(get("encoded_CLNSIG", i))
         rnc, rncode, rnnote = style.renovo_chip(get("RENOVO_Class", i))
         change = prot if prot not in (".", "nan", "") else gdna
+        disease = disease_label(get("CLNDN", i))
+        disease_html = (f'<span class="finding-disease">{html_escape(disease)}</span>'
+                        if disease else
+                        '<span class="finding-disease absent">no ClinVar disease recorded</span>')
         out.append(
             f'<button class="finding" type="button" data-goto="{i}">'
             f'<span class="finding-gene">{html_escape(gene if gene != "." else "—")}</span>'
             f'<span class="finding-change">{html_escape(change)}</span>'
             f'<span class="chip {cvc}"><b>{cvcode}</b><span class="sr-only"> ClinVar {cvnote}</span></span>'
             f'<span class="chip {rnc}"><b>{rncode}</b><span class="sr-only"> ReNOVo {rnnote}</span></span>'
+            f'{disease_html}'
             "</button>"
         )
     return "".join(out)
-
-
-def _matrix_html(matrix):
-    """ClinVar (rows) against ReNOVo (columns), counts in cells.
-
-    Off-diagonal cells are where the two independent calls disagree, which is the
-    only place in the report that comparison is visible.
-    """
-    cv_order = [c for c in ("P", "LP", "CONF", "VUS", "LB", "B", "NC")
-                if any(k[0] == c for k in matrix)]
-    rn_order = [r for r in ("PATH", "BEN", "--") if any(k[1] == r for k in matrix)]
-    if not cv_order or not rn_order:
-        return '<p class="chart-empty">No paired calls to compare.</p>'
-    peak = max(matrix.values()) or 1
-
-    head = "".join(f'<th scope="col">{r}</th>' for r in rn_order)
-    body = []
-    for c in cv_order:
-        cells = []
-        for r in rn_order:
-            n = matrix.get((c, r), 0)
-            disagree = (c in ("P", "LP") and r == "BEN") or (c in ("B", "LB") and r == "PATH")
-            novel = c == "NC" and r == "PATH"
-            cls = "cell-disagree" if disagree and n else ("cell-novel" if novel and n else "")
-            weight = 0 if not n else 0.12 + 0.68 * (n / peak)
-            cells.append(
-                f'<td class="{cls}" style="--w:{weight:.3f}">'
-                f'<span class="cell-n">{n:,}</span></td>'
-            )
-        body.append(f'<tr><th scope="row">{c}</th>{"".join(cells)}</tr>')
-    return (
-        '<table class="matrix"><caption class="sr-only">ClinVar significance by ReNOVo call'
-        f'</caption><thead><tr><td></td>{head}</tr></thead><tbody>{"".join(body)}</tbody></table>'
-    )
 
 
 def _chip(cls, code, note, count):
@@ -1115,57 +1398,40 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
         ] if rn.get(code, 0)
     ) or '<span class="summary-note">no ReNOVo call present</span>'
 
-    n_flag, n_esc, n_novel = len(ov["flagged"]), len(ov["escalated"]), len(ov["novel"])
-    n_contested, n_unobs = len(ov["contested"]), ov["bands"]["not observed"]
+    n_unobs = ov["bands"]["not observed"]
+    lede_sub = (f'<b>{ov["n_review"]:,}</b> variants are in the review set, drawn from '
+                f'<b>{stats["total"]:,}</b> annotated: rare, and either flagged by ClinVar or '
+                f'protein-affecting. <b>{n_unobs:,}</b> of them are absent from gnomAD entirely. '
+                f'Everything below is counted over that review set; open any block to see all of '
+                f'its variants in the table.')
 
-    clauses = []
-    if n_flag:
-        clauses.append(f'<b class="n-alert">{n_flag}</b> '
-                       f'{"variant carries" if n_flag == 1 else "variants carry"} a ClinVar '
-                       f'pathogenic, likely-pathogenic or conflicting classification')
-    if n_novel:
-        clauses.append(f'ReNOVo calls <b class="n-novel">{n_novel}</b> '
-                       f'{"variant" if n_novel == 1 else "variants"} pathogenic that ClinVar '
-                       f'has never classified')
-    if n_esc:
-        clauses.append(f'<b>{n_esc}</b> ClinVar {"VUS is" if n_esc == 1 else "VUS are"} '
-                       f'called pathogenic by ReNOVo')
-    if not clauses:
-        lede = (f'No ClinVar pathogenic call and no ReNOVo pathogenic call in the '
-                f'<b>{ov["n_review"]:,}</b>-variant review set.')
-    else:
-        lede = (clauses[0][0].upper() + clauses[0][1:] + ". "
-                + ". ".join(c[0].upper() + c[1:] for c in clauses[1:])
-                + ("." if len(clauses) > 1 else ""))
-
-    lede_sub = (f'Counted across the {ov["n_review"]:,}-variant review set, drawn from '
-                f'{stats["total"]:,} annotated. {n_unobs:,} of the review set are absent from '
-                f'gnomAD entirely.')
-    if n_contested:
-        lede_sub += (f' {n_contested} '
-                     f'{"call is" if n_contested == 1 else "calls are"} contradicted between '
-                     f'ClinVar and ReNOVo and should be read carefully.')
-
-    # ── priority findings, grouped by why they are here ──────────────────────
-    groups = []
-    for key, title, why in [
-        ("flagged", "ClinVar flagged", "pathogenic, likely pathogenic or conflicting"),
-        ("escalated", "ClinVar VUS, ReNOVo pathogenic", "uncertain to ClinVar, called by MuSA"),
-        ("novel", "Not classified by ClinVar", "ReNOVo calls these pathogenic"),
-        ("contested", "Calls contradict", "the two classifiers disagree outright"),
-    ]:
+    # ── findings blocks, grouped by why a variant is here ────────────────────
+    # Each block header is the control that opens the table filtered to that block,
+    # so the number a reader sees and the rows they get are the same set by
+    # construction rather than by two definitions that could drift.
+    tones = {"flagged": "p", "escalated": "lp", "novel": "acc", "contested": "p"}
+    blocks = []
+    for key, title, why in GROUPS:
         items = ov[key]
         if not items:
             continue
-        more = (f'<p class="priority-more">and {len(items) - 8:,} more, sorted to the top of '
-                f'the table</p>' if len(items) > 8 else "")
-        groups.append(
-            f'<div class="priority-group"><h3>{title} <span class="bar-n">{len(items):,}</span></h3>'
-            f'<p class="priority-why">{why}</p>{_finding_rows(df, items)}{more}</div>'
+        shown = min(len(items), 6)
+        more = (f'<p class="priority-more">{len(items) - shown:,} more in this group</p>'
+                if len(items) > shown else "")
+        blocks.append(
+            f'<section class="priority-group" data-tone="{tones[key]}">'
+            f'<button class="priority-head" type="button" data-group="{key}" '
+            f'data-group-label="{html_escape(title)}">'
+            f'<span class="priority-n">{len(items):,}</span>'
+            f'<span class="priority-title">{html_escape(title)}</span>'
+            f'<span class="priority-open no-print">see all in table &rarr;</span>'
+            f'</button>'
+            f'<p class="priority-why">{html_escape(why)}</p>'
+            f'{_finding_rows(df, items)}{more}</section>'
         )
-    priority_html = "".join(groups) or (
+    priority_html = "".join(blocks) or (
         '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
-        'pathogenic by ReNOVo.</p>')
+        'pathogenic by ReNOVo. The full variant table is still one click away.</p>')
 
     # Rarity is the point of this chart, so each band carries its own tone rather than
     # one colour scaled by count, which made the *commonest* band the loudest bar.
@@ -1187,10 +1453,8 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__BASE_CSS__", style.BASE_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)
             .replace("__PAGE_JS__", PAGE_JS)
-            .replace("__LEDE__", lede)
             .replace("__LEDE_SUB__", lede_sub)
             .replace("__PRIORITY__", priority_html)
-            .replace("__MATRIX__", _matrix_html(ov["matrix"]))
             .replace("__CSQ_BARS__", _bars(ov["consequences"], ov["n_review"]))
             .replace("__AF_BARS__", af_bars)
             .replace("__NCOL__", str(len(payload["main"])))
@@ -1230,9 +1494,15 @@ def main():
 
     flags = review_flags(df)
     prio = priority_scores(df)
-    payload = build_payload(df, main_cols, detail_cols, flags, prio)
     stats = summarise(df, flags)
     ov = overview(df, flags)
+    # Groups come out of overview() in genomic order, which is arbitrary here. Order
+    # them the way the table orders itself so the preview and the filtered table
+    # agree about what comes first.
+    for key, _, _ in GROUPS:
+        ov[key] = sorted(ov[key], key=lambda i: -prio[i])
+    groups = {key: ov[key] for key, _, _ in GROUPS}
+    payload = build_payload(df, main_cols, detail_cols, flags, prio, groups)
     print(f"  Priority: {len(ov['flagged'])} ClinVar-flagged, {len(ov['escalated'])} escalated "
           f"VUS, {len(ov['novel'])} ReNOVo-only, {len(ov['contested'])} contested",
           file=sys.stderr)
