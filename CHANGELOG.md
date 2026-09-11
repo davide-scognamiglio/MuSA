@@ -37,7 +37,10 @@ actually lints and actually reflects what the code does.
   ClinVar) rendered as a live link; a sticky summary band carrying the review-set counts, VEP and
   ClinVar release versions, the patient's HPO terms (linked to hpo.jax.org), and a clickable index
   of the findings blocks; Poppins typography and a real light/dark palette in place of the
-  previous unstyled table. Both reports stay fully self-contained -- no network access at read
+  previous unstyled table. The setup report was brought to the same standard: its plain
+  four-number integrity block and proportional bar became a case-identity band with bordered
+  count boxes, sharing the band system extracted into `musa_report_style.BAND_CSS` rather than
+  drifting into its own look. Both reports stay fully self-contained -- no network access at read
   time.
 - The publication citation, DOI badge and a GitHub link added to both reports' masthead/footer.
 - `docs/usage.md` and `docs/output.md` rewritten from scratch against the pipeline MuSA actually
