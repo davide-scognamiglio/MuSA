@@ -276,16 +276,18 @@ Column-by-column breakdown of what's in the MAF: [`docs/output.md`](docs/output.
 
 ## Benchmark
 
-Measured on the pipeline's own paper-published benchmark: a downsampled, WES-like NA12878/HG001
-(GRCh38) callset, **22,705 variants**, full extended-mode annotation (all 22 VEP plugins) on an
-in-house server (Intel Xeon Gold 6444Y, 64 cores, 250 GB RAM):
+Same dataset, same in-house server (Intel Xeon Gold 6444Y, 64 cores, 250 GB RAM), two pipeline
+versions: a downsampled, WES-like NA12878/HG001 (GRCh38) callset, ~22,700 variants, full
+extended-mode annotation (all 22 VEP plugins).
 
-| | |
-|---|---|
-| Variants | 22,705 |
-| Mode | Extended (22 VEP plugins) |
-| Hardware | 64 cores / 250 GB RAM |
-| Wall time | ~20 minutes |
+| Version | Wall time | CPU time |
+|---|---|---|
+| v1.0.0 (paper-published figure) | ~20 minutes | — |
+| v1.1.0 | **3m 23s** | 0.8 CPU-hours |
+
+The difference is dbNSFP, not the hardware: in v1.0.0 it ran as a single pass over the whole VCF,
+which dominated wall time; v1.1.0 shards the VCF by chromosome and annotates the shards in
+parallel. Everything else about the run is the same dataset, mode and machine.
 
 This is a fixed reference point on fixed hardware, not a guarantee — your runtime scales with core
 count, VCF size, and whether you run basic or extended mode. Per-task resource use for any of your
