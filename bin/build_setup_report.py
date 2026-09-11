@@ -102,40 +102,59 @@ def load_logo_base64(logo_path):
 
 # ── page CSS ──────────────────────────────────────────────────────────────────
 PAGE_CSS = """
-.intro { padding: 1.5rem 1.5rem 1rem; max-width: 62ch; }
+/* Same split as the annotation report: the masthead names the software, the band
+   names the thing the document is about -- here, the data directory itself. The
+   sticky/static split, the grid base, --band-h mechanics, .band-n figure and .key
+   boxes are shared defaults in musa_report_style.BAND_CSS; this file supplies the
+   two-column layout (no findings index to make room for) and the case content. */
+.band {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+.band-case {
+  border-right: 1px solid var(--band-line); padding-right: 2rem;
+}
+.case-id {
+  font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
+  letter-spacing: -0.01em; margin-bottom: 0.6rem;
+}
+.case-meta {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.9rem; font-size: var(--step--1);
+}
+.case-meta dt { color: var(--band-muted); }
+.case-meta dd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.case-note {
+  margin-top: 0.9rem; max-width: 52ch;
+  font-size: var(--step--1); color: var(--band-muted); text-wrap: pretty;
+}
+.band-stats {
+  display: grid; gap: 1.25rem; align-content: center;
+}
+.scale-keys { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 
-.integrity {
-  display: flex; flex-wrap: wrap; gap: 0 2.5rem;
-  padding: 0 1.5rem 1.25rem;
+@media (max-width: 900px) {
+  .band { grid-template-columns: minmax(0, 1fr); }
+  .band-case {
+    border-right: 0; padding-right: 0;
+    border-bottom: 1px solid var(--band-line); padding-bottom: 1.25rem;
+  }
 }
-.integrity-block { display: flex; flex-direction: column; gap: 0.2rem; }
-.integrity-label { font-size: var(--step--1); color: var(--ink-muted); }
-.integrity-value {
-  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: var(--step-3); font-weight: 600; line-height: 1.1;
+@media (max-width: 1280px), (max-height: 760px) {
+  .band { position: static; }
 }
-.integrity-value.is-mismatch { color: var(--sig-p); }
-.integrity-value.is-pending  { color: var(--sig-vus); }
 
-/* A single proportional bar reads faster than four numbers when the only question
-   is "is this data directory sound?". Segments are labelled, not colour-only. */
-.bar {
-  display: flex; height: 8px; margin: 0 1.5rem 1.5rem;
-  border-radius: 4px; overflow: hidden; background: var(--surface-sunken);
-  border: 1px solid var(--border);
-}
-.bar span { display: block; height: 100%; }
-.bar .seg-verified { background: var(--sig-b); }
-.bar .seg-mismatch { background: var(--sig-p); }
-.bar .seg-pending  { background: var(--sig-vus); }
-.bar .seg-unpinned { background: var(--border-strong); }
+/* Controls stacks below the band, and the table header below both -- each sticky bar
+   has to know the real height of the one above it. --band-h already defaults to 0 in
+   BAND_CSS; --controls-h needs the same so `top: calc(...)` never evaluates against an
+   undefined custom property. */
+:root { --controls-h: 0px; }
 
 .controls {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
   padding: 0.6rem 1.5rem;
   background: var(--surface-sunken);
   border-block: 1px solid var(--border);
-  position: sticky; top: 0; z-index: var(--z-sticky);
+  position: sticky; top: var(--band-h); z-index: var(--z-sticky);
 }
 #search { min-width: 240px; }
 .result-count {
@@ -146,7 +165,7 @@ PAGE_CSS = """
 
 table.ledger { width: 100%; border-collapse: collapse; }
 table.ledger thead th {
-  position: sticky; top: 41px; z-index: 2;
+  position: sticky; top: calc(var(--band-h) + var(--controls-h)); z-index: 2;
   background: var(--surface); text-align: left;
   font-size: var(--step--1); font-weight: 600; color: var(--ink-muted);
   padding: 0.5rem 1rem; white-space: nowrap;
@@ -191,6 +210,7 @@ table.ledger tbody tr:hover td { background: var(--surface-sunken); }
 PAGE_JS = r"""
 (function () {
   "use strict";
+__BAND_MEASURE_JS__
   var rows = Array.prototype.slice.call(document.querySelectorAll("tbody tr[data-status]"));
   var search = document.getElementById("search");
   var count = document.getElementById("resultCount");
@@ -235,6 +255,7 @@ PAGE_HTML = """<!DOCTYPE html>
 __FONTS__
 __TOKENS__
 __BASE_CSS__
+__BAND_CSS__
 __PAGE_CSS__
 </style>
 </head>
@@ -242,42 +263,27 @@ __PAGE_CSS__
 
 <header class="masthead">
   __MASTHEAD_ID__
-  <div class="masthead-right">
-    <div class="masthead-meta">
-      <span>Assembly <b>__GENOME__</b></span>
-      <span>Generated <b>__GENERATED__</b></span>
-    </div>
-    __GITHUB__
-  </div>
+  <div class="masthead-right">__GITHUB__</div>
 </header>
 
-<div class="intro">
-  <h1 class="doc-title">Reference data provenance</h1>
-  <p class="doc-sub">Every database this data directory holds, with the version and SHA-256 checksum
-  it was installed under. Keep this file: it is the record of what any annotation produced here was
-  actually run against.</p>
-</div>
-
-<section class="integrity" aria-label="Integrity summary">
-  <div class="integrity-block">
-    <span class="integrity-label">Resources</span>
-    <span class="integrity-value">__TOTAL__</span>
+<section class="band">
+  <div class="band-case">
+    <h1 class="case-id">__GENOME__ reference data</h1>
+    <dl class="case-meta">
+      <dt>Generated</dt><dd>__GENERATED__</dd>
+    </dl>
+    <p class="case-note">Every database this data directory holds, with the version and SHA-256
+    checksum it was installed under. Keep this file: it is the record of what any annotation
+    produced here was actually run against.</p>
   </div>
-  <div class="integrity-block">
-    <span class="integrity-label">Verified against manifest</span>
-    <span class="integrity-value">__VERIFIED__</span>
-  </div>
-  <div class="integrity-block">
-    <span class="integrity-label">Checksum mismatch</span>
-    <span class="integrity-value __MISMATCH_CLASS__">__MISMATCH__</span>
-  </div>
-  <div class="integrity-block">
-    <span class="integrity-label">Not yet downloaded</span>
-    <span class="integrity-value __PENDING_CLASS__">__PENDING__</span>
+  <div class="band-stats">
+    <div class="band-figure">
+      <span class="band-n">__TOTAL__</span>
+      <span class="band-label">resources tracked</span>
+    </div>
+    <div class="scale-keys" role="img" aria-label="__BAR_LABEL__">__KEYS__</div>
   </div>
 </section>
-
-<div class="bar" role="img" aria-label="__BAR_LABEL__">__BAR__</div>
 
 <div class="controls no-print">
   <div class="controls-group" role="group" aria-label="Filter by verification state">
@@ -378,10 +384,9 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
         )
 
     total = len(entries)
-    bar = "".join(
-        f'<span class="seg-{k}" style="width:{counts[k] / total * 100:.4f}%"></span>'
-        for k in ("verified", "unpinned", "pending", "mismatch") if counts[k]
-    ) if total else ""
+    # Named on the key boxes themselves now rather than drawn as a separate proportional bar --
+    # kept only as the aria-label text on the group, for the same reason it existed before: a
+    # screen reader gets the whole distribution in one string.
     bar_label = ", ".join(f"{counts[k]} {STATUS[k][1].lower()}" for k in STATUS if counts[k])
 
     filters = ['<button class="btn" type="button" data-filter="all" aria-pressed="true">'
@@ -390,6 +395,19 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
         if counts[k]:
             filters.append(f'<button class="btn" type="button" data-filter="{k}" '
                            f'aria-pressed="false">{STATUS[k][1]} {counts[k]}</button>')
+
+    # Verified is always good news and Unpinned is always neutral, regardless of count -- neither
+    # is an alarm state. Mismatch and Pending are alarm states only once they're nonzero; at zero
+    # they render in the same green as Verified, since "0 pending" and "0 mismatch" are the good
+    # outcome, not an absence of one.
+    keys_html = "".join([
+        f'<span class="key sig-b"><b>Verified</b><span class="key-n">{counts["verified"]:,}</span></span>',
+        f'<span class="key {"sig-p" if counts["mismatch"] else "sig-b"}">'
+        f'<b>Mismatch</b><span class="key-n">{counts["mismatch"]:,}</span></span>',
+        f'<span class="key {"sig-vus" if counts["pending"] else "sig-b"}">'
+        f'<b>Pending</b><span class="key-n">{counts["pending"]:,}</span></span>',
+        f'<span class="key sig-nc"><b>Unpinned</b><span class="key-n">{counts["unpinned"]:,}</span></span>',
+    ])
 
     b64, mime = load_logo_base64(logo_path)
     masthead = style.masthead_id(b64, mime, pipeline_version, "Reference data provenance")
@@ -401,18 +419,16 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
                 os.path.dirname(logo_path) if logo_path else None))
             .replace("__TOKENS__", style.TOKENS)
             .replace("__BASE_CSS__", style.BASE_CSS)
+            .replace("__BAND_CSS__", style.BAND_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)
             .replace("__PAGE_JS__", PAGE_JS)
+            .replace("__BAND_MEASURE_JS__", style.band_measure_js(
+                [(".band", "--band-h"), (".controls", "--controls-h")]))
             .replace("__ROWS__", "".join(rows_html))
             .replace("__FILTERS__", "".join(filters))
-            .replace("__BAR__", bar)
+            .replace("__KEYS__", keys_html)
             .replace("__BAR_LABEL__", bar_label or "no resources")
             .replace("__TOTAL__", f"{total:,}")
-            .replace("__VERIFIED__", f"{counts['verified']:,}")
-            .replace("__MISMATCH__", f"{counts['mismatch']:,}")
-            .replace("__MISMATCH_CLASS__", "is-mismatch" if counts["mismatch"] else "")
-            .replace("__PENDING__", f"{counts['pending']:,}")
-            .replace("__PENDING_CLASS__", "is-pending" if counts["pending"] else "")
             .replace("__GENOME__", html.escape(_assembly_label(genome)))
             .replace("__GENERATED__", now)
             .replace("__MASTHEAD_ID__", masthead)

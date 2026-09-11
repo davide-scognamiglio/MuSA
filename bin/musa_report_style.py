@@ -305,6 +305,112 @@ h2.section-title {
 """
 
 
+# ── inked band shell ──────────────────────────────────────────────────────────
+# The one field of colour in either document, shared by both reports: the masthead
+# names the software, the band names the thing the document is actually about (the
+# patient in the annotation report, the data directory in the setup report). Only
+# one of the two can be sticky without costing a third of the viewport, so the band
+# takes it and the masthead scrolls away -- a page adopting the band sets
+# `.masthead { position: static }` and `.band { position: sticky; top: 0 }` itself,
+# since a page with no band should keep the masthead sticky (the shared default
+# above). What's here is the part every band needs regardless of what it shows:
+# the grid shell, the hero figure, and the bordered "key" boxes used for counting
+# classes of anything (ClinVar/RENOVo significance in one report, verification
+# state in the other) with equal visual weight regardless of how large the count is.
+#
+# --band-h is the band's measured height, published to this custom property by a
+# few lines of JS (see band_measure_js() below) and read by anything on the page
+# that has to clear a sticky band: a docked panel, a secondary sticky bar, a
+# scroll target. It is measured rather than assumed because band content varies
+# in height (HPO terms, verification summaries, however many rows).
+BAND_CSS = """
+:root { --band-h: 0px; }
+html { scroll-padding-top: calc(var(--band-h) + 1rem); }
+
+/* Sticky band, static masthead -- the default for any page that includes this shell,
+   not a per-page choice: it lives here rather than in each page's own CSS specifically
+   so the @media print override below stays textually last for the cascade. A plain
+   rule and a print-scoped rule for the same property have equal specificity, so the
+   one later in source order always wins, print or not; the override has to load after
+   the default within the SAME file or a later page-specific stylesheet re-asserting
+   "sticky" (even harmlessly, for its own unrelated properties) silently wins print
+   back. This bit us once already -- see git history. */
+.masthead { position: static; }
+.band { position: sticky; top: 0; z-index: var(--z-sticky); }
+
+.band {
+  display: grid; gap: 1.5rem 2rem; align-items: stretch;
+  padding: 1.4rem 1.5rem;
+  background: var(--band); color: var(--band-ink);
+}
+
+.band-figure { display: grid; gap: 0.1rem; }
+.band-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-6); font-weight: 600; line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+.band-label { font-size: var(--step-1); font-weight: 600; }
+
+/* Each class as its own bordered box with the count beside the code. Every class is
+   equally visible whether it holds four items or six hundred, which is the point. */
+.key {
+  display: inline-flex; align-items: baseline; gap: 0.45rem;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-mono); font-size: var(--step-0);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid currentColor; border-radius: var(--radius);
+}
+.key b { font-weight: 700; letter-spacing: 0.03em; }
+.key .key-n { color: var(--band-ink); font-weight: 500; }
+.key.sig-p   { color: var(--sig-p-lift); }
+.key.sig-lp  { color: var(--sig-lp-lift); }
+.key.sig-vus { color: var(--sig-vus-lift); }
+.key.sig-lb  { color: var(--sig-lb-lift); }
+.key.sig-b   { color: var(--sig-b-lift); }
+/* Dashed, matching the chip convention: an absent/unpinned/not-classified state is
+   an absence, not a class of its own. */
+.key.sig-nc  { color: var(--sig-nc-lift); border-style: dashed; }
+
+@media print {
+  .band { position: static; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+"""
+
+
+def band_measure_js(targets):
+    """JS that publishes one or more elements' rendered heights as CSS custom
+    properties, kept live across resizes. `targets` is a sequence of
+    (selector, css_var_name) pairs, measured in order so a later target can stack
+    below an earlier one (e.g. a secondary sticky bar reading --band-h to sit under
+    the band). A target that isn't currently sticky (a narrow-screen breakpoint
+    that drops the band back into normal flow) publishes 0, so anything reading the
+    variable collapses its offset correctly rather than leaving a phantom gap.
+    """
+    entries = ",\n    ".join(
+        '{ el: document.querySelector(%r), varName: %r }' % (sel, var)
+        for sel, var in targets
+    )
+    return """
+  var bandTargets = [
+    %s
+  ].filter(function (t) { return t.el; });
+
+  function measureBands() {
+    bandTargets.forEach(function (t) {
+      var stuck = window.getComputedStyle(t.el).position === "sticky";
+      document.documentElement.style.setProperty(
+        t.varName, (stuck ? t.el.offsetHeight : 0) + "px");
+    });
+  }
+  measureBands();
+  bandTargets.forEach(function (t) {
+    if (window.ResizeObserver) new ResizeObserver(measureBands).observe(t.el);
+  });
+  window.addEventListener("resize", measureBands);
+""" % entries
+
+
 # ── significance mapping ──────────────────────────────────────────────────────
 # One place that decides how a raw MAF value becomes (css_class, code, note).
 # Both reports and the review-set filter read from here, so a label can never

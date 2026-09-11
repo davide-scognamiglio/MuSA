@@ -160,8 +160,28 @@ hand. These are read for hours at desk distance on lab monitors; the browser def
 
 ## Layout
 
-The setup report is a **fixed header over one scrolling working surface**: masthead → integrity
-summary → provenance ledger, one row per resource. No card grid; the ledger *is* the page.
+The setup report follows the same split as the annotation report, because it earns the same
+argument: masthead → inked band → provenance ledger, one row per resource. No card grid; the
+ledger *is* the page. The band here identifies the data directory rather than a patient — a case-id
+heading naming the assembly ("GRCh38 reference data"), when it was generated, and the description
+paragraph that used to sit above everything in its own `.intro` block — and its right side turns the
+four verification counts (Verified, Mismatch, Pending, Unpinned) into a hero figure plus `.key`
+boxes, the same bordered-box-per-class treatment the annotation report uses for ClinVar/RENOVo
+counts, in place of the proportional bar the counts used to render as. A bar answers "is this data
+directory sound" at a glance; it does that by making Verified the only segment worth looking at when
+the count is heavily skewed toward "pending" on a data directory that hasn't finished downloading
+yet — exactly the state right after `setup` starts, which is also the moment this page gets read
+most. Named counts read correctly at any distribution.
+
+Both reports now share the band shell itself (`musa_report_style.BAND_CSS`): the sticky-band/static-
+masthead split, the `--band-h` measurement plumbing, the hero figure, and `.key`. What differs is
+page-specific — three columns with a case, findings and an index for the annotation report; two
+columns with a case and a stats block here, since there's no per-resource index worth clicking
+through when the whole page below is already one flat, searchable table. The setup report adds one
+more sticky layer the annotation report doesn't need: the filter/search bar and the ledger's table
+header stack immediately below the band (`--controls-h`, measured the same way as `--band-h`), so
+all three — band, controls, header — stay visible while the table scrolls, each flush against the
+one above it.
 
 The annotation report is **two pages in one file**. It opens on findings and the variant table is a
 step away, not the bottom of the same scroll. A 68,000-row surface presented first is a search
@@ -176,8 +196,10 @@ drawn into the pixels, which was already wrong for the next tag and could only b
 re-drawing art. On the right, a single inline SVG octocat links to the pipeline's own repository —
 an `<img>` or icon font is not worth a second asset for a mark this simple in a document that
 promises no network route at read time. Both reports share it through `masthead-right`, a wrapper
-around whatever else sits on that side (the setup report's assembly/generated pair) so the badge is
-always the right-most thing regardless of what else the masthead carries.
+that keeps the badge right-most regardless of what else shares that side of the masthead. Nothing
+else does now that the setup report's assembly/generated pair moved into its band, alongside the
+annotation report's masthead identifying only the software — the case for having moved it there in
+the first place.
 
 The footer names who built the pipeline and how to cite it, in that order, as two rows: the credit
 line never wraps mid-sentence — a name split across lines by an accident of container width reads as

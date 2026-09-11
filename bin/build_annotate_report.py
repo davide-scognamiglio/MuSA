@@ -505,33 +505,19 @@ PAGE_CSS = """
 /* What follows the reader down the page is the case, not the software. The masthead
    says "MuSA v1.1.0", which is worth reading once; the band says which patient, which
    review set, and what was found in it, which is worth having at every scroll
-   position. Only one of the two can be sticky without stealing a third of the
-   viewport, so the band takes it and the masthead scrolls away.
-
-   --band-h is the band's measured height, set from JS and used by everything that has
-   to clear it: the evidence panel, the table's control bar, and the scroll target of
-   the findings index. It is a measurement rather than a constant because the band
-   grows with the HPO list and the number of findings blocks. */
-:root { --band-h: 0px; }
-.masthead { position: static; }
-.band { position: sticky; top: 0; z-index: var(--z-sticky); }
-html { scroll-padding-top: calc(var(--band-h) + 1rem); }
+   position. Sticky band, static masthead -- and the print override that undoes both
+   for the printer -- are shared defaults in musa_report_style.BAND_CSS along with the
+   grid base, the hero figure and the .key boxes; what's here is specific to this page:
+   the three-column layout and the case/HPO/findings-index content that fills it. */
 
 /* ── inked band ───────────────────────────────────────────────────────────── */
-/* The one large field of colour in either document, and the only place the palette
-   is used decoratively rather than semantically. It earns that: a white masthead
-   over a white working page gave the report no identity at all, and the band is
-   also where the two classifiers can be shown as figures rather than as a row of
-   labelled numbers. Every count in here is over the review set, so nothing in the
-   band can contradict the findings below it. */
-/* Two halves: the case on the left, what was found in it on the right. The case
-   identity used to sit in the masthead beside the logo, which is the wrong place for
-   it — the masthead identifies the software, the band identifies the patient. */
+/* Three columns: the case on the left, what was found in it in the middle, an index
+   into it on the right. Every count in here is over the review set, so nothing in the
+   band can contradict the findings below it. The case identity used to sit in the
+   masthead beside the logo, which is the wrong place for it — the masthead identifies
+   the software, the band identifies the patient. */
 .band {
-  display: grid; gap: 1.5rem 2rem; align-items: stretch;
   grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.5fr) minmax(0, 0.85fr);
-  padding: 1.4rem 1.5rem;
-  background: var(--band); color: var(--band-ink);
 }
 /* stretch, not start: the two rules are the division between the three blocks, and a
    rule that stops short of the block beside it reads as a rendering accident. */
@@ -590,13 +576,6 @@ html { scroll-padding-top: calc(var(--band-h) + 1rem); }
 .band-versions dd {
   font-family: var(--font-mono); font-variant-numeric: tabular-nums;
 }
-.band-figure { display: grid; gap: 0.1rem; }
-.band-n {
-  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-  font-size: var(--step-6); font-weight: 600; line-height: 0.95;
-  letter-spacing: -0.02em;
-}
-.band-label { font-size: var(--step-1); font-weight: 600; }
 
 /* ── findings index ───────────────────────────────────────────────────────── */
 /* The blocks below, listed with their counts, as the way into them. It answers
@@ -636,26 +615,8 @@ html { scroll-padding-top: calc(var(--band-h) + 1rem); }
 }
 .scale-meta { font-size: var(--step--1); color: var(--band-muted); }
 
-/* Each class as its own bordered box with the count beside the code. Every class is
-   equally visible whether it holds four variants or six hundred, which is the point:
-   the four are the ones being looked for. */
+/* .key itself (the bordered per-class box) is shared -- see musa_report_style.BAND_CSS. */
 .scale-keys { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-.key {
-  display: inline-flex; align-items: baseline; gap: 0.45rem;
-  padding: 0.2rem 0.55rem;
-  font-family: var(--font-mono); font-size: var(--step-0);
-  font-variant-numeric: tabular-nums;
-  border: 1px solid currentColor; border-radius: var(--radius);
-}
-.key b { font-weight: 700; letter-spacing: 0.03em; }
-.key .key-n { color: var(--band-ink); font-weight: 500; }
-.key.sig-p   { color: var(--sig-p-lift); }
-.key.sig-lp  { color: var(--sig-lp-lift); }
-.key.sig-vus { color: var(--sig-vus-lift); }
-.key.sig-lb  { color: var(--sig-lb-lift); }
-.key.sig-b   { color: var(--sig-b-lift); }
-/* Dashed, matching the chip convention: "not classified" is an absence, not a class. */
-.key.sig-nc  { color: var(--sig-nc-lift); border-style: dashed; }
 
 /* ── overview ─────────────────────────────────────────────────────────────── */
 /* Findings on the left, the selected variant's evidence on the right. A reader
@@ -989,9 +950,7 @@ table.qual td {
 @media print {
   .no-print, #view-table { display: none !important; }
   .priority-open { display: none; }
-  /* The band is the document's identity; it has to survive the printer. Static, so it
-     prints once at the top instead of being repeated or clipped. */
-  .band { position: static; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* .band's print rule (static, colour-adjust exact) is shared -- see BAND_CSS. */
   .ov-detail { position: static; max-height: none; }
 }
 """
@@ -1638,15 +1597,7 @@ PAGE_JS = r"""
   // measured rather than assumed: the block grows with the HPO list and with how many
   // findings blocks the case has, and the media queries drop the band back to static on
   // a narrow or short screen, in which case nothing has to clear anything.
-  var band = document.querySelector(".band");
-  function measureBand() {
-    var stuck = window.getComputedStyle(band).position === "sticky";
-    document.documentElement.style.setProperty(
-      "--band-h", (stuck ? band.offsetHeight : 0) + "px");
-  }
-  measureBand();
-  if (window.ResizeObserver) new ResizeObserver(measureBand).observe(band);
-  window.addEventListener("resize", measureBand);
+__BAND_MEASURE_JS__
 
   // The band's index jumps to a block on the findings page. It works from the table
   // view too, so it doubles as the way back to a specific block rather than to the
@@ -1738,6 +1689,7 @@ PAGE_HTML = """<!DOCTYPE html>
 __FONTS__
 __TOKENS__
 __BASE_CSS__
+__BAND_CSS__
 __PAGE_CSS__
 </style>
 </head>
@@ -2118,8 +2070,10 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__FONTS__", style.load_fonts(assets_dir))
             .replace("__TOKENS__", style.TOKENS)
             .replace("__BASE_CSS__", style.BASE_CSS)
+            .replace("__BAND_CSS__", style.BAND_CSS)
             .replace("__PAGE_CSS__", PAGE_CSS)
             .replace("__PAGE_JS__", PAGE_JS)
+            .replace("__BAND_MEASURE_JS__", style.band_measure_js([(".band", "--band-h")]))
             .replace("__PRIORITY__", priority_html)
             .replace("__INDEX__", index_html)
             .replace("__SCALES__", scales)
