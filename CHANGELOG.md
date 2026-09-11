@@ -51,6 +51,10 @@ actually lints and actually reflects what the code does.
 - **Resourcing:** RENOVO's memory request was sized from a bad-BED outlier rather than the
   measured real-exome peak, which either wasted memory or courted an OOM depending on which side
   of the outlier a run landed on; resized from the actual measured cohort peak (26.0 GB).
+  `ADD_REF_CONTEXT` OOM-killed on a WGS-scale callset (3.9M variants): it materialised the whole
+  pre-merge MAF as a list of Python dicts and reopened the reference FASTA on every row. Rewritten
+  to stream row by row and open the FASTA once; verified on the exact input that crashed it (62s,
+  under a 1.5 GB memory cap, versus OOM at 16 GB and climbing).
 - **Security:** GeneBe credentials and the HTTP(S) proxy were hardcoded in config; now read from
   environment variables.
 - **Pipeline robustness:** a bad samplesheet used to kill the JVM directly (`System.exit(1)`),
