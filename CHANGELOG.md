@@ -22,6 +22,12 @@ actually lints and actually reflects what the code does.
   positionally decode.
 - GWAS and pLI VEP plugins wired and consumed; the "22 VEP plugins" figure is now true rather
   than aspirational. The unsupported SpliceAI claim was removed rather than left inaccurate.
+- VEP bumped 115.2 -> 116.2, pointed at the official `ensemblorg/ensembl-vep` image rather than a
+  dsbioinfo retag; the cache the manifest fetches now matches it. Verified before switching: every
+  plugin this pipeline wires ships unchanged in 116.2, and a real annotation run against all of
+  them produced a byte-identical CSQ schema and values on the bundled test VCF. `params.vep_container`
+  is the single declaration both the annotation module and the report's provenance line read, so
+  this is a one-place change.
 - Manifest-driven database updates: `setup` can now re-download only the entries whose version
   changed (`--update_db_only`), instead of always refetching everything.
 - The annotation report rebuilt end to end: opens on findings grouped by why a variant matters

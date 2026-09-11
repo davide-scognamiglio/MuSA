@@ -101,7 +101,7 @@
                     "type": "string",
                     "description": "Ensembl VEP container image. Its tag is also printed as the annotation provenance in the patient report.",
                     "fa_icon": "fas fa-docker",
-                    "default": "dsbioinfo/ensembl-vep:115.2"
+                    "default": "ensemblorg/ensembl-vep:release_116.2"
                 },
                 "download_vep_plugins": {
                     "type": "boolean",
