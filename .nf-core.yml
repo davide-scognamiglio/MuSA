@@ -48,7 +48,7 @@ template:
   name: MuSA
   description: Ultra-deep, multi-source variant annotation
   author: D. Scognamiglio, E. Bonetti
-  version: 1.0.0dev
+  version: 1.1.0
   force: true
   outdir: .
   skip_features:
