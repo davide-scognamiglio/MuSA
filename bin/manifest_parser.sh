@@ -66,11 +66,34 @@ EOF
     rm -f "$tmp_awk"
     return $rc
 }
+
+# should_skip_module <space-separated manifest entry keys> <changed_entries_file> <target_path_on_disk>
+# Returns 0 (skip download) only if: not the "no update-db" NO_FILE sentinel,
+# the target already exists on disk, AND every given key is absent from changed_entries_file.
+should_skip_module() {
+    local keys="$1"
+    local changed_entries_file="$2"
+    local target_path="$3"
+
+    [[ "$(basename "$changed_entries_file")" == "NO_FILE" ]] && return 1
+    [[ -e "$target_path" ]] || return 1
+
+    local key
+    for key in $keys; do
+        grep -qxF "$key" "$changed_entries_file" && return 1
+    done
+
+    return 0
+}
+
 write_computed_sha256() {
     local yaml_file="$1"
     local entry_key="$2"   # original YAML key, e.g. "ANNOVAR_avsnp150"
     local sha_value="$3"
 
+    # Writes computed_sha256 for the entry. Trust-on-first-use: if the entry's
+    # expected_sha256 is currently empty (no known-good baseline, e.g. a freshly
+    # added DB version), adopt this computed hash as the expected baseline too.
     awk -v entry="$entry_key" -v sha="$sha_value" '
     /^  [^[:space:]]/ {
         current = $0
@@ -81,6 +104,18 @@ write_computed_sha256() {
     }
     in_entry && /^    computed_sha256:/ {
         print "    computed_sha256: \"" sha "\""
+        next
+    }
+    in_entry && /^    expected_sha256:/ {
+        val = $0
+        sub(/^    expected_sha256:[[:space:]]*/, "", val)
+        gsub(/^"|"$/, "", val)
+        gsub(/[[:space:]]/, "", val)
+        if (val == "") {
+            print "    expected_sha256: \"" sha "\""
+        } else {
+            print
+        }
         next
     }
     { print }

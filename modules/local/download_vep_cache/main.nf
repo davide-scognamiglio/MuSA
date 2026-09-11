@@ -12,9 +12,10 @@ process DOWNLOAD_VEP_CACHE {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("vep_data/vep_cache/homo_sapiens"),file('vep_cache_manifest.yaml')
+        file('vep_cache_manifest.yaml')
 
     script:
     """
@@ -23,6 +24,12 @@ process DOWNLOAD_VEP_CACHE {
     source manifest_parser.sh
     source download_and_hash.sh
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_cache" "${changed_entries}" "/data/vep_data/vep_cache/homo_sapiens"; then
+        echo "[INFO] No changes for download_vep_cache -- skipping download, reusing existing data."
+        cp "${manifest}" vep_cache_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p vep_data/vep_cache
     cd vep_data/vep_cache

@@ -12,9 +12,10 @@ process DOWNLOAD_ANCESTRALALLELE {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path('AncestralAllele'),file('ancestralallele_manifest.yaml')
+        file('ancestralallele_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_ANCESTRALALLELE {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_ancestralallele" "${changed_entries}" "/data/vep_data/AncestralAllele"; then
+        echo "[INFO] No changes for download_ancestralallele -- skipping download, reusing existing data."
+        cp "${manifest}" ancestralallele_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p AncestralAllele
     cd AncestralAllele

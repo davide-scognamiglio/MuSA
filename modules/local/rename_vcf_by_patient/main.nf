@@ -7,7 +7,7 @@
 
 process RENAME_VCF_BY_PATIENT {
     tag "rename-vcf"
-    cpus 1
+        cpus params.n_core
     memory "1 GB"
 
     input:

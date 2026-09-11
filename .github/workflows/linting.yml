@@ -47,10 +47,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nf-core==${{ steps.read_yml.outputs['nf_core_version'] }}
+          # pre-commit is NOT an nf-core dependency, but `nf-core pipelines lint` shells out to it
+          # when it regenerates the template to diff against (files_unchanged). Without it the run
+          # dies with FileNotFoundError before reporting any result. The `pre-commit` job above
+          # installs its own copy on a different runner, so it does not help here.
+          pip install nf-core==${{ steps.read_yml.outputs['nf_core_version'] }} pre-commit
 
       - name: Run nf-core pipelines lint
-        if: ${{ github.base_ref != 'master' }}
+        if: ${{ github.base_ref != 'master' && github.base_ref != 'main' }}
         env:
           GITHUB_COMMENTS_URL: ${{ github.event.pull_request.comments_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +62,7 @@ jobs:
         run: nf-core -l lint_log.txt pipelines lint --dir ${GITHUB_WORKSPACE} --markdown lint_results.md
 
       - name: Run nf-core pipelines lint --release
-        if: ${{ github.base_ref == 'master' }}
+        if: ${{ github.base_ref == 'master' || github.base_ref == 'main' }}
         env:
           GITHUB_COMMENTS_URL: ${{ github.event.pull_request.comments_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

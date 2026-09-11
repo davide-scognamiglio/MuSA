@@ -7,7 +7,7 @@
 
 process BUILD_ANNOTATE_REPORT {
     tag "report"
-    cpus 1
+        cpus params.n_core
     errorStrategy 'retry'
     maxRetries 2
     memory { 18.GB * task.attempt }
@@ -27,8 +27,12 @@ process BUILD_ANNOTATE_REPORT {
 
     script:
         """
+        # "/data" is where nextflow.config bind-mounts params.data_dir for every process; the
+        # report reads the ClinVar VCF's own ##fileDate from there rather than trusting the
+        # manifest, which can name a release a later setup run has already replaced.
         logo="${projectDir}/assets/MuSA_logo.png"
         build_annotate_report.py "${meta.patient}" "${params.use_vep_plugins}" \
-        "${params.offline}" "${params.skip_genebe}" "\$logo"
+        "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}" \
+        "${meta.hpo ?: ''}" "${params.vep_container}" "/data"
         """
 }

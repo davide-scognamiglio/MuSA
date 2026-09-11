@@ -7,7 +7,7 @@
 
 process BCFTOOLS_FILTER_NONVARIANT_GT {
     tag "filter-nonvariant"
-    cpus 1
+        cpus params.n_core
     memory "2 GB"
     container "dsbioinfo/bcftools:1.2"
 

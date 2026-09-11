@@ -12,9 +12,10 @@ process DOWNLOAD_ALPHAMISSENSE {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path('AlphaMissense'),file('alphamissense_manifest.yaml')
+        file('alphamissense_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_ALPHAMISSENSE {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_alphamissense" "${changed_entries}" "/data/vep_data/AlphaMissense"; then
+        echo "[INFO] No changes for download_alphamissense -- skipping download, reusing existing data."
+        cp "${manifest}" alphamissense_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p AlphaMissense
     cd AlphaMissense

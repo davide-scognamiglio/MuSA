@@ -7,7 +7,7 @@
 
 process PARSE_VEP_ANNOTATION {
     tag "parse-vep"
-    cpus 1
+        cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3
     memory { 8.GB * task.attempt }

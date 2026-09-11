@@ -12,9 +12,10 @@ process DOWNLOAD_CLINPRED {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path('ClinPred'),file('clinpred_manifest.yaml')
+        file('clinpred_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_CLINPRED {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_clinpred" "${changed_entries}" "/data/vep_data/ClinPred"; then
+        echo "[INFO] No changes for download_clinpred -- skipping download, reusing existing data."
+        cp "${manifest}" clinpred_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p ClinPred
     cd ClinPred

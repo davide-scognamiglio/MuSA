@@ -12,9 +12,10 @@ process DOWNLOAD_REFERENCEQUALITY {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("ReferenceQuality"),file('referencequality_manifest.yaml')
+        file('referencequality_manifest.yaml')
 
 script:
     """
@@ -24,6 +25,12 @@ script:
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_referencequality vep_referencequality_issues" "${changed_entries}" "/data/vep_data/ReferenceQuality"; then
+        echo "[INFO] No changes for download_referencequality -- skipping download, reusing existing data."
+        cp "${manifest}" referencequality_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p ReferenceQuality
     cd ReferenceQuality

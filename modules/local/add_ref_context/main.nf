@@ -7,7 +7,7 @@
 
 process ADD_REF_CONTEXT {
     tag "add-ref-context"
-    cpus 1
+    cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2

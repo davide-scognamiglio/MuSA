@@ -12,9 +12,10 @@ process DOWNLOAD_DBSCSNV {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("dbscSNV"),file('dbscsnv_manifest.yaml')
+        file('dbscsnv_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_DBSCSNV {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_dbscsnv" "${changed_entries}" "/data/vep_data/dbscSNV"; then
+        echo "[INFO] No changes for download_dbscsnv -- skipping download, reusing existing data."
+        cp "${manifest}" dbscsnv_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p dbscSNV
     cd dbscSNV

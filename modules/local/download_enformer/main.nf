@@ -12,9 +12,10 @@ process DOWNLOAD_ENFORMER {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("Enformer"),file('enformer_manifest.yaml')
+        file('enformer_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_ENFORMER {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_enformer vep_enformer_tbi" "${changed_entries}" "/data/vep_data/Enformer"; then
+        echo "[INFO] No changes for download_enformer -- skipping download, reusing existing data."
+        cp "${manifest}" enformer_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p Enformer
     cd Enformer

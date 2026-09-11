@@ -72,8 +72,21 @@ workflow {
             • setup
 
             Example:
-            nextflow run main.nf -c config/annotation.config --workflow annotate    
+            nextflow run main.nf -c config/annotation.config --workflow annotate
             ───────────────────────────────────────────────
             """
     }
+}
+
+workflow.onComplete {
+    log.info """
+    ────────────────────────────────────────────────
+    Pipeline completed at : ${workflow.complete}
+    Duration              : ${workflow.duration}
+    Success               : ${workflow.success}
+    Exit status           : ${workflow.exitStatus}
+    Work dir              : ${workflow.workDir}
+    Output dir            : ${params.outdir}
+    ────────────────────────────────────────────────
+    """.stripIndent()
 }

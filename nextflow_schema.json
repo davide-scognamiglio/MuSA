@@ -1,8 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://raw.githubusercontent.com/nf-core/template/master/nextflow_schema.json",
-    "title": "nf-core/template pipeline parameters",
-    "description": "template",
+    "$id": "https://raw.githubusercontent.com/davide-scognamiglio/MuSA/main/nextflow_schema.json",
+    "title": "davide-scognamiglio/MuSA pipeline parameters",
+    "description": "Ultra-deep, multi-source variant annotation",
     "type": "object",
     "$defs": {
         "pipeline_options": {
@@ -10,7 +10,10 @@
             "type": "object",
             "fa_icon": "fas fa-cogs",
             "description": "Options specific to the variantannotation pipeline",
-            "required": ["workflow", "data_dir"],
+            "required": [
+                "workflow",
+                "data_dir"
+            ],
             "properties": {
                 "build": {
                     "type": "string",
@@ -57,7 +60,30 @@
                     "type": "integer",
                     "description": "Number of CPU cores to use",
                     "fa_icon": "fas fa-microchip",
+                    "default": 8
+                },
+                "dbnsfp_shard_cpus": {
+                    "type": "integer",
+                    "description": "CPUs per per-chromosome dbNSFP annotation shard",
+                    "fa_icon": "fas fa-microchip",
+                    "default": 1
+                },
+                "dbnsfp_max_forks": {
+                    "type": "integer",
+                    "description": "Maximum number of per-chromosome dbNSFP shards to run concurrently",
+                    "fa_icon": "fas fa-layer-group",
                     "default": 16
+                },
+                "dbnsfp_transcript_scores": {
+                    "type": "string",
+                    "description": "How dbNSFP's per-transcript score arrays reach the final MAF",
+                    "help_text": "dbNSFP reports transcript-specific fields as ';'-delimited arrays positionally aligned with Ensembl_transcriptid (e.g. SIFT_score '.;0.169;0.169;.'). Which element belongs to the clinically canonical isoform is encoded only in the MANE_dbNSFP array: the offset of 'Select' is the offset to read in every other array. 'mane' collapses every transcript-aligned column to that element, so each score column holds a single value and MANE_dbNSFP records whether a MANE transcript was found at all ('.' means the scores came from a fallback). 'all' leaves the arrays untouched for downstream tools that prefer to resolve them themselves; Ensembl_transcriptid and MANE_dbNSFP are retained in both modes.",
+                    "fa_icon": "fas fa-code-branch",
+                    "enum": [
+                        "mane",
+                        "all"
+                    ],
+                    "default": "mane"
                 },
                 "offline": {
                     "type": "boolean",
@@ -71,7 +97,12 @@
                     "fa_icon": "fas fa-microchip",
                     "default": false
                 },
-                
+                "vep_container": {
+                    "type": "string",
+                    "description": "Ensembl VEP container image. Its tag is also printed as the annotation provenance in the patient report.",
+                    "fa_icon": "fas fa-docker",
+                    "default": "ensemblorg/ensembl-vep:release_116.2"
+                },
                 "download_vep_plugins": {
                     "type": "boolean",
                     "description": "Download VEP plugins",
@@ -92,9 +123,19 @@
                 },
                 "max_freq": {
                     "type": "number",
-                    "description": "Maximum allele frequency to retain a variant (e.g., 0.05)",
-                    "fa_icon": "fas fa-percent",
-                    "default": 0.05
+                    "description": "Maximum allele frequency to retain a variant (e.g., 0.05). Unset by default, i.e. no frequency filtering is applied.",
+                    "fa_icon": "fas fa-percent"
+                },
+                "panel": {
+                    "type": "string",
+                    "description": "Name of a gene panel CSV under <data_dir>/panels (without the .csv suffix); restricts the filtered MAF to those genes.",
+                    "fa_icon": "fas fa-filter"
+                },
+                "skip_genebe": {
+                    "type": "boolean",
+                    "description": "Skip the GeneBe ACMG/AMP classification step and the columns it contributes to the report",
+                    "fa_icon": "fas fa-forward",
+                    "default": false
                 },
                 "data_dir": {
                     "type": "string",
@@ -110,9 +151,14 @@
                 },
                 "dbs_manifest": {
                     "type": "string",
-                    "description": "Manifest url",
-                    "fa_icon": "fas fa-folder",
-                    "hidden": true
+                    "description": "URL or local file path to the DB manifest YAML. Override with a custom manifest to pin specific DB versions (e.g. a different VEP cache release) without editing the default remote manifest.",
+                    "fa_icon": "fas fa-folder"
+                },
+                "update_db_only": {
+                    "type": "boolean",
+                    "description": "With --workflow setup, only re-download DB entries whose version/checksum changed since the last persisted manifest (data_dir/dbs_manifest.lock.yaml).",
+                    "fa_icon": "fas fa-sync",
+                    "default": false
                 },
                 "logo": {
                     "type": "string",
@@ -266,7 +312,14 @@
                     "description": "Method used to save pipeline results to output directory.",
                     "help_text": "The Nextflow `publishDir` option specifies which intermediate files should be saved to the output directory. This option tells the pipeline what method should be used to move these files. See [Nextflow docs](https://www.nextflow.io/docs/latest/process.html#publishdir) for details.",
                     "fa_icon": "fas fa-copy",
-                    "enum": ["symlink", "rellink", "link", "copy", "copyNoFollow", "move"],
+                    "enum": [
+                        "symlink",
+                        "rellink",
+                        "link",
+                        "copy",
+                        "copyNoFollow",
+                        "move"
+                    ],
                     "hidden": true
                 },
                 "email_on_fail": {
@@ -310,14 +363,11 @@
                     "default": "https://raw.githubusercontent.com/davide-scognamiglio/test-datasets/",
                     "hidden": true
                 },
-                "trace_report_suffix": {
-                    "type": "string",
-                    "fa_icon": "far calendar",
-                    "description": "Suffix to add to the trace report filename. Default is the date and time in the format yyyy-MM-dd_HH-mm-ss.",
-                    "hidden": true
-                },
                 "help": {
-                    "type": ["boolean", "string"],
+                    "type": [
+                        "boolean",
+                        "string"
+                    ],
                     "description": "Display the help message."
                 },
                 "help_full": {
@@ -329,6 +379,55 @@
                     "description": "Display hidden parameters in the help message (only works when --help or --help_full are provided)."
                 }
             }
+        },
+        "conditional_requirements": {
+            "title": "Conditional requirements",
+            "type": "object",
+            "fa_icon": "fas fa-code-branch",
+            "description": "Parameters that only become mandatory depending on the value of another parameter.",
+            "help_text": "These rules are enforced by nf-schema at launch. They are grouped into this subschema rather than sitting directly in the top-level `allOf` because nf-core's linter assumes every `allOf` member is a `$ref` and indexes `allOf['$ref']` unguarded (nf_core/pipelines/schema.py), so a bare `if`/`then` there crashes the lint with KeyError. Referencing them through a definition keeps the validation identical and lets the lint run.",
+            "properties": {},
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "offline": {
+                                "const": false
+                            }
+                        },
+                        "required": [
+                            "offline"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "gb_user",
+                            "gb_api_key"
+                        ],
+                        "errorMessage": "When offline=false, you must provide gb_user and gb_api_key"
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "workflow": {
+                                "const": "annotate"
+                            }
+                        },
+                        "required": [
+                            "workflow"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "annovar_software_dir",
+                            "input",
+                            "outdir"
+                        ],
+                        "errorMessage": "When workflow='annotate', you must provide annovar_software_dir, input and outdir"
+                    }
+                }
+            ]
         }
     },
     "allOf": [
@@ -344,30 +443,11 @@
         {
             "$ref": "#/$defs/generic_options"
         },
-        { 
-            "$ref": "#/$defs/pipeline_options" 
+        {
+            "$ref": "#/$defs/pipeline_options"
         },
         {
-        "if": {
-            "properties": {
-                "offline": { "const": false }
-            }
-        },
-        "then": {
-        "required": ["gb_user", "gb_api_key"],
-        "errorMessage": "When offline=false, you must provide gb_user and gb_api_key"
-        }
-        },
-        {
-        "if": {
-            "properties": {
-                "workflow": { "const": "annotate" }
-            }
-        },
-        "then": {
-        "required": ["annovar_software_dir","input","outdir"],
-        "errorMessage": "When workflow='annotate', you must provide annovar_software_dir"
-        }
+            "$ref": "#/$defs/conditional_requirements"
         }
     ]
 }

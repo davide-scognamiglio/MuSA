@@ -7,8 +7,8 @@
 
 process VCF_TO_MAF {
     tag "vcf2maf"
-    cpus 1
-    memory "1 GB"
+        cpus params.n_core
+    memory { 18.GB * task.attempt }
     container "dsbioinfo/vcf2maf:rebuild"
 
     input:

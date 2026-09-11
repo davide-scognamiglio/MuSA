@@ -1,6 +1,6 @@
 {
     "@context": [
-        "https://w3id.org/ro/crate/1.1/context",
+        "https://w3id.org/ro/crate/1.2/context",
         {
             "GithubService": "https://w3id.org/ro/terms/test#GithubService",
             "JenkinsService": "https://w3id.org/ro/terms/test#JenkinsService",
@@ -21,15 +21,18 @@
         {
             "@id": "./",
             "@type": "Dataset",
-            "creativeWorkStatus": "InProgress",
-            "datePublished": "2025-11-28T14:47:36+00:00",
-            "description": "<h1>\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"docs/images/MuSA_logo_dark.png\">\n    <img alt=\"MuSA\" src=\"docs/images/MuSA_logo_light.png\">\n  </picture>\n</h1>\n\n[![Open in GitHub Codespaces](https://img.shields.io/badge/Open_In_GitHub_Codespaces-black?labelColor=grey&logo=github)](https://github.com/codespaces/new/MuSA)\n[![GitHub Actions CI Status](https://github.com/MuSA/actions/workflows/nf-test.yml/badge.svg)](https://github.com/MuSA/actions/workflows/nf-test.yml)\n[![GitHub Actions Linting Status](https://github.com/MuSA/actions/workflows/linting.yml/badge.svg)](https://github.com/MuSA/actions/workflows/linting.yml)[![AWS CI](https://img.shields.io/badge/CI%20tests-full%20size-FF9900?labelColor=000000&logo=Amazon%20AWS)](https://nf-co.re/variantannotation/results)[![Cite with Zenodo](http://img.shields.io/badge/DOI-10.5281/zenodo.XXXXXXX-1073c8?labelColor=000000)](https://doi.org/10.5281/zenodo.XXXXXXX)\n[![nf-test](https://img.shields.io/badge/unit_tests-nf--test-337ab7.svg)](https://www.nf-test.com)\n\n[![Nextflow](https://img.shields.io/badge/version-%E2%89%A525.04.0-green?style=flat&logo=nextflow&logoColor=white&color=%230DC09D&link=https%3A%2F%2Fnextflow.io)](https://www.nextflow.io/)\n[![nf-core template version](https://img.shields.io/badge/nf--core_template-3.5.1-green?style=flat&logo=nfcore&logoColor=white&color=%2324B064&link=https%3A%2F%2Fnf-co.re)](https://github.com/nf-core/tools/releases/tag/3.5.1)\n[![run with conda](http://img.shields.io/badge/run%20with-conda-3EB049?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)\n[![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?labelColor=000000&logo=docker)](https://www.docker.com/)\n[![run with singularity](https://img.shields.io/badge/run%20with-singularity-1d355c.svg?labelColor=000000)](https://sylabs.io/docs/)\n[![Launch on Seqera Platform](https://img.shields.io/badge/Launch%20%F0%9F%9A%80-Seqera%20Platform-%234256e7)](https://cloud.seqera.io/launch?pipeline=https://github.com/MuSA)\n\n[![Get help on Slack](http://img.shields.io/badge/slack-nf--core%20%23variantannotation-4A154B?labelColor=000000&logo=slack)](https://nfcore.slack.com/channels/variantannotation)[![Follow on Bluesky](https://img.shields.io/badge/bluesky-%40nf__core-1185fe?labelColor=000000&logo=bluesky)](https://bsky.app/profile/nf-co.re)[![Follow on Mastodon](https://img.shields.io/badge/mastodon-nf__core-6364ff?labelColor=FFFFFF&logo=mastodon)](https://mstdn.science/@nf_core)[![Watch on YouTube](http://img.shields.io/badge/youtube-nf--core-FF0000?labelColor=000000&logo=youtube)](https://www.youtube.com/c/nf-core)\n\n## Introduction\n\n**MuSA** is a scalable and modular bioinformatics pipeline for comprehensive variant annotation. It integrates multiple industry-standard annotation tools and external databases to produce an ultra-deep annotated MAF (Mutation Annotation Format) file, along with an interactive HTML report for visual inspection and downstream interpretation.\n\nThe pipeline takes as input a samplesheet referencing raw (unannotated) VCF files and outputs consolidated annotation files suitable for clinical research, reporting, or input to downstream workflows.\nIf Human Phenotype Ontology (HPO) terms are provided for individual patients, an additional phenotype-prioritized MAF is generated using HPO-based gene panel filtering.\n\n<!-- TODO nf-core:\n   Complete this sentence with a 2-3 sentence summary of what types of data the pipeline ingests, a brief overview of the\n   major pipeline sections and the types of output it produces. You're giving an overview to someone new\n   to nf-core here, in 15-20 seconds. For an example, see https://github.com/nf-core/rnaseq/blob/master/README.md#introduction\n-->\n\n![Pipeline schema](assets/pipeline_schema.jpg)\n\n### Default pipeline key parameters\n\n- **`--build`**  \n  Genome build to use (default: `hg38`).\n\n- **`--input`**  \n  Path to the samplesheet containing input VCF files.\n\n- **`--outdir`**  \n  Directory where all results will be written.\n\n- **`--workflow`**  \n  Workflow to run: `setup` or `annotate`.\n\n- **`--vcf_format`**  \n  Format of input VCF files. Supported: `sarek`, `multicaller`, `dragen`, `iontorrent`.\n\n- **`--center`**  \n  Optional sequencing center identifier added to output files.\n\n\n#### Genebe parameters *(required when `--offline false`)*\n\n- **`--gb_user`**  \n  Genebe account username.\n\n- **`--gb_api_key`**  \n  Genebe API key.\n\n- **`--http_proxy`**, **`--https_proxy`**  \n  Proxy settings, only if required by your system.\n\n\n#### VEP and plugin parameters\n\n- **`--n_core`**  \n  Number of cores used by VEP (default: `16`).\n\n- **`--download_vep_plugins`**  \n  Download VEP plugins during the setup workflow (`true/false`).\n\n- **`--use_vep_plugins`**  \n  Enable VEP plugin usage during the annotation workflow (`true/false`).\n\n- **`--data_dir`**  \n  Directory containing all the data downloaded during the setup step.\n\n- **`--annovar_software_dir`**  \n  Directory containing the annovar software folder (path/to/annovar).\n\n\n## Usage\n\n> [!NOTE]\n> If you are new to Nextflow and nf-core, please refer to [this page](https://nf-co.re/docs/usage/installation) on how to set up Nextflow. Make sure to [test your setup](https://nf-co.re/docs/usage/introduction#how-to-run-a-pipeline) with `-profile test` before running the workflow on actual data.\n\n### 1a. Setup\n\nBefore annotating any dataset, the pipeline requires a **setup step** to download the minimal required databases and reference files. This ensures the pipeline can run correctly. ADDITIONAL NOTE: user have to get access to an ANNOVAR license and download link and install it.\n\nRun the setup workflow:\n\n```bash\nnextflow run main.nf \\\n    -profile <docker/singulariy> \\\n    --workflow setup \\\n    --download_vep_plugins=<true/false> \\\n    --data_dir=\"../data/\"\n```\n\n### 1b. Test run\n\nNow, you can run your first test using:\n\n```bash\nnextflow run main.nf \\\n   -profile test,<docker/singularity> \\\n   --use_vep_plugins = <true/false> \\\n   --annovar_software_dir = <path/to/annovar> \\\n   --outdir <OUTDIR>\n```\n\n### 2. Using your own data\n\nIf you want to annotate your own vcf file, make sure you prepare a samplesheet with this format:\n\n| patient      | sample_type | sample_file         | hpo          |\n|-------------|------------|-------------------|-------------|\n| patient_code | tissue     | path/to/file.vcf.gz | HP:code (optional) |\n\n**Columns:**\n\n- `patient`: Unique identifier for the patient  \n- `sample_type`: Type of sample (blood, saliva, tissue, etc.)  \n- `sample_file`: Full path to the unannotated VCF file  \n- `hpo`: Optional HPO term(s) for phenotype-based filtering  \n\n> [!WARNING]\n> By default, the entire pipeline is set to run with `--offline = true`.\nThis will skip the Genebe and HPO API-based annotations.\nIf you want to use Genebe, please provide `--gb_user` and `--gb_api_key` which can be obtained for free [here](https://genebe.net/signup). Only then, you can run with `--offline = false` and provide the Genebe params.\n\n\n```bash\nnextflow run main.nf \\\n  -profile  <docker/singularity> \\\n  --workflow annotate \\\n  --use_vep_plugins=<true/false> \\\n  --data_dir=<path/to/data> \\\n  --annovar_software_dir=<path/to/annovar> \\\n  --vcf_format=<sarek/multicaller/dragen/iontorrent> \\\n  --input  <path/to/samplesheet.csv>  \\\n  --outdir <OUTDIR>\n```\n\nFor more details and further functionality, please refer to the [usage documentation](https://nf-co.re/variantannotation/usage) and the [parameter documentation](https://nf-co.re/variantannotation/parameters).\n\n## Pipeline output\n\nTo see the results of an example test run with a full size dataset refer to the [results](https://nf-co.re/variantannotation/results) tab on the nf-core website pipeline page.\nFor more details about the output files and reports, please refer to the\n[output documentation](https://nf-co.re/variantannotation/output).\n\n## Credits\n\nMuSA was written by D. Scognamiglio at IRCCS Istituto Ortopedico Rizzoli, Bologna, Italy.\n\nWe thank E. Bonetti for his extensive assistance in the development of this pipeline.\n\n## Contributions and Support\n\nIf you would like to contribute to this pipeline, please see the [contributing guidelines](.github/CONTRIBUTING.md).\n\nFor further information or help, don't hesitate to get in touch on the [Slack `#variantannotation` channel](https://nfcore.slack.com/channels/variantannotation) (you can join with [this invite](https://nf-co.re/join/slack)).\n\n## Citations\n\n<!-- TODO nf-core: Add citation for pipeline after first release. Uncomment lines below and update Zenodo doi and badge at the top of this file. -->\n<!-- If you use MuSA for your analysis, please cite it using the following doi: [10.5281/zenodo.XXXXXX](https://doi.org/10.5281/zenodo.XXXXXX) -->\n\n<!-- TODO nf-core: Add bibliography of tools and data used in your pipeline -->\n\nAn extensive list of references for the tools used by the pipeline can be found in the [`CITATIONS.md`](CITATIONS.md) file.\n\nYou can cite the `nf-core` publication as follows:\n\n> **The nf-core framework for community-curated bioinformatics pipelines.**\n>\n> Philip Ewels, Alexander Peltzer, Sven Fillinger, Harshil Patel, Johannes Alneberg, Andreas Wilm, Maxime Ulysse Garcia, Paolo Di Tommaso & Sven Nahnsen.\n>\n> _Nat Biotechnol._ 2020 Feb 13. doi: [10.1038/s41587-020-0439-x](https://dx.doi.org/10.1038/s41587-020-0439-x).\n",
+            "creativeWorkStatus": "Stable",
+            "datePublished": "2026-09-10T14:27:44+00:00",
+            "description": "<h1>\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"docs/images/MuSA_logo_dark.png\">\n    <img alt=\"MuSA\" src=\"docs/images/MuSA_logo_light.png\">\n  </picture>\n</h1>\n\n[![Nextflow](https://img.shields.io/badge/version-%E2%89%A525.04.0-green?style=flat&logo=nextflow&logoColor=white&color=%230DC09D&link=https%3A%2F%2Fnextflow.io)](https://www.nextflow.io/)\n[![run with docker or singularity](https://img.shields.io/badge/run%20with-docker%20%7C%20singularity-1d355c?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)\n[![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)\n[![DOI](https://img.shields.io/badge/DOI-10.1186%2Fs12859--026--06513--0-blue)](https://doi.org/10.1186/s12859-026-06513-0)\n\n**MuSA (Multi-Source variant Annotation)** turns a germline VCF into an interpretation-ready MAF and\na self-contained HTML report a clinician can triage without opening a spreadsheet. It runs\n**Ensembl VEP, ANNOVAR, dbNSFP and the RENOVO ML pathogenicity reclassifier in parallel**, merges\nthem into one row-per-variant table, adds ClinVar/ClinGen/HPO context, and ranks the result so the\nvariants worth a second look surface first.\n\nBuilt with the [nf-core](https://nf-co.re) pipeline template, on [Nextflow](https://nextflow.io).\nPublished in *BMC Bioinformatics* \u2014 see [Citation](#citation).\n\n![MuSA architecture: VEP, dbNSFP and RENOVO run in parallel over a normalized VCF, merge into one MAF, and pass through ClinGen/ClinVar post-processing into a per-patient HTML report](assets/pipeline_schema.svg)\n\nThe report below is real output: MuSA run in extended mode against the paper's own NA12878/HG001\nWES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up.\n\n![MuSA report overview: patient band with ClinVar/RENOVo classification counts and a findings index, next to variant groups such as \"ClinVar pathogenic\" and \"Loss of function in an established disease gene\"](docs/images/report_overview.png)\n\n---\n\n## Can you use MuSA?\n\n| | |\n|---|---|\n| **Genome build** | GRCh38/hg38 only. |\n| **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |\n| **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |\n| **Storage, one-time** | ~123 GB for core annotation, ~224 GB if you also want the 22 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |\n| **ANNOVAR** | You provide it. RENOVO's scoring depends on it; MuSA does not and cannot bundle it \u2014 get a license and download it yourself from the [ANNOVAR site](https://annovar.openbioinformatics.org/en/latest/). |\n| **dbNSFP** | The bundled distribution is **non-commercial / academic use only**. Check the [dbNSFP license](https://sites.google.com/site/jpopgen/dbNSFP) covers your use case before running `setup`. |\n| **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring and live HPO gene-panel lookup. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) needs neither. |\n| **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) \u2014 non-commercial use and redistribution, with attribution. |\n\nIf your VCFs are hg38, you can get Docker or Singularity running, and 123 GB of disk is available:\nMuSA is feasible for you. If any of those don't hold, see [Requirements](#requirements-and-constraints)\nbefore going further.\n\n---\n\n## Why MuSA?\n\nA germline VCF from a research or diagnostic exome/genome typically needs several tools before a\nclinician can read it: a functional-consequence predictor, a set of pathogenicity scores, ClinVar,\na gene-disease evidence source, and some way to fold \"unaffected by ClinVar but the phenotype fits\"\ninto a ranking. Running these tools separately means reconciling different variant identifiers,\ndifferent transcript choices, and different output formats \u2014 and re-doing that reconciliation for\nevery patient.\n\nMuSA runs the annotation branches in parallel and resolves the disagreements once, in the pipeline,\nrather than leaving them for a reviewer to spot:\n\n- **One transcript per variant.** VEP/dbNSFP report scores per transcript; MuSA collapses each\n  variant to its MANE Select transcript (configurable) so a gene symbol and a score never come from\n  two different isoforms.\n- **One classification per variant.** RENOVO's six-class ML output and ClinVar's five-tier\n  classification are read onto the same B / LB / VUS / LP / P scale, so \"ClinVar disagrees with\n  ReNOVo\" is something the pipeline can flag, not something a reviewer has to notice by reading two\n  differently-formatted columns.\n- **Rarity and disease relevance are the filter, not a spreadsheet macro.** Gene-disease validity\n  (ClinGen), inheritance mode, gnomAD constraint (pLI/LOEUF) and the patient's own HPO terms are\n  joined onto every row so triage doesn't need a second lookup pass.\n\nThe output is one MAF file per patient (not per-transcript VCF rows) and one interactive report that\nopens in a browser with no server, no account and no upload \u2014 the variant data never leaves the\nmachine it was generated on.\n\n---\n\n## What MuSA does\n\nTwo workflows:\n\n| Workflow | What it does | Run it |\n|---|---|---|\n| `setup` | Downloads and checksums every annotation database into `--data_dir`. Once per data directory. | before the first `annotate` |\n| `annotate` | Annotates VCFs against that data directory, ranks variants, writes MAF + HTML report. | once per batch of patients |\n\n**Annotation sources**, run in parallel and merged into one table:\n\n| Source | Contributes |\n|---|---|\n| [Ensembl VEP](https://www.ensembl.org/info/docs/tools/vep/index.html) | Consequence, transcript annotation, population frequencies (gnomAD/1000G), and \u2014 in extended mode \u2014 up to 22 plugins (AlphaMissense, CADD, ClinPred, Enformer, EVE, SpliceVault, MaxEntScan and others) |\n| [dbNSFP](https://sites.google.com/site/jpopgen/dbNSFP) | Pathogenicity predictions (REVEL, MetaRNN, BayesDel, SIFT, PolyPhen-2\u2026), gene-level constraint, disease/phenotype cross-references |\n| [ANNOVAR](https://annovar.openbioinformatics.org/) | Backing database annotation consumed by RENOVO's classifier |\n| [RENOVO](https://pubmed.ncbi.nlm.nih.gov/33761318/) | ML reclassification of variants of uncertain significance |\n| ClinVar / ClinGen | Clinical significance, review status, gene-disease validity and inheritance mode |\n| [HPO](https://hpo.jax.org/) | Phenotype-matched gene panels, from the samplesheet's `hpo` column |\n| [GeneBe](https://genebe.net/) *(optional, online mode)* | Automated ACMG/AMP criteria and score |\n\n**Output**, per patient:\n\n- `<patient>.raw.maf` \u2014 every variant, fully annotated, one row per variant.\n- `<patient>.filtered.maf` \u2014 the same table after panel/HPO/frequency/benign filters. The file to hand a reviewer.\n- `<patient>_maf_dashboard.html` \u2014 the interactive report (below).\n\nFull column-by-column breakdown: [`docs/output.md`](docs/output.md).\n\n---\n\n## The report\n\n`<patient>_maf_dashboard.html` is a single file \u2014 no server, no database, no upload. It embeds the\nfull variant set as compact, column-oriented JSON and renders it through a virtual scroller, so it\nstays fast even at tens of thousands of variants, and it opens directly in a browser on an\nair-gapped machine.\n\nIt opens on **findings, not a spreadsheet**: variants grouped by why they matter \u2014 ClinVar\npathogenic/likely-pathogenic, loss-of-function in a disease gene ClinGen backs with definitive or\nstrong evidence, biallelic calls with no wild-type allele, ClinVar-uncertain-but-RENOVo-pathogenic,\ngenes ClinVar has never classified, and cases where the two classifiers disagree. Selecting a\nvariant opens a full evidence panel beside the list \u2014 population frequency, gene-disease\nrelationship, inheritance, literature, all cross-referenced and clickable (OMIM, PubMed, MONDO,\nOrphanet, dbSNP, ClinVar) \u2014 without ever covering the list you're comparing it against. The full\nvariant table, sortable and searchable, is one click away for anyone who wants to see everything\nthat was annotated rather than only what was flagged.\n\n![MuSA evidence panel for a PAH missense variant: ClinVar and RENOVo both call it pathogenic, with the assessment, gene-disease relationship, LOEUF constraint, and clickable ClinVar/dbSNP/OMIM/MONDO/Orphanet/PubMed identifiers](docs/images/report_evidence_panel.png)\n\n---\n\n## Try it in 10 minutes\n\nThe database directory (below) is a one-time, ~123 GB download \u2014 it is the actual gate, not a\nformality, so budget time for it separately. Once it exists, running MuSA against a new VCF, or\nagainst the bundled single-variant test case, takes minutes.\n\n**1. Install Nextflow** (skip if already installed):\n\n```bash\ncurl -s https://get.nextflow.io | bash\n```\n\n**2. Build the database directory** \u2014 required once, before any `annotate` run:\n\n```bash\nnextflow run davide-scognamiglio/MuSA \\\n  --workflow setup \\\n  --data_dir /path/to/musa_data \\\n  -profile docker\n```\n\nThis fetches VEP's cache, dbNSFP, ANNOVAR databases, ClinVar/ClinGen and the reference genome\n(~123 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists\nexactly what landed and its checksum when it's done.\n\n**3. Run the bundled test** \u2014 a single-variant VCF, so this finishes in a couple of minutes and\nproves your Docker, ANNOVAR and data directory are wired correctly:\n\n```bash\nnextflow run davide-scognamiglio/MuSA \\\n  -profile test,docker \\\n  --data_dir /path/to/musa_data \\\n  --annovar_software_dir /path/to/annovar \\\n  --outdir output_test\n```\n\nExpect `output_test/<date>/NA12877/NA12877_maf_dashboard.html` \u2014 open it in a browser.\n\nThat's the smallest loop: real containers, a real (if tiny) VCF, a real report. Section\n[Pipeline usage](#pipeline-usage) below shows the same command against your own samplesheet.\n\n---\n\n## Requirements and constraints\n\n**Genome build.** hg38/GRCh38 only. The pipeline errors explicitly (`Currently, we only support hg38\nbuild`) rather than silently mis-annotating a GRCh37 VCF \u2014 realign or lift over first.\n\n**Storage \u2014 two tiers, pick based on what you need:**\n\n| Mode | What it adds | Approx. size | When to use it |\n|---|---|---|---|\n| **Basic** (`setup` default) | VEP cache, ANNOVAR databases, dbNSFP, ClinVar/ClinGen, reference genome | ~123 GB | Routine diagnostic annotation |\n| **Extended** (`--download_vep_plugins true`) | + all 22 VEP plugin data files (AlphaMissense, CADD, Enformer, EVE, GWAS, MaveDB, ...) | ~224 GB total | Deep functional characterization; required before `--use_vep_plugins true` |\n\n**ANNOVAR is not redistributed.** MuSA's RENOVO branch depends on ANNOVAR for its own annotation\nstep. You need your own license and download from the\n[official source](https://annovar.openbioinformatics.org/en/latest/), then point\n`--annovar_software_dir` at the directory containing `table_annovar.pl`.\n\n**dbNSFP is academic-use only.** The setup workflow downloads dbNSFP's academic-branch distribution.\nConfirm your use case is covered by the [dbNSFP license](https://sites.google.com/site/jpopgen/dbNSFP)\nbefore running `setup` \u2014 this is a constraint on the data, not something MuSA can relax.\n\n**GeneBe is optional and needs credentials.** Only relevant if you run with `--offline false` for\nautomated ACMG/AMP scoring or live HPO-based gene-panel lookup. Offline mode \u2014 the default \u2014 uses\nnone of it and makes no outbound network calls.\n\n**MuSA's own license is CC BY-NC 4.0** \u2014 non-commercial use and redistribution with attribution. See\n[LICENSE](LICENSE).\n\n---\n\n## Installation / setup\n\nPrerequisites: [Nextflow \u2265 25.04.0](https://nextflow.io), Docker or Singularity/Apptainer, and an\nANNOVAR install (see above).\n\n```bash\nnextflow run davide-scognamiglio/MuSA \\\n  --workflow setup \\\n  --data_dir /path/to/musa_data \\\n  -profile docker            # or -profile singularity\n```\n\nAdd `--download_vep_plugins true` for the extended (~224 GB) tier. Re-running `setup` later only\nre-downloads entries whose manifest version changed (`--update_db_only true` to force a diff-only\nrefresh).\n\nEvery downloaded resource is tracked in a versioned, checksummed manifest \u2014 see\n[The database manifest system](docs/usage.md#setup-workflow) for how that works and why it matters\nfor audit trails. Full parameter reference: [`docs/usage.md`](docs/usage.md) and\n[`nextflow_schema.json`](nextflow_schema.json) (or run with `--help`).\n\n---\n\n## Pipeline usage\n\n**1. Samplesheet** \u2014 one row per patient:\n\n```csv title=\"samplesheet.csv\"\npatient,sample_type,sample_file,hpo\nPATIENT_01,blood,/path/to/PATIENT_01.vcf.gz,HP:0001250;HP:0002121\nPATIENT_02,saliva,/path/to/PATIENT_02.vcf.gz,\n```\n\n| Column | Required | Description |\n|---|---|---|\n| `patient` | yes | Identifier. Names the output directory and every output file. |\n| `sample_type` | yes | Free-text sample source (`blood`, `saliva`, ...). Informational. |\n| `sample_file` | yes | Path to the VCF, `.vcf` or `.vcf.gz`. |\n| `hpo` | no | `;`-separated HPO term IDs. Drives phenotype-based gene-panel filtering; leave empty to skip. |\n\n**2. Run** \u2014 offline mode (default; no network calls, local databases only):\n\n```bash\nnextflow run davide-scognamiglio/MuSA \\\n  --workflow annotate \\\n  --input samplesheet.csv \\\n  --outdir results \\\n  --data_dir /path/to/musa_data \\\n  --annovar_software_dir /path/to/annovar \\\n  --vcf_format multicaller \\\n  -profile docker\n```\n\nAdd `--use_vep_plugins true` for extended annotation (needs the extended `setup`), or\n`--offline false --gb_user <user> --gb_api_key <key>` for GeneBe ACMG/AMP scoring and live HPO\nlookups. Full walkthrough, including proxy configuration and params files:\n[`docs/usage.md`](docs/usage.md).\n\n**3. Output** \u2014 `results/<date>/<patient>/`, one directory per patient:\n\n```\nresults/\n\u2514\u2500\u2500 260907/\n    \u2514\u2500\u2500 PATIENT_01/\n        \u251c\u2500\u2500 PATIENT_01_maf_dashboard.html\n        \u251c\u2500\u2500 PATIENT_01.filtered.maf\n        \u2514\u2500\u2500 PATIENT_01.raw.maf\n```\n\nColumn-by-column breakdown of what's in the MAF: [`docs/output.md`](docs/output.md).\n\n---\n\n## Benchmark\n\nMeasured on the pipeline's own paper-published benchmark: a downsampled, WES-like NA12878/HG001\n(GRCh38) callset, **22,705 variants**, full extended-mode annotation (all 22 VEP plugins) on an\nin-house server (Intel Xeon Gold 6444Y, 64 cores, 250 GB RAM):\n\n| | |\n|---|---|\n| Variants | 22,705 |\n| Mode | Extended (22 VEP plugins) |\n| Hardware | 64 cores / 250 GB RAM |\n| Wall time | ~20 minutes |\n\nThis is a fixed reference point on fixed hardware, not a guarantee \u2014 your runtime scales with core\ncount, VCF size, and whether you run basic or extended mode. Per-task resource use for any of your\nown runs is in `<outdir>/pipeline_info/execution_trace_*.txt`.\n\n---\n\n## Citation\n\nIf you use MuSA, please cite:\n\n> Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow pipeline for deep,\n> reproducible annotation and clinical ranking of genomic variants. *BMC Bioinformatics*. 2026 Jun\n> 16;27(1):199. doi: [10.1186/s12859-026-06513-0](https://doi.org/10.1186/s12859-026-06513-0).\n\nAn extensive list of references for every tool the pipeline uses is in\n[`CITATIONS.md`](CITATIONS.md).\n\n---\n\n## License, acknowledgements, contact\n\nMuSA is licensed under [CC BY-NC 4.0](LICENSE) \u2014 non-commercial use and redistribution, with\nattribution.\n\nWritten by D. Scognamiglio and E. Bonetti at IRCCS Istituto Ortopedico Rizzoli, Bologna, Italy, with\ncontributions from A. Moroni, L. Sangiorgi and E. Pedrini. Built with the\n[nf-core](https://nf-co.re) pipeline template; thanks to that community for the tooling and\nconventions MuSA's development leaned on.\n\nQuestions or issues: [open a GitHub issue](https://github.com/davide-scognamiglio/MuSA/issues).\n",
             "hasPart": [
                 {
                     "@id": "main.nf"
                 },
                 {
                     "@id": "assets/"
+                },
+                {
+                    "@id": "bin/"
                 },
                 {
                     "@id": "conf/"
@@ -39,6 +42,15 @@
                 },
                 {
                     "@id": "docs/images/"
+                },
+                {
+                    "@id": "lib/"
+                },
+                {
+                    "@id": "modules/"
+                },
+                {
+                    "@id": "modules/local/"
                 },
                 {
                     "@id": "workflows/"
@@ -86,17 +98,17 @@
                     "@id": ".prettierignore"
                 }
             ],
-            "isBasedOn": "https://github.com/MuSA",
-            "license": "MIT",
+            "isBasedOn": "https://github.com/davide-scognamiglio/MuSA",
+            "license": "CC-BY-NC-4.0",
             "mainEntity": {
                 "@id": "main.nf"
             },
             "mentions": [
                 {
-                    "@id": "#3b2a04eb-b3f2-40d3-9406-3b9543544dd1"
+                    "@id": "#7c608bfe-fcdd-4dfb-8cc8-4d6737a8d3e8"
                 }
             ],
-            "name": "MuSA"
+            "name": "davide-scognamiglio/MuSA"
         },
         {
             "@id": "ro-crate-metadata.json",
@@ -106,7 +118,7 @@
             },
             "conformsTo": [
                 {
-                    "@id": "https://w3id.org/ro/crate/1.1"
+                    "@id": "https://w3id.org/ro/crate/1.2"
                 },
                 {
                     "@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"
@@ -121,17 +133,17 @@
                 "ComputationalWorkflow"
             ],
             "dateCreated": "",
-            "dateModified": "2025-11-28T15:47:36Z",
+            "dateModified": "2026-09-10T16:27:44Z",
             "dct:conformsTo": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE/",
             "keywords": [
                 "nf-core",
                 "nextflow"
             ],
             "license": [
-                "MIT"
+                "CC-BY-NC-4.0"
             ],
             "name": [
-                "MuSA"
+                "davide-scognamiglio/MuSA"
             ],
             "programmingLanguage": {
                 "@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"
@@ -140,11 +152,11 @@
                 "@id": "https://nf-co.re/"
             },
             "url": [
-                "https://github.com/MuSA",
-                "https://nf-co.re/variantannotation/dev/"
+                "https://github.com/davide-scognamiglio/MuSA",
+                "https://github.com/davide-scognamiglio/MuSA/releases/tag/v1.1.0"
             ],
             "version": [
-                "1.0.0dev"
+                "1.1.0"
             ]
         },
         {
@@ -160,23 +172,23 @@
             "version": "!>=25.04.0"
         },
         {
-            "@id": "#3b2a04eb-b3f2-40d3-9406-3b9543544dd1",
+            "@id": "#7c608bfe-fcdd-4dfb-8cc8-4d6737a8d3e8",
             "@type": "TestSuite",
             "instance": [
                 {
-                    "@id": "#a50f95be-8d7b-45fa-8386-a5cd28e1069e"
+                    "@id": "#0a6306b8-435e-4c81-9eef-cc90d4144f5d"
                 }
             ],
             "mainEntity": {
                 "@id": "main.nf"
             },
-            "name": "Test suite for MuSA"
+            "name": "Test suite for davide-scognamiglio/MuSA"
         },
         {
-            "@id": "#a50f95be-8d7b-45fa-8386-a5cd28e1069e",
+            "@id": "#0a6306b8-435e-4c81-9eef-cc90d4144f5d",
             "@type": "TestInstance",
-            "name": "GitHub Actions workflow for testing MuSA",
-            "resource": "repos/MuSA/actions/workflows/nf-test.yml",
+            "name": "GitHub Actions workflow for testing davide-scognamiglio/MuSA",
+            "resource": "repos/davide-scognamiglio/MuSA/actions/workflows/nf-test.yml",
             "runsOn": {
                 "@id": "https://w3id.org/ro/terms/test#GithubService"
             },
@@ -196,6 +208,11 @@
             "description": "Additional files"
         },
         {
+            "@id": "bin/",
+            "@type": "Dataset",
+            "description": "Scripts that must be callable from a pipeline process"
+        },
+        {
             "@id": "conf/",
             "@type": "Dataset",
             "description": "Configuration files"
@@ -209,6 +226,21 @@
             "@id": "docs/images/",
             "@type": "Dataset",
             "description": "Images for the documentation files"
+        },
+        {
+            "@id": "lib/",
+            "@type": "Dataset",
+            "description": "Groovy utility functions"
+        },
+        {
+            "@id": "modules/",
+            "@type": "Dataset",
+            "description": "Modules used by the pipeline"
+        },
+        {
+            "@id": "modules/local/",
+            "@type": "Dataset",
+            "description": "Pipeline-specific modules"
         },
         {
             "@id": "workflows/",

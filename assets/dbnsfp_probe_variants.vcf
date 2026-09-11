@@ -1,0 +1,49 @@
+##fileformat=VCFv4.2
+##source=hand-picked, not synthetic coordinates: verified present in dbNSFP 5.3.1a on this
+##  install (backend/bin/gen_dbnsfp_aligned_columns.py consumes the output of annotating these).
+##  Each was chosen for a real multi-transcript row (Ensembl_transcriptid has >=2 entries) so the
+##  script's DATA-derived check has more than one independent position to disqualify a coincidentally
+##  matching column against - see the "Gene_other_names matches ~6% of rows" note in that script's
+##  docstring for why a single variant is not enough. Six distinct genes, six chromosomes:
+##    chr1:1623453 A>C   MIB2     (140 transcripts)
+##    chr6:3006553 A>C   NQO2     (90 transcripts)
+##    chr10:104032959 G>A COL17A1 (10 transcripts; the overlapping-gene case fixed by commit 5d823f7)
+##    chr13:27665862 A>G POLR1D   (6 transcripts; overlaps a lncRNA - the SIDEVAR case this whole
+##                                 mechanism exists for)
+##    chr17:1744996 A>C  SERPINF2 (74 transcripts)
+##    chr19:624800 C>A   POLRMT   (36 transcripts)
+##  Regenerate this list only if dbNSFP drops one of these positions in a future release (unlikely -
+##  they are all well-annotated, long-standing RefSeq/Ensembl genes, not release-fragile edge cases).
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##contig=<ID=chr1>
+##contig=<ID=chr2>
+##contig=<ID=chr3>
+##contig=<ID=chr4>
+##contig=<ID=chr5>
+##contig=<ID=chr6>
+##contig=<ID=chr7>
+##contig=<ID=chr8>
+##contig=<ID=chr9>
+##contig=<ID=chr10>
+##contig=<ID=chr11>
+##contig=<ID=chr12>
+##contig=<ID=chr13>
+##contig=<ID=chr14>
+##contig=<ID=chr15>
+##contig=<ID=chr16>
+##contig=<ID=chr17>
+##contig=<ID=chr18>
+##contig=<ID=chr19>
+##contig=<ID=chr20>
+##contig=<ID=chr21>
+##contig=<ID=chr22>
+##contig=<ID=chrX>
+##contig=<ID=chrY>
+##contig=<ID=chrM>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	PROBE
+chr1	1623453	.	A	C	.	PASS	.	GT	0/1
+chr6	3006553	.	A	C	.	PASS	.	GT	0/1
+chr10	104032959	.	G	A	.	PASS	.	GT	0/1
+chr13	27665862	.	A	G	.	PASS	.	GT	0/1
+chr17	1744996	.	A	C	.	PASS	.	GT	0/1
+chr19	624800	.	C	A	.	PASS	.	GT	0/1

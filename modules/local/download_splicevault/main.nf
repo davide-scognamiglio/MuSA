@@ -12,9 +12,10 @@ process DOWNLOAD_SPLICEVAULT {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("SpliceVault"),file('splicevault_manifest.yaml')
+        file('splicevault_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_SPLICEVAULT {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_splicevault vep_splicevault_tbi" "${changed_entries}" "/data/vep_data/SpliceVault"; then
+        echo "[INFO] No changes for download_splicevault -- skipping download, reusing existing data."
+        cp "${manifest}" splicevault_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p SpliceVault
     cd SpliceVault

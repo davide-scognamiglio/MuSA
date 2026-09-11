@@ -1,208 +1,123 @@
 #!/usr/bin/env python3
+"""MuSA: per-patient variant review report.
+
+Emits one self-contained HTML document per patient. No network dependency of any kind at read
+time: no CDN, no webfont, no remote script. MuSA runs offline by default and these reports are
+opened on lab desktops that may have no route out.
+
+Why this file looks the way it does
+-----------------------------------
+The previous implementation rendered every variant as a <tr> and embedded a complete HTML detail
+table inside a data-child attribute on each row. For a 68,338-variant exome that produced 683,381
+DOM elements and a 167 MB file which took minutes to open, and it depended on jQuery, DataTables
+and Google Fonts over the network.
+
+This version embeds the same data as columnar, dictionary-encoded JSON (~26 MB for the same
+patient) and renders through a virtual scroller, so the DOM holds a few hundred nodes regardless
+of variant count. Design tokens live in musa_report_style.py, shared with the setup report.
+
+Filtering contract
+------------------
+This script does not filter variants out of the document. It reads <patient>.filtered.maf (falling
+back to <patient>.raw.maf when the filtered file is header-only) and embeds every row. The default
+*view* is the review set, defined in review_flags() below; the full set is one click away and the
+count of both is stated in the header.
+
+Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe>
+                                [logo] [pipeline_version] [hpo_terms] [vep_image] [data_root]
 """
-MuSA · Annotate Reporter (Python)
-Generates a patient variant-analysis HTML dashboard from MAF files.
 
-Usage:
-    annotate_reporter.py <patient_code> <use_vep_plugins> <offline> <skip_genebe> [logo.png]
-
-About MAF filtering
--------------------
-This script does NOT perform variant filtering.  That responsibility belongs
-entirely to the upstream Nextflow pipeline steps, which write two files:
-
-    <patient>.filtered.maf  – primary source (already filtered upstream)
-    <patient>.raw.maf       – fallback used only when filtered MAF is header-only
-
-The script simply picks the best available file and renders it as-is.
-No rows are dropped here beyond what was already excluded upstream.
-"""
-
-import sys
-import os
 import base64
 import datetime
-import io
+import gzip
+import json
+import os
 import re
-import warnings
-
-warnings.filterwarnings("ignore")
+import sys
 
 import pandas as pd
-import numpy as np
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  THEME  (identical to build_setup_report.py)
-# ══════════════════════════════════════════════════════════════════════════════
-THEME = {
-    "bg":           "#0b0d14",
-    "surface":      "#121520",
-    "surface2":     "#1a1f2e",
-    "border":       "#2a2f42",
-    "border2":      "#4a5070",
-    "text":         "#e6e8f2",
-    "muted":        "#9aa0b8",
-    "ok":           "#3aad82",
-    "ok_dim":       "#3aad821a",
-    "ok_border":    "#3aad8255",
-    "fail":         "#d94f5c",
-    "fail_dim":     "#d94f5c15",
-    "fail_border":  "#d94f5c55",
-    "pend":         "#d4a43a",
-    "pend_dim":     "#d4a43a15",
-    "pend_border":  "#d4a43a55",
-    "accent":       "#6c5fff",
-    "font_display": "'Poppins', sans-serif",
-    "font_body":    "'Poppins', sans-serif",
-    "font_mono":    "'DM Mono', 'Courier New', monospace",
-    "google_fonts": (
-        "https://fonts.googleapis.com/css2?"
-        "family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400"
-        "&family=DM+Mono:wght@400;500&display=swap"
-    ),
-    "radius": "8px",
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  COLUMN CONFIGURATION
-#
-#  Keys are ORIGINAL MAF column names.
-#  display_names maps original → pretty label used in the HTML table header.
-#  Plots always receive df_raw and use original column names directly.
-# ══════════════════════════════════════════════════════════════════════════════
-COLUMN_CONFIG = {
-    # Columns shown in the main table (order is preserved)
-    "main": {
-        "online": [
-            "Hugo_Symbol", "HGVSc", "HGVSp_VEP",
-            "encoded_CLNSIG", "renovo_adj_acmg_score", "clinvar_trait",
-            "MAX_AF","PUBMED", "Franklin" # Franklin is computed, not in the MAF
-        ],
-        "offline": [
-            "Hugo_Symbol", "HGVSc", "genome_change", "HGVSp_VEP",
-            "encoded_CLNSIG", "MAX_AF",
-            "PUBMED", "Franklin"
-        ],
-    },
-    # Columns shown only in expandable child rows
-    "details": {
-        "with_plugins": [
-            "genome_change","ref_context","bioinfo_params",
-            "MAX_AF_POPS", "clinvar_OMIM_id","clinvar_id", 
-            "acmg_criteria", "encoded_CLNREVSTAT",
-            "PhenotypeOrthologous_Mouse_phenotype",
-            "PhenotypeOrthologous_Rat_phenotype"
-        ],
-        "without_plugins": [
-            "genome_change","ref_context","bioinfo_params",
-            "clinvar_OMIM_id","clinvar_id", "acmg_criteria", "encoded_CLNREVSTAT"
-        ],
-    },
-    # Pretty labels for table headers (original MAF name -> display name)
-    "display_names": {
-        "Hugo_Symbol":            "gene",
-        "genome_change":          "gDNA",
-        "ref_context":            "Reference context",
-        "bioinfo_params":         "Variant quality",
-        "HGVSp_VEP":              "a.a.",
-        "Consequence":            "consequence",
-        "encoded_CLNSIG": "Clinvar class",
-        "renovo_adj_acmg_score":  "MuSA class",
-        "acmg_criteria":          "GeneBe ACMG criteria",
-        "MAX_AF":                 "max AF",
-        "MAX_AF_POPS":            "max AF pop",
-        "PL_score":               "Renovo score",
-        "PUBMED":                 "PUBMED",
-        "HGVSc":                  "cDNA",
-        "Franklin":               "Franklin",
-        "clinvar_OMIM_id":        "OMIM",
-        "clinvar_id":        "Clinvar ID",
-        "encoded_CLNREVSTAT": "Clinvar review",
-        "clinvar_trait":          "Clinvar trait",
-        "PhenotypeOrthologous_Mouse_phenotype": "Mouse phenotype",
-        "PhenotypeOrthologous_Rat_phenotype":   "Rat phenotype",
-    },
-}
-
-# Colour map for Consequence VALUES (used in both plots and table badges)
-VC_COLOURS = {
-    "Missense_Mutation":       "#6c5fff",
-    "Nonsense_Mutation":       "#d94f5c",
-    "Frame_Shift_Del":         "#d4a43a",
-    "Frame_Shift_Ins":         "#e8855a",
-    "In_Frame_Del":            "#3aad82",
-    "In_Frame_Ins":            "#3a8fad",
-    "Splice_Site":             "#ad3a82",
-    "Silent":                  "#4a5070",
-    "3'UTR":                   "#2a5070",
-    "5'UTR":                   "#2a3d70",
-    "Intron":                  "#333a52",
-    "RNA":                     "#5a3370",
-    "IGR":                     "#2a2f42",
-    "Translation_Start_Site":  "#c45fff",
-    "Nonstop_Mutation":        "#ff5f5f",
-}
+import musa_report_style as style
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  CSS HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-def css_vars(t: dict) -> str:
-    mapping = {
-        "bg": "bg", "surface": "surface", "surface2": "surface2",
-        "border": "border", "border2": "border2", "text": "text",
-        "muted": "muted", "ok": "ok", "ok_dim": "ok-dim",
-        "ok_border": "ok-border", "fail": "fail", "fail_dim": "fail-dim",
-        "fail_border": "fail-border", "pend": "pend", "pend_dim": "pend-dim",
-        "pend_border": "pend-border", "accent": "accent",
-        "font_display": "font-display", "font_body": "font-body",
-        "font_mono": "font-mono", "radius": "radius",
-    }
-    lines = ["  :root {"]
-    for key, css_name in mapping.items():
-        lines.append(f"    --{css_name}: {t[key]};")
-    lines.append("  }")
-    return "\n".join(lines)
+# ── column configuration ──────────────────────────────────────────────────────
+# Keys are original MAF column names. The report embeds every column listed here
+# that exists in the MAF; anything absent is skipped with a warning rather than
+# rendered as a blank field, so a missing column is visible as a missing column.
+
+MAIN_COLUMNS = [
+    ("Hugo_Symbol",    "Gene",        "gene"),
+    ("genome_change",  "gDNA",        "mono"),
+    ("HGVSc",          "cDNA",        "mono"),
+    ("HGVSp_VEP",      "Protein",     "mono"),
+    ("Consequence",    "Consequence", "consequence"),
+    ("encoded_CLNSIG", "ClinVar",     "clinvar"),
+    ("RENOVO_Class",   "ReNOVo",      "renovo"),
+    ("MAX_AF",         "Max AF",      "af"),
+]
+
+# Everything the evidence panel reads. Grouped there under headings rather than
+# rendered as one flat list; DETAIL_SECTIONS below owns that arrangement.
+DETAIL_COLUMNS = [
+    ("HGVSc",                "cDNA"),
+    ("HGVSp_VEP",            "Protein"),
+    ("Consequence",          "All consequences"),
+    ("IMPACT",               "VEP impact"),
+    ("VARIANT_CLASS",        "Variant class"),
+    ("MAX_AF",               "Max allele frequency"),
+    ("MAX_AF_POPS",          "Max AF population"),
+    ("CLNDN",                "ClinVar disease"),
+    ("CLNDISDB",             "ClinVar disease references"),
+    ("clinvar_id",           "ClinVar variation ID"),
+    ("ALLELEID",             "ClinVar allele ID"),
+    ("ClinVar_RS",           "dbSNP"),
+    ("Existing_variation",   "Known identifiers"),
+    ("clinvar_OMIM_id",      "OMIM"),
+    ("MIM_disease",          "OMIM phenotypes"),
+    ("Orphanet_disorder",    "Orphanet"),
+    ("encoded_CLNREVSTAT",   "ClinVar review status"),
+    ("ClinGen_GeneDisease_Disease",        "ClinGen gene-disease"),
+    ("ClinGen_GeneDisease_MOI",            "Inheritance (ClinGen)"),
+    ("ClinGen_GeneDisease_Classification", "Gene-disease validity"),
+    ("gnomAD_pLI",           "gnomAD pLI"),
+    ("gnomAD_LOEUF",         "gnomAD LOEUF"),
+    ("PL_score",             "ReNOVo pathogenicity score"),
+    ("PUBMED",               "PubMed"),
+    ("ref_context",          "Reference context"),
+    ("bioinfo_params",       "Call quality"),
+    ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
+    ("PhenotypeOrthologous_Rat_phenotype",   "Rat orthologue phenotype"),
+    # Present only when GeneBe ran (online mode).
+    ("acmg_criteria",          "GeneBe ACMG criteria"),
+    ("renovo_adj_acmg_score",  "GeneBe ACMG score"),
+]
+
+# The panel is read top to bottom while deciding whether a variant matters, so it is
+# ordered the way that decision is made: what the change is, how rare it is, which
+# disease and gene it belongs to, what the literature says, and only then the
+# sequencing detail and the animal models.
+DETAIL_SECTIONS = [
+    ("Variant details", ["HGVSc", "HGVSp_VEP", "Consequence", "IMPACT", "VARIANT_CLASS"]),
+    ("Population",     ["MAX_AF", "MAX_AF_POPS"]),
+    ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinGen_GeneDisease_Disease",
+                        "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
+                        "MIM_disease", "Orphanet_disorder"]),
+    ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
+    ("Prediction",     ["PL_score", "acmg_criteria", "renovo_adj_acmg_score"]),
+    # No "References" section: every accession in the MAF is rendered as a link at the
+    # top of the panel instead, so listing the raw strings again would be noise.
+    ("Call parameters", ["bioinfo_params", "ref_context"]),
+    ("Model organisms", ["PhenotypeOrthologous_Mouse_phenotype",
+                         "PhenotypeOrthologous_Rat_phenotype"]),
+]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  LOGO
-#  Accepted as an explicit CLI argument so the Nextflow module can pass
-#  ${projectDir}/assets/MuSA_logo.png without relying on __file__ location.
-# ══════════════════════════════════════════════════════════════════════════════
-def load_logo_base64(logo_path: str):
-    """Return (b64_string, mime_type) or (None, None) if path is invalid."""
-    if not logo_path or not os.path.isfile(logo_path):
-        if logo_path:
-            print(f"  WARNING: Logo not found at: {logo_path}", file=sys.stderr)
-        return None, None
-    ext  = os.path.splitext(logo_path)[1].lower().lstrip(".")
-    mime = {"png": "image/png", "svg": "image/svg+xml",
-            "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
-    with open(logo_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return b64, mime
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  ARGUMENT PARSING
-#
-#  Args: patient_code  use_vep_plugins  offline  skip_genebe  [logo_path]
-#  Note: 'workflow' has been removed — it is deprecated and no longer used.
-# ══════════════════════════════════════════════════════════════════════════════
+# ── arguments ─────────────────────────────────────────────────────────────────
 def parse_args():
     args = sys.argv[1:]
     if len(args) < 4:
-        print(
-            "Usage: annotate_reporter.py <patient_code> <use_vep_plugins> "
-            "<offline> <skip_genebe> [logo_path]"
-        )
-        sys.exit(1)
+        sys.exit("Usage: build_annotate_report.py <patient_code> <use_vep_plugins> "
+                 "<offline> <skip_genebe> [logo_path]")
 
     def _bool(v):
         return str(v).strip().upper() in ("TRUE", "1", "YES")
@@ -213,24 +128,43 @@ def parse_args():
         "offline":         _bool(args[2]),
         "skip_genebe":     _bool(args[3]),
         "logo_path":       args[4] if len(args) > 4 else None,
+        "version":         args[5] if len(args) > 5 else "",
+        "hpo":             args[6] if len(args) > 6 else "",
+        # The VEP image the pipeline declares, and the mount the reference data is
+        # under. Both only exist inside a pipeline run; built by hand they are absent
+        # and the band simply carries no provenance row.
+        "vep_image":       args[7] if len(args) > 7 else "",
+        "data_root":       args[8] if len(args) > 8 else "",
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MAF READING
-#
-#  Filtering contract
-#  ------------------
-#  This script does NOT filter variants.  The pipeline produces two files:
-#    * <patient>.filtered.maf  -- primary source (already filtered upstream)
-#    * <patient>.raw.maf       -- fallback when filtered file is header-only
-#  We pick whichever file has actual data and render it as-is.
-# ══════════════════════════════════════════════════════════════════════════════
-_HEADER_ONLY = object()   # sentinel — avoids DataFrame truthiness pitfalls
+# The samplesheet's hpo column, ';'-separated. Nextflow renders an absent value as
+# the literal "null", so that has to be treated as absence rather than as a term.
+def parse_hpo(value):
+    v = (value or "").strip()
+    if not v or v.lower() in ("null", "none", "nan", "."):
+        return []
+    return [t for t in (x.strip().upper() for x in re.split(r"[;,\s]+", v))
+            if re.fullmatch(r"HP:\d{7}", t)]
 
 
-def _read_maf_file(path: str):
-    """Return DataFrame, _HEADER_ONLY sentinel, or None on failure."""
+def load_logo_base64(logo_path):
+    if not logo_path or not os.path.isfile(logo_path):
+        if logo_path:
+            print(f"  WARNING: logo not found at {logo_path}", file=sys.stderr)
+        return None, None
+    ext = os.path.splitext(logo_path)[1].lower().lstrip(".")
+    mime = {"png": "image/png", "svg": "image/svg+xml",
+            "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
+    with open(logo_path, "rb") as fh:
+        return base64.b64encode(fh.read()).decode(), mime
+
+
+# ── MAF loading ───────────────────────────────────────────────────────────────
+_HEADER_ONLY = object()
+
+
+def _read_maf_file(path):
     if not os.path.isfile(path):
         return None
     try:
@@ -238,981 +172,1997 @@ def _read_maf_file(path: str):
         df = df.loc[:, ~df.columns.duplicated()]
         if df.empty:
             return _HEADER_ONLY
-        print(f"  Loaded {len(df):,} rows x {len(df.columns)} cols from {path}",
-              file=sys.stderr)
+        print(f"  Loaded {len(df):,} rows x {len(df.columns)} cols from {path}", file=sys.stderr)
         return df
     except Exception as exc:
-        print(f"  WARNING: Could not read {path}: {exc}", file=sys.stderr)
+        print(f"  WARNING: could not read {path}: {exc}", file=sys.stderr)
         return None
 
 
-def load_maf_data(patient_code: str) -> pd.DataFrame:
-    filtered = f"{patient_code}.filtered.maf"
-    raw      = f"{patient_code}.raw.maf"
-
-    result = _read_maf_file(filtered)
+def load_maf_data(patient_code):
+    result = _read_maf_file(f"{patient_code}.filtered.maf")
     if result is _HEADER_ONLY or result is None:
         if result is _HEADER_ONLY:
-            print("  Filtered MAF is header-only, falling back to raw MAF",
-                  file=sys.stderr)
-        result = _read_maf_file(raw)
-
+            print("  Filtered MAF is header-only, falling back to raw MAF", file=sys.stderr)
+        result = _read_maf_file(f"{patient_code}.raw.maf")
     if result is None or result is _HEADER_ONLY:
         raise RuntimeError(f"No usable MAF found for patient '{patient_code}'")
-
-    # Warn about any expected columns that are missing so users can diagnose issues
-    expected = set(COLUMN_CONFIG["display_names"].keys()) - {"Franklin"}
-    missing  = expected - set(result.columns)
-    if missing:
-        print(f"  WARNING: Columns not in MAF (will be skipped): "
-              f"{', '.join(sorted(missing))}", file=sys.stderr)
     return result
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  FRANKLIN URL BUILDER
-# ══════════════════════════════════════════════════════════════════════════════
-def make_franklin_url(genome_change: str) -> str:
-    if not genome_change or pd.isna(genome_change) or genome_change.strip() == "":
+# ── ClinVar disease names ─────────────────────────────────────────────────────
+# CLNDN is the field that answers "pathogenic for *what*". It arrives with spaces
+# replaced by underscores and terms joined by commas, while the terms themselves
+# contain commas ("Encephalopathy,_acute,_infection-induced,_susceptibility_to,_4").
+# A separator comma is therefore one *not* followed by an underscore.
+
+_DISEASE_NOISE = {
+    "not provided", "not specified", "not_provided", "not_specified",
+    "inborn genetic diseases", "see cases", "none provided",
+    "human phenotype ontology", "association", "other",
+}
+# Terms that name a disease rather than a symptom or an umbrella label. Used only to
+# choose which of several ClinVar terms to show first; nothing is discarded.
+_DISEASE_HINT = re.compile(
+    r"deficien|syndrome|disease|disorder|dystroph|anemi|anaemi|carcinom|cancer|"
+    r"neoplas|tumor|tumour|myopath|neuropath|atroph|dysplas|malformation", re.I)
+
+
+def disease_terms(value):
+    """CLNDN to a de-duplicated list of readable disease names, best-first."""
+    if not value or str(value) in (".", "nan", "None"):
+        return []
+    terms, seen = [], set()
+    for raw in re.split(r",(?!_)", str(value)):
+        term = raw.replace("_", " ").strip().strip(",").strip()
+        key = term.lower()
+        if not term or key in _DISEASE_NOISE or key in seen:
+            continue
+        if key.startswith("abnormality of"):      # generic HPO parent terms
+            continue
+        seen.add(key)
+        terms.append(term)
+    # A named disease beats a presenting sign ("Rhabdomyolysis" is true of the CPT2
+    # variant, but "carnitine palmitoyltransferase II deficiency" is what it *is*).
+    # Within that preference the shortest term is the least qualified one.
+    named = [t for t in terms if _DISEASE_HINT.search(t)]
+    if named:
+        best = min(named, key=len)
+        terms = [best] + [t for t in terms if t != best]
+    return terms
+
+
+def disease_label(value, limit=90):
+    terms = disease_terms(value)
+    if not terms:
         return ""
-    gc = re.sub(r"^g\.", "", genome_change.strip())
-    m  = re.match(r"chr([^:]+):", gc)
-    if not m:
+    label = terms[0]
+    if len(label) > limit:
+        label = label[:limit - 1].rstrip() + "…"
+    if len(terms) > 1:
+        label += f"  +{len(terms) - 1} more"
+    return label
+
+
+# ── review set ────────────────────────────────────────────────────────────────
+# ClinVar classes a variant may hold and still be worth reviewing. Benign and likely
+# benign are excluded outright: ClinVar having looked at a variant and called it benign
+# is a reason to stop, not a reason to read on. NC stays because "ClinVar has never
+# seen it" is the commonest state of a genuinely novel finding.
+REVIEWABLE_CLINVAR = ("P", "LP", "VUS", "NC")
+
+
+def review_flags(df):
+    """Return a list of 0/1 per row: is this variant in the default review view?
+
+    Definition: rare (MAX_AF < 1%, absent counts as rare) AND protein-affecting AND
+    not called benign or likely benign by ClinVar.
+
+    The ClinVar test used to be an *alternative* to the consequence test rather than a
+    filter over it, so a variant ClinVar had called benign still entered the set on the
+    strength of its consequence: 98 of patient 5510's 529 were B or LB. Making it a
+    filter drops those and costs nothing — measured across four exomes, no ClinVar P or
+    LP variant is lost, because every one of them is protein-affecting anyway.
+
+    Measured on four clinical exomes this yields 374-767 variants out of 65,000-73,000.
+    The intent is the set a reviewer actually works through, not a claim that nothing
+    else matters, which is why the full set stays in the document and one control away.
+    """
+    af = df["MAX_AF"] if "MAX_AF" in df.columns else pd.Series([""] * len(df))
+    sig = df["encoded_CLNSIG"] if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
+    csq = df["Consequence"] if "Consequence" in df.columns else pd.Series([""] * len(df))
+
+    af_num = pd.to_numeric(af, errors="coerce")
+    rare = af_num.isna() | (af_num < 0.01)
+
+    reviewable = sig.fillna("").map(
+        lambda v: style.clinvar_chip(v)[1] in REVIEWABLE_CLINVAR)
+    coding = csq.fillna("").map(style.is_protein_affecting)
+
+    flags = (rare & reviewable & coding).astype(int).tolist()
+    print(f"  Review set: {sum(flags):,} of {len(flags):,} variants", file=sys.stderr)
+    return flags
+
+
+# The four reasons a variant is worth a second look, in the order a reviewer wants
+# them. One definition drives three things: the blocks on the overview, the filter
+# the table opens under when a block is clicked, and the label of that filter.
+GROUPS = [
+    ("flagged",    "ClinVar pathogenic",
+     "pathogenic or likely pathogenic in ClinVar"),
+    ("lof",        "Loss of function in an established disease gene",
+     "a high-impact change in a gene ClinGen ties to a disease with definitive or "
+     "strong evidence"),
+    ("biallelic",  "Homozygous or hemizygous",
+     "no wild-type allele was called in this sample, which is what a recessive "
+     "diagnosis needs"),
+    ("escalated",  "ClinVar VUS, ReNOVo pathogenic",
+     "uncertain to ClinVar, called pathogenic by MuSA"),
+    ("novel",      "Not classified by ClinVar",
+     "ReNOVo calls these pathogenic and ClinVar has never seen them"),
+    ("contested",  "Calls contradict",
+     "ClinVar and ReNOVo point in opposite directions"),
+]
+
+# GATK writes the call into the INFO string. AC of AN allele copies: equal means no
+# reference allele was called, which is the single most decisive fact about a
+# candidate in a recessive case and was previously buried mid-way through a
+# 150-character run-on field.
+_AC = re.compile(r"(?:^|;)AC=([\d.]+)")
+_AN = re.compile(r"(?:^|;)AN=([\d.]+)")
+
+
+def zygosity(value):
+    if not value or str(value) in (".", "nan"):
         return ""
-    chrom = m.group(1)
-
-    snv = re.search(r":([0-9]+)([ACGT])>([ACGT])$", gc)
-    if snv:
-        pos, ref, alt = snv.group(1), snv.group(2), snv.group(3)
-        return (f"https://franklin.genoox.com/clinical-db/variant/snp/"
-                f"chr{chrom}-{pos}-{ref}-{alt}-hg38")
-
-    ins = re.search(r":([0-9]+)_[0-9]+ins([ACGT]+)$", gc)
-    if ins:
-        pos, ins_seq = ins.group(1), ins.group(2)
-        ref_m = re.search(r":([ACGT])_", gc)
-        ref   = ref_m.group(1) if ref_m else "N"
-        return (f"https://franklin.genoox.com/clinical-db/variant/snp/"
-                f"chr{chrom}-{pos}-{ref}-{ref+ins_seq}-hg38")
-
-    del_m = re.search(r":([0-9]+)_[0-9]+del([ACGT]*)$", gc)
-    if del_m:
-        pos, del_seq = del_m.group(1), del_m.group(2)
-        ref = del_seq if del_seq else "N"
-        alt = ref[0] if ref else "N"
-        return (f"https://franklin.genoox.com/clinical-db/variant/snp/"
-                f"chr{chrom}-{pos}-{ref}-{alt}-hg38")
-
-    return ""
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  DATA PREPARATION
-#
-#  Returns:
-#    df_display   -- renamed, subsetted DataFrame for the HTML table
-#    main_display -- ordered list of display-name column headers (main table)
-#    det_display  -- ordered list of display-name column headers (child rows)
-#
-#  Design: plots and stats are generated separately from df_raw using original
-#  MAF column names, so they are completely independent of the display selection.
-# ══════════════════════════════════════════════════════════════════════════════
-def prepare_display_data(df: pd.DataFrame, offline: bool, use_vep_plugins: bool):
-    cfg = COLUMN_CONFIG
-    dn  = cfg["display_names"]
-
-    main_src = list(cfg["main"]["offline"] if offline else cfg["main"]["online"])
-    det_src  = list(cfg["details"]["with_plugins"] if use_vep_plugins
-                    else cfg["details"]["without_plugins"])
-
-    # Franklin is computed below; exclude it from the MAF column existence check
-    franklin_requested = "Franklin" in main_src
-    main_src_maf = [c for c in main_src if c != "Franklin" and c in df.columns]
-    det_src      = [c for c in det_src if c in df.columns]
-
-    # Work on a copy with NAs filled as empty strings
-    df = df.copy().fillna("")
-    # Normalize HGVSp_VEP: take first transcript if multiple (semicolon-separated)
-    if "HGVSp_VEP" in df.columns:
-        df["HGVSp_VEP"] = df["HGVSp_VEP"].apply(
-            lambda x: x.split(";")[0] if x else x
-        )
-    # Compute Franklin URL from genome_change (original column name)
-    if "genome_change" in df.columns and franklin_requested:
-        df["Franklin"] = df["genome_change"].apply(make_franklin_url)
-        main_src_final = main_src_maf + ["Franklin"]
-    else:
-        main_src_final = main_src_maf
-
-    # Build the display subset in the configured column order
-    all_src = main_src_final + [c for c in det_src if c not in main_src_final]
-    subset  = df[[c for c in all_src if c in df.columns]].copy()
-
-    # Rename columns to pretty display names
-    rename_map = {col: dn.get(col, col.replace("_", " ")) for col in subset.columns}
-    subset.rename(columns=rename_map, inplace=True)
-
-
-    # Build ordered header lists for the table builder
-    main_display = [rename_map[c] for c in main_src_final if c in rename_map]
-    det_display  = [rename_map[c] for c in det_src        if c in rename_map]
-
-    return subset, main_display, det_display
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  CELL RENDERING  (HTML badges / links for specific display columns)
-# ══════════════════════════════════════════════════════════════════════════════
-def _render_max_af(val: str) -> str:
-    if not val:
-        return '<span class="af-badge private">Private</span>'
+    ac, an = _AC.search(str(value)), _AN.search(str(value))
+    if not ac or not an:
+        return ""
     try:
-        f = float(val)
-        if f > 0.05:
-            return f'<span class="af-badge common">Common ({val})</span>'
-        return f'<span class="af-badge rare">Rare ({val})</span>'
+        ac, an = float(ac.group(1)), float(an.group(1))
     except ValueError:
-        return val
-
-
-def _render_acmg(val) -> str:
-    try:
-        f = float(val)
-    except (TypeError, ValueError):
-        return '<span class="acmg-badge vus">VUS</span>'
-    if   f <= -7: cls, lbl = "benign",            f"B ({f:.2f})"
-    elif f <= -1: cls, lbl = "likely-benign",     f"LB ({f:.2f})"
-    elif f <=  5: cls, lbl = "vus",               f"VUS ({f:.2f})"
-    elif f <=  9: cls, lbl = "likely-pathogenic", f"LP ({f:.2f})"
-    else:         cls, lbl = "pathogenic",        f"P ({f:.2f})"
-    return f'<span class="acmg-badge {cls}">{lbl}</span>'
-
-
-def _render_clinvar(val: str) -> str:
-    if not val:
         return ""
-    vl = val.lower()
-    if "pathogenic" in vl and "likely" not in vl and "benign" not in vl:
-        cls, label = "cv-pathogenic", "P"
-    elif "likely_pathogenic" in vl or "likely pathogenic" in vl:
-        cls, label = "cv-likely-pathogenic", "LP"
-    elif "benign" in vl and "likely" not in vl and "pathogenic" not in vl:
-        cls, label = "cv-benign", "B"
-    elif "likely_benign" in vl or "likely benign" in vl:
-        cls, label = "cv-likely-benign", "LB"
-    elif "uncertain" in vl or "vus" in vl:
-        cls, label = "cv-vus", "VUS"
-    elif "not classified" in vl:
-        cls, label = "cv-notclassified", "NC"
-    else:
-        cls, label = "cv-other", val  # fallback: show raw
-    return f'<span class="cv-badge {cls}">{label}</span>'
-
-
-def _render_pubmed(val: str) -> str:
-    if not val:
+    if an <= 0:
         return ""
-    ids   = [x.strip() for x in str(val).split(",") if x.strip()]
-    links = [
-        f'<a class="pubmed-link" href="https://pubmed.ncbi.nlm.nih.gov/{i}/" '
-        f'target="_blank">{i}</a>'
-        for i in ids
-    ]
-    return ", ".join(links)
+    if an == 1:
+        return "hemizygous"
+    return "homozygous" if ac >= an else "heterozygous"
 
 
-def _render_franklin(val: str) -> str:
-    if not val:
-        return ""
-    return (f'<a class="franklin-link" href="{val}" target="_blank" '
-            f'rel="noopener noreferrer">Link Franklin</a>')
+# ── payload ───────────────────────────────────────────────────────────────────
+def build_payload(df, main_cols, detail_cols, flags, prio, groups):
+    """Columnar, per-column dictionary-encoded JSON.
 
-
-def _render_omim(val: str) -> str:
-    if not val:
-        return ""
-
-    ids = [x.strip() for x in str(val).split(",") if x.strip()]
-    links = [
-        f'<a class="omim-link" '
-        f'href="https://www.omim.org/entry/{i}?search={i}&highlight={i}" '
-        f'target="_blank" rel="noopener noreferrer">{i}</a>'
-        for i in ids
-    ]
-    return ", ".join(links)
-
-def _render_clinvar_id(val: str) -> str:
-    if not val:
-        return ""
-
-    ids = [x.strip() for x in str(val).split(",") if x.strip()]
-    links = [
-        f'<a class="omim-link" '
-        f'href="https://www.ncbi.nlm.nih.gov/clinvar/variation/{i}?term={i}&%5BVariation+ID%5D" '
-        f'target="_blank" rel="noopener noreferrer">{i}</a>'
-        for i in ids
-    ]
-    return ", ".join(links)
-
-def _render_vc(val: str) -> str:
-    if not val:
-        return ""
-    color = VC_COLOURS.get(val, THEME["border2"])
-    return (f'<span class="vc-badge" style="border-color:{color};color:{color};">'
-            f'{val.replace("_", " ")}</span>')
-
-
-def _render_phenotype(val: str) -> str:
-    if not val:
-        return ""
-    items = [i.strip().replace("_", " ") for i in val.split(",") if i.strip()]
-    return ", ".join(dict.fromkeys(items))   # deduplicate, preserve order
-
-
-_PHENOTYPE_DISPLAY = {"Mouse phenotype", "Rat phenotype"}
-
-
-def _cell_html(col: str, val) -> str:
-    """Convert a raw cell value to its rendered HTML string.
-    col is the DISPLAY name (after renaming).
-    For 'MuSA class' returns a (sort_key, html) tuple so the caller
-    can emit  <td data-order="sort_key">html</td>  for correct numeric sorting."""
-    s = "" if (pd.isna(val) or str(val) in ("nan", "None", "")) else str(val)
-    if col == "max AF":           return _render_max_af(s)
-    if col == "MuSA class":
-        html = _render_acmg(s)
-        try:
-            sort_key = float(s)
-        except (ValueError, TypeError):
-            sort_key = -999.0   # put unparseable values at the bottom
-        return (sort_key, html)
-    if col == "Clinvar class":    return _render_clinvar(s)
-    if col == "PUBMED":           return _render_pubmed(s)
-    if col == "Franklin":         return _render_franklin(s)
-    if col == "OMIM":             return _render_omim(s)
-    if col == "Clinvar ID":       return _render_clinvar_id(s)
-    if col == "type":             return _render_vc(s)
-    if col in _PHENOTYPE_DISPLAY: return _render_phenotype(s)
-    return s
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  TABLE HTML  (DataTables.js, dark-themed)
-# ══════════════════════════════════════════════════════════════════════════════
-def build_table_html(df: pd.DataFrame, main_cols: list, det_cols: list) -> str:
+    Row-oriented JSON for a 68k exome is 66 MB; this is 26 MB, and it stays plain JSON that any
+    browser can parse and any text editor can grep. Compression was considered and rejected: it
+    would need either DecompressionStream (too new for some institutional browsers) or a vendored
+    decompressor, and the DOM node count was the real cost, not the bytes.
     """
-    Build a self-contained <table> + <script> block.
-    df must already be renamed to display names.
-    main_cols / det_cols are ordered lists of DISPLAY names.
+    cols = [c for c, _, _ in main_cols] + [c for c, _ in detail_cols]
+    data = {}
+    for col in cols:
+        values = df[col].fillna(".").astype(str).tolist() if col in df.columns else ["."] * len(df)
+        uniq = sorted(set(values))
+        if len(uniq) <= len(values) / 3:
+            index = {v: i for i, v in enumerate(uniq)}
+            data[col] = {"d": uniq, "i": [index[v] for v in values]}
+        else:
+            data[col] = {"v": values}
+    return {
+        "n": len(df),
+        "main": [{"k": k, "label": lbl, "kind": kind} for k, lbl, kind in main_cols],
+        "detail": [{"k": k, "label": lbl} for k, lbl in detail_cols],
+        "data": data,
+        "review": flags,
+        "prio": prio,
+        "groups": groups,
+        "sections": [{"name": n, "keys": ks} for n, ks in DETAIL_SECTIONS],
+    }
+
+
+# Clinical priority ordering. The table sorts on this by default: a reviewer opening
+# the report should land on the ClinVar pathogenic calls, not on alphabetical genes.
+# Conflicting shares the VUS chip but outranks it here: submitters disagreeing about a
+# variant is a stronger reason to look than nobody having decided.
+SIG_RANK = {"P": 6, "LP": 5, "VUS": 3, "LB": 2, "B": 1, "NC": 0}
+CONFLICT_RANK = 4
+
+# ReNOVo's own codes, on the same five-step scale. "MuSA calls it pathogenic" means a
+# high- or intermediate-confidence pathogenic call; a low-confidence call in either
+# direction reads as VUS and is not treated as a call.
+RENOVO_PATHOGENIC = ("P", "LP")
+RENOVO_BENIGN = ("B", "LB")
+
+
+def _clinvar_rank(value):
+    return CONFLICT_RANK if style.is_conflicting(value) else SIG_RANK.get(
+        style.clinvar_chip(value)[1], 0)
+
+
+def priority_scores(df):
+    """Per-row sort key: ClinVar rank first, then ReNOVo's, then rarity.
+
+    Encoded as one number so the JS sorts on a plain array:
+        clinvar_rank * 1000  +  renovo_rank * 100  +  rarity_bonus
     """
-    main_cols = [c for c in main_cols if c in df.columns]
-    det_cols  = [c for c in det_cols  if c in df.columns]
-    has_child = bool(det_cols)
+    sig = df["encoded_CLNSIG"] if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
+    rnv = df["RENOVO_Class"] if "RENOVO_Class" in df.columns else pd.Series([""] * len(df))
+    af = pd.to_numeric(df["MAX_AF"], errors="coerce") if "MAX_AF" in df.columns else pd.Series([None] * len(df))
 
-    # thead
-    expand_th = "<th></th>" if has_child else ""
-    th_html   = expand_th + "".join(f"<th>{c}</th>" for c in main_cols)
+    out = []
+    for s, r, a in zip(sig.fillna(""), rnv.fillna(""), af):
+        rare = 10 if (a != a or a is None) else (5 if a < 1e-4 else 0)   # a != a catches NaN
+        out.append(_clinvar_rank(s) * 1000
+                   + SIG_RANK.get(style.renovo_chip(r)[1], 0) * 100
+                   + rare)
+    return out
 
-    # tbody
-    rows_html = []
-    for _, row in df.iterrows():
-        cells = []
-        if has_child:
-            child_rows = "".join(
-                f"<tr><td class='det-label'>{c}</td>"
-                f"<td class='det-val'>{_cell_html(c, row.get(c, ''))}</td></tr>"
-                for c in det_cols
-            )
-            child_html = (
-                f"<table class='child-table'>"
-                f"<colgroup><col style='width:160px'><col></colgroup>"
-                f"{child_rows}</table>"
-            )
-            # Embed in data-attribute — escape double-quotes for HTML attribute context
-            child_attr = child_html.replace('"', "&quot;")
-            cells.append(f'<td class="expand-cell" data-child="{child_attr}">&#9654;</td>')
-        for col in main_cols:
-            rendered = _cell_html(col, row.get(col, ""))
-            if isinstance(rendered, tuple):
-                sort_key, html = rendered
-                cells.append(f'<td data-order="{sort_key}">{html}</td>')
-            else:
-                cells.append(f"<td>{rendered}</td>")
-        rows_html.append(f"<tr>{''.join(cells)}</tr>")
 
-    tbody_html = "\n".join(rows_html)
+def overview(df, flags):
+    """Everything the dashboard above the table needs, computed once in Python."""
+    idx = [i for i, f in enumerate(flags) if f]
+    sig = df["encoded_CLNSIG"].fillna("") if "encoded_CLNSIG" in df.columns else pd.Series([""] * len(df))
+    rnv = df["RENOVO_Class"].fillna("") if "RENOVO_Class" in df.columns else pd.Series([""] * len(df))
+    csq = df["Consequence"].fillna("") if "Consequence" in df.columns else pd.Series([""] * len(df))
+    af = pd.to_numeric(df["MAX_AF"], errors="coerce") if "MAX_AF" in df.columns else pd.Series([None] * len(df))
 
-    # Default sort: prefer "suggested classification" desc, then "Renovo score" desc
-    sort_idx = -1
-    for cand in ("MuSA class", "Renovo score"):
-        if cand in main_cols:
-            sort_idx = main_cols.index(cand) + (1 if has_child else 0)
-            break
-    sort_js    = f"[{sort_idx}, 'desc']" if sort_idx >= 0 else "[0, 'asc']"
-    no_sort_js = "{ orderable: false, targets: 0 }," if has_child else ""
+    cv = [style.clinvar_chip(sig.iloc[i])[1] for i in idx]
+    rn = [style.renovo_chip(rnv.iloc[i])[1] for i in idx]
+    P, B = RENOVO_PATHOGENIC, RENOVO_BENIGN
 
-    return f"""
-<table id="variantTable" class="display compact nowrap" style="width:100%">
-  <thead><tr>{th_html}</tr></thead>
-  <tbody>{tbody_html}</tbody>
-</table>
-<script>
-(function(){{
-  const table = new DataTable('#variantTable', {{
-    order: [{sort_js}],
-    pageLength: 5,
-    lengthMenu: [5, 10, 15, 25, 50],
-    scrollX: true,
-    autoWidth: false,
-    columnDefs: [
-      {{ targets: '_all', defaultContent: '' }},
-      {no_sort_js}
-    ],
-    language: {{
-      search: '',
-      searchPlaceholder: 'Search variants\u2026',
-      emptyTable: 'No variants match the current filter.',
-      paginate: {{ first: '\u00ab', last: '\u00bb', next: '\u203a', previous: '\u2039' }}
-    }}
-  }});
+    novel = [i for i, c, r in zip(idx, cv, rn) if c == "NC" and r in P]
+    # Both directions of disagreement, though only the first can currently fire: the
+    # review set no longer admits ClinVar B or LB (see REVIEWABLE_CLINVAR), so the
+    # second arm is empty unless that filter is widened again. Kept because the group
+    # means "the two classifiers disagree", not "ClinVar says pathogenic".
+    contested = [i for i, c, r in zip(idx, cv, rn)
+                 if (c in ("P", "LP") and r in B) or (c in ("B", "LB") and r in P)]
+    # Strictly P and LP. Conflicting is chipped VUS and stays with the uncertain
+    # variants, so this block means exactly what its title says.
+    flagged = [i for i, c in zip(idx, cv) if c in ("P", "LP")]
+    escalated = [i for i, c, r in zip(idx, cv, rn) if c == "VUS" and r in P]
 
-  document.querySelector('#variantTable tbody').addEventListener('click', function(e) {{
-    const td = e.target.closest('.expand-cell');
-    if (!td) return;
-    const tr  = td.closest('tr');
-    const row = table.row(tr);
-    if (row.child.isShown()) {{
-      row.child.hide();
-      td.innerHTML = '&#9654;';
-      tr.classList.remove('shown');
-    }} else {{
-      row.child(td.dataset.child).show();
-      td.innerHTML = '&#9660;';
-      tr.classList.add('shown');
-    }}
-  }});
-}})();
-</script>
+    # Two groups that come from the variant and the gene rather than from either
+    # classifier, so they surface candidates no classifier has flagged yet.
+    impact = df["IMPACT"].fillna("") if "IMPACT" in df.columns else pd.Series([""] * len(df))
+    valid = (df["ClinGen_GeneDisease_Classification"].fillna("")
+             if "ClinGen_GeneDisease_Classification" in df.columns
+             else pd.Series([""] * len(df)))
+    info = (df["bioinfo_params"].fillna("") if "bioinfo_params" in df.columns
+            else pd.Series([""] * len(df)))
+
+    lof = [i for i in idx
+           if str(impact.iloc[i]).upper() == "HIGH"
+           and str(valid.iloc[i]).strip().lower() in ("definitive", "strong")]
+    biallelic = [i for i in idx
+                 if zygosity(info.iloc[i]) in ("homozygous", "hemizygous")]
+
+    bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
+    unobserved = []
+    for i in idx:
+        a = af.iloc[i]
+        if a != a or a is None:
+            bands["not observed"] += 1
+            unobserved.append(i)
+        elif a < 1e-4:
+            bands["under 0.01%"] += 1
+        elif a < 1e-3:
+            bands["0.01% to 0.1%"] += 1
+        else:
+            bands["0.1% to 1%"] += 1
+
+    return {
+        "unobserved": unobserved,
+        "lof": lof,
+        "biallelic": biallelic,
+        "novel": novel,
+        "contested": contested,
+        "flagged": flagged,
+        "escalated": escalated,
+        "bands": bands,
+        "n_review": len(idx),
+    }
+
+
+def summarise(df, flags):
+    """Counts for the header band, all of them over the **review set**.
+
+    The header used to count every annotated variant while the findings blocks below
+    counted the review set, so the page could show "P 3" directly above "ClinVar
+    flagged 2". Both numbers were true and the pair was still a contradiction on
+    screen. One denominator now, stated once.
+    """
+    idx = [i for i, f in enumerate(flags) if f]
+    sig = (df["encoded_CLNSIG"].fillna("") if "encoded_CLNSIG" in df.columns
+           else pd.Series([""] * len(df)))
+    rnv = (df["RENOVO_Class"].fillna("") if "RENOVO_Class" in df.columns
+           else pd.Series([""] * len(df)))
+
+    cv, rn = {}, {}
+    conflicting = 0
+    for i in idx:
+        code = style.clinvar_chip(sig.iloc[i])[1]
+        cv[code] = cv.get(code, 0) + 1
+        if style.is_conflicting(sig.iloc[i]):
+            conflicting += 1
+        code = style.renovo_chip(rnv.iloc[i])[1]
+        rn[code] = rn.get(code, 0) + 1
+
+    keys = style.SIG_SCALE + ["NC"]
+    return {
+        "total": len(df),
+        "review": len(idx),
+        "clinvar": {k: cv.get(k, 0) for k in keys},
+        "renovo": {k: rn.get(k, 0) for k in keys},
+        "conflicting": conflicting,
+    }
+
+
+# ── page CSS ──────────────────────────────────────────────────────────────────
+PAGE_CSS = """
+[hidden] { display: none !important; }
+
+/* What follows the reader down the page is the case, not the software. The masthead
+   says "MuSA v1.1.0", which is worth reading once; the band says which patient, which
+   review set, and what was found in it, which is worth having at every scroll
+   position. Sticky band, static masthead -- and the print override that undoes both
+   for the printer -- are shared defaults in musa_report_style.BAND_CSS along with the
+   grid base, the hero figure and the .key boxes; what's here is specific to this page:
+   the three-column layout and the case/HPO/findings-index content that fills it. */
+
+/* ── inked band ───────────────────────────────────────────────────────────── */
+/* Three columns: the case on the left, what was found in it in the middle, an index
+   into it on the right. Every count in here is over the review set, so nothing in the
+   band can contradict the findings below it. The case identity used to sit in the
+   masthead beside the logo, which is the wrong place for it — the masthead identifies
+   the software, the band identifies the patient. */
+.band {
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.5fr) minmax(0, 0.85fr);
+}
+/* stretch, not start: the two rules are the division between the three blocks, and a
+   rule that stops short of the block beside it reads as a rendering accident. */
+.band-case, .band-stats {
+  border-right: 1px solid var(--band-line); padding-right: 2rem;
+}
+.case-id {
+  font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
+  letter-spacing: -0.01em; margin-bottom: 0.6rem;
+}
+.case-meta {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.9rem; font-size: var(--step--1);
+}
+.case-meta dt { color: var(--band-muted); }
+.case-meta dd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* HPO terms are the reason this case is being read at all, so they belong beside the
+   patient rather than nowhere. Offline the report has the identifiers but not their
+   names, so each one links out to the term. */
+.case-hpo { margin-top: 0.9rem; }
+.case-hpo-label {
+  display: block; font-size: var(--step--1); color: var(--band-muted);
+  margin-bottom: 0.35rem;
+}
+.case-hpo-terms { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.case-hpo-terms a {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  color: var(--band-link); text-decoration: none;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--band-line); border-radius: 3px;
+}
+.case-hpo-terms a:hover { border-color: var(--band-link); }
+.case-hpo-none { font-size: var(--step--1); color: var(--band-muted); font-style: italic; }
+
+/* Three rows: the figure and the two scales share the first, the middle one is the
+   slack that makes this block as tall as the two beside it, and the provenance sits on
+   the baseline of the band. */
+.band-stats {
+  display: grid; gap: 1.25rem 2.5rem; align-items: center;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+/* Which release of VEP and which weekly ClinVar produced these calls. It belongs with
+   the counts rather than in the case block: it qualifies the numbers directly above
+   it, and a classification is only as current as the database it came from. */
+.band-versions {
+  grid-column: 1 / -1; grid-row: 3; align-self: end;
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.15rem 0.9rem;
+  padding-top: 1rem; border-top: 1px solid var(--band-line);
+  font-size: var(--step--1);
+}
+.band-versions dt { color: var(--band-muted); }
+.band-versions dd {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+}
+
+/* ── findings index ───────────────────────────────────────────────────────── */
+/* The blocks below, listed with their counts, as the way into them. It answers
+   "what did this case turn up, and how much of it" before a single row is read, and
+   it saves scrolling past four blocks to reach the fifth. */
+.band-index { display: grid; gap: 0.1rem; align-content: start; }
+.band-index-label {
+  font-size: var(--step--1); color: var(--band-muted);
+  margin-bottom: 0.35rem;
+}
+.index-item {
+  display: grid; grid-template-columns: 3.5ch minmax(0, 1fr);
+  align-items: baseline; gap: 0.6rem; width: 100%;
+  padding: 0.28rem 0.4rem; margin-left: -0.4rem;
+  background: none; border: 0; border-radius: var(--radius);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+.index-item:hover { background: oklch(1 0 0 / 0.07); }
+.index-item:hover .index-title { text-decoration: underline; }
+.index-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-1); font-weight: 700; text-align: right;
+}
+.index-item[data-tone="p"]   .index-n { color: var(--sig-p-lift); }
+.index-item[data-tone="lp"]  .index-n { color: var(--sig-lp-lift); }
+.index-item[data-tone="acc"] .index-n { color: var(--band-link); }
+.index-title { font-size: var(--step--1); text-wrap: pretty; }
+.band-index-none { font-size: var(--step--1); color: var(--band-muted); font-style: italic; }
+
+.band-scales { display: grid; gap: 1rem; }
+.scale-head {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+.scale-name {
+  font-size: var(--step-0); font-weight: 600; letter-spacing: 0.01em;
+}
+.scale-meta { font-size: var(--step--1); color: var(--band-muted); }
+
+/* .key itself (the bordered per-class box) is shared -- see musa_report_style.BAND_CSS. */
+.scale-keys { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+
+/* ── overview ─────────────────────────────────────────────────────────────── */
+/* Findings on the left, the selected variant's evidence on the right. A reader
+   triaging candidates has to see the list and one variant at the same time; a
+   dialog covers exactly the thing being compared against. */
+.overview {
+  display: grid; align-items: start; gap: 2rem 2.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  max-width: 1620px; margin-inline: auto;
+  padding: 1.75rem 1.5rem 2.5rem;
+  background: var(--surface);
+}
+/* Sticky under a sticky band: the offset has to be the band's real height or the
+   variant's name and its classification chips sit behind it, which is the half of the
+   panel that says whether this variant is worth the read. */
+.ov-detail {
+  position: sticky; top: calc(var(--band-h) + 1rem);
+  max-height: calc(100vh - var(--band-h) - 2rem); overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 1rem 1.15rem 1.25rem;
+  background: var(--surface);
+}
+/* ── priority findings ────────────────────────────────────────────────────── */
+/* Each block is its own bounded object. They were separated only by a hairline and a
+   gap, which left five lists reading as one long list; a reader could not see where
+   one reason to look ended and the next began. */
+/* No top margin: .priority is .ov-main's first child, and .ov-main sits beside
+   .ov-detail in the same grid row. Any margin here pushed the first block down while
+   the evidence panel started flush, so the two never lined up at the top. */
+.priority { display: flex; flex-direction: column; gap: 1.75rem; }
+.priority-group {
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--surface); overflow: hidden;
+  /* The band is sticky, so a block jumped to from the index would otherwise land with
+     its header underneath it. */
+  scroll-margin-top: calc(var(--band-h) + 1rem);
+}
+.priority-head {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 0.65rem; width: 100%;
+  padding: 0.75rem 1rem 0.75rem 0.65rem;
+  background: var(--surface-sunken);
+  border: 0; border-bottom: 1px solid var(--border);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.priority-head:hover { background: var(--accent-weak); }
+.priority-head:hover .priority-open { text-decoration: underline; }
+.priority-n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step-4); font-weight: 700; line-height: 1;
+  min-width: 2.4ch; text-align: right; letter-spacing: -0.02em;
+}
+.priority-group[data-tone="p"]   .priority-n { color: var(--sig-p); }
+.priority-group[data-tone="lp"]  .priority-n { color: var(--sig-lp); }
+.priority-group[data-tone="acc"] .priority-n { color: var(--accent); }
+.priority-title {
+  font-family: var(--font-display);
+  font-size: var(--step-2); font-weight: 600; letter-spacing: -0.01em;
+  line-height: 1.2; text-wrap: balance;
+}
+.priority-open {
+  font-size: var(--step--1); color: var(--accent); white-space: nowrap;
+}
+.priority-why {
+  font-size: var(--step--1); color: var(--ink-muted);
+  padding: 0.6rem 1rem 0; text-wrap: pretty;
+}
+/* Gene and disease are the headline of the row, on one line and at reading size:
+   "CPT2 p.Ser113Leu P" never says what the variant is pathogenic *for*, and that is
+   what decides whether it bears on the case. The coordinates drop to a second line
+   as the supporting detail they are. */
+.finding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline; gap: 0.2rem 0.75rem; width: 100%;
+  padding: 0.6rem 1rem;
+  background: none; border: 0;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.finding + .finding { border-top: 1px solid var(--border); }
+.finding:first-of-type { border-top: 1px solid var(--border); margin-top: 0.6rem; }
+.finding:hover { background: var(--surface-sunken); }
+.finding[aria-current="true"] {
+  background: var(--accent-weak);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+/* The triage signals that decide whether a row is worth opening: impact, zygosity,
+   absence from gnomAD, the gene's established relationship. Reading them off the
+   list is the whole point of the list. */
+.finding-tags {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.2rem 0.5rem;
+  font-size: var(--step--1); color: var(--ink-muted);
+}
+.finding-tags .tag { white-space: nowrap; }
+.finding-tags .tag.on { color: var(--sig-p); font-weight: 600; }
+.finding-tags .tag.gene { color: var(--ink); }
+.finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.finding-gene {
+  font-size: var(--step-1); font-weight: 700; letter-spacing: -0.005em;
+  white-space: nowrap;
+}
+.finding-disease { font-size: var(--step-0); color: var(--ink); text-wrap: pretty; }
+.finding-disease.absent { color: var(--ink-muted); font-style: italic; }
+.finding-more { color: var(--ink-muted); font-style: normal; }
+.finding-change {
+  grid-column: 1 / -1;
+  font-family: var(--font-mono); font-size: var(--step--1); color: var(--ink-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.priority-more {
+  font-size: var(--step--1); color: var(--ink-muted);
+  padding: 0.6rem 1rem; background: var(--surface-sunken);
+  border-top: 1px solid var(--border);
+}
+.priority-none { font-size: var(--step-0); color: var(--ink-muted); margin-top: 1rem; }
+.ov-actions { margin-top: 1.75rem; }
+
+/* ── control bar ──────────────────────────────────────────────────────────── */
+.controls {
+  /* Under the band, never over it: same sticky layer, and the control bar comes later
+     in the document, so it needs the lower index explicitly. */
+  position: sticky; top: var(--band-h); z-index: calc(var(--z-sticky) - 1);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem;
+  padding: 0.6rem 1.5rem;
+  background: var(--surface-sunken);
+  border-bottom: 1px solid var(--border);
+}
+.controls-group { display: flex; align-items: center; gap: 0.35rem; }
+.controls-sep { width: 1px; height: 20px; background: var(--border-strong); }
+#search { min-width: 260px; }
+/* The active group filter is a removable object, not a mode you have to remember
+   you are in: it names itself and carries the control that clears it. */
+#filterChip {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.2rem 0.3rem 0.2rem 0.6rem;
+  font-size: var(--step--1);
+  background: var(--accent-weak); color: var(--accent);
+  border: 1px solid var(--accent-ring); border-radius: 999px;
+}
+#filterChip button {
+  font: inherit; line-height: 1; cursor: pointer; color: inherit;
+  background: none; border: 0; border-radius: 999px; padding: 0.15rem 0.35rem;
+}
+#filterChip button:hover { background: var(--surface); }
+
+.result-count {
+  margin-left: auto;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--step--1); color: var(--ink-muted);
+}
+
+/* ── table + panel ────────────────────────────────────────────────────────── */
+.workspace { display: flex; align-items: stretch; min-height: 0; }
+.table-region { flex: 1 1 auto; min-width: 0; }
+/* max-height rather than height: a filtered view of two rows should not leave two
+   thirds of a screen of empty table under it. The virtual scroller reads
+   clientHeight, which converges either way because the pad rows carry the real
+   height of the row set. */
+#scroller {
+  height: auto; max-height: calc(100vh - var(--band-h) - 6rem); min-height: 180px;
+  overflow: auto; background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+table.variants {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: var(--step-0);
+}
+table.variants thead th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface-sunken);
+  text-align: left; font-weight: 600; font-size: var(--step--1);
+  color: var(--ink-muted);
+  padding: 0.45rem 0.6rem; white-space: nowrap;
+  border-bottom: 1px solid var(--border-strong);
+  cursor: pointer; user-select: none;
+}
+table.variants thead th:hover { color: var(--ink); }
+table.variants thead th .sort-mark { opacity: 0.35; margin-left: 0.25rem; }
+table.variants thead th[aria-sort="ascending"],
+table.variants thead th[aria-sort="descending"] { color: var(--accent); }
+table.variants thead th[aria-sort] .sort-mark { opacity: 1; }
+#padTop td, #padBottom td { padding: 0; border: 0; }
+table.variants tbody td {
+  height: 30px; padding: 0 0.6rem; border-bottom: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch;
+}
+table.variants tbody td.col-gene { font-weight: 600; max-width: 14ch; }
+table.variants tbody td.col-mono,
+table.variants tbody td.col-af { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+table.variants tbody tr { cursor: pointer; }
+table.variants tbody tr:hover td { background: var(--surface-sunken); }
+table.variants tbody tr[aria-selected="true"] td {
+  background: var(--accent-weak);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.csq { font-size: var(--step--1); color: var(--ink-muted); }
+table.variants tbody td.col-af { text-align: right; }
+.af-value { color: var(--ink); }
+.af-absent {
+  font-family: var(--font-sans); font-style: italic;
+  color: var(--sig-p); font-size: var(--step--1);
+}
+.stars { color: var(--sig-vus); letter-spacing: 0.06em; }
+/* The hollow stars are aria-hidden decoration beside the spelled-out review status,
+   but they still have to be legible: --border-strong sat at 1.74:1. */
+.stars-empty { color: oklch(0.53 0.01 255); }
+.stars-note { color: var(--ink-muted); font-family: var(--font-sans); }
+
+/* ── variant detail ───────────────────────────────────────────────────────── */
+/* One block of markup, two homes: docked beside the table, where arrow keys walk
+   the list without the page reflowing, and inside the dialog the findings open. */
+.panel {
+  flex: 0 0 380px; max-width: 380px;
+  max-height: calc(100vh - var(--band-h) - 6rem); min-height: 180px;
+  overflow: auto; background: var(--surface); padding: 1rem 1.25rem;
+}
+.panel-empty { color: var(--ink-muted); font-size: var(--step-0); }
+.panel-empty kbd {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  padding: 0.05rem 0.3rem; border: 1px solid var(--border-strong);
+  border-radius: 3px; background: var(--surface-sunken);
+}
+.detail h3 {
+  font-family: var(--font-display); font-size: var(--step-3); font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+.detail-change {
+  font-family: var(--font-mono); font-size: var(--step-0); font-weight: 400;
+  color: var(--ink-muted);
+}
+
+/* The read of the evidence, above the evidence. Each line is one fact already
+   interpreted, so the reader is not left holding eight fields in their head. */
+.assess { list-style: none; display: grid; gap: 0.3rem; margin: 0.85rem 0 0.5rem; }
+.assess li {
+  position: relative; padding-left: 1.1rem;
+  font-size: var(--step-0); text-wrap: pretty;
+}
+.assess li::before {
+  content: "•"; position: absolute; left: 0.15rem;
+  color: var(--ink-muted); font-weight: 700;
+}
+.assess li.hit { font-weight: 600; }
+.assess li.hit::before  { content: "▸"; color: var(--sig-p); }
+.assess li.warn::before { content: "!"; color: var(--sig-lp); }
+
+.detail-sec { margin-top: 1.1rem; }
+.detail-sec h4 {
+  font-size: var(--step--1); font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--ink-muted);
+  padding-bottom: 0.25rem; margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.detail .refs { display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; }
+.detail a.ref {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  text-decoration: none; color: var(--accent);
+  border-bottom: 1px solid var(--accent-ring);
+}
+.detail a.ref:hover { border-bottom-width: 2px; }
+.detail details > summary { cursor: pointer; }
+.detail details[open] > summary { margin-bottom: 0.3rem; color: var(--ink-muted); }
+
+table.qual { border-collapse: collapse; width: 100%; }
+table.qual th {
+  text-align: left; font-weight: 400; color: var(--ink-muted);
+  font-family: var(--font-sans); padding: 0.1rem 0.6rem 0.1rem 0;
+  white-space: nowrap;
+}
+table.qual td {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0;
+}
+.panel-gdna {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  color: var(--ink-muted); word-break: break-all; margin-bottom: 0.75rem;
+}
+.panel-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 1rem; }
+.detail dl { display: grid; grid-template-columns: minmax(0,1fr); gap: 0.6rem; }
+.detail dt {
+  font-size: var(--step--1); color: var(--ink-muted); margin-bottom: 0.1rem;
+}
+.detail dd {
+  font-family: var(--font-mono); font-size: var(--step--1);
+  word-break: break-word; white-space: pre-wrap;
+}
+.detail dd.plain { font-family: var(--font-sans); }
+.detail dd.absent { font-family: var(--font-sans); color: var(--ink-muted); font-style: italic; }
+.panel-links { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 1rem; }
+.panel-links details { width: 100%; }
+.panel-links details summary {
+  font-size: var(--step--1); color: var(--ink-muted); cursor: pointer;
+}
+.panel-links a {
+  font-size: var(--step--1); padding: 0.25rem 0.55rem;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  text-decoration: none; color: var(--accent);
+}
+.panel-links a:hover { background: var(--accent-weak); }
+
+@media (max-width: 1100px) {
+  .workspace { flex-direction: column; }
+  .panel { flex: 1 1 auto; max-width: none; max-height: none; border-top: 1px solid var(--border); }
+  #scroller { max-height: 60vh; border-right: none; }
+  .overview { grid-template-columns: minmax(0, 1fr); }
+  .ov-detail { position: static; max-height: none; }
+}
+
+/* The band is worth keeping on screen only while it costs a band's height. Below this
+   width it wraps to two rows, and on a short screen it would take a third of the
+   viewport, so it goes back to scrolling with the page. JS reads the computed position
+   and zeroes --band-h, so everything measuring against it follows. */
+@media (max-width: 1280px), (max-height: 760px) {
+  .band { position: static; }
+}
+
+@media (max-width: 1280px) {
+  .band { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr); }
+  .band-stats { border-right: 0; padding-right: 0; }
+  .band-index { grid-column: 1 / -1; padding-top: 1.25rem; border-top: 1px solid var(--band-line); }
+}
+
+@media (max-width: 1000px) {
+  .band, .band-stats { grid-template-columns: minmax(0, 1fr); }
+  .band-case, .band-stats {
+    border-right: 0; padding-right: 0;
+    border-bottom: 1px solid var(--band-line); padding-bottom: 1.25rem;
+  }
+}
+
+@media print {
+  .no-print, #view-table { display: none !important; }
+  .priority-open { display: none; }
+  /* .band's print rule (static, colour-adjust exact) is shared -- see BAND_CSS. */
+  .ov-detail { position: static; max-height: none; }
+}
 """
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MATPLOTLIB PLOTS
-#
-#  IMPORTANT: all plot functions receive df_raw (original MAF column names).
-#  This decouples plot generation from the display column selection completely,
-#  so plots are always generated regardless of online/offline/plugin flags.
-# ══════════════════════════════════════════════════════════════════════════════
-def _fig_to_b64(fig) -> str:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight",
-                facecolor=fig.get_facecolor(), dpi=140)
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
+# ── page JS ───────────────────────────────────────────────────────────────────
+PAGE_JS = r"""
+(function () {
+  "use strict";
 
+  var P = window.__MUSA__;
+  var ROW_H = 30;          // must match the CSS row height for the scroller maths
+  var OVERSCAN = 8;
 
-def _apply_dark_style(ax, fig):
-    fig.patch.set_facecolor(THEME["surface"])
-    ax.set_facecolor(THEME["bg"])
-    ax.tick_params(colors=THEME["muted"], labelsize=8)
-    ax.xaxis.label.set_color(THEME["muted"])
-    ax.yaxis.label.set_color(THEME["muted"])
-    ax.title.set_color(THEME["text"])
-    for spine in ax.spines.values():
-        spine.set_edgecolor(THEME["border2"])
-        spine.set_linewidth(0.6)
+  // Dictionary-encoded columns are expanded lazily, once, on first access.
+  var cache = {};
+  function col(key) {
+    if (cache[key]) return cache[key];
+    var c = P.data[key];
+    if (!c) { cache[key] = []; return cache[key]; }
+    cache[key] = c.v ? c.v : c.i.map(function (i) { return c.d[i]; });
+    return cache[key];
+  }
 
+  function absent(v) { return !v || v === "." || v === "nan" || v === "None"; }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
 
-def plot_vc_distribution(df_raw: pd.DataFrame) -> str:
-    """Horizontal bar chart using Consequence (original MAF name)."""
-    col = "Consequence"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    counts = (
-        df_raw[col]
-        .replace("", np.nan)
-        .dropna()
-        .str.split("&")
-        .str[0]
-        .value_counts()
-    )
-    if counts.empty:
-        return ""
+  // ── renderers, mirroring musa_report_style.py so labels and colours agree ──
+  function clinvarChip(v) {
+    var s = (v || "").toLowerCase(), cls = "sig-nc", code = "NC", note = "not classified";
+    if (absent(v)) { /* defaults */ }
+    else if (s.indexOf("conflict") >= 0) { cls = "sig-vus"; code = "VUS"; note = "conflicting interpretations"; }
+    else if (s.indexOf("likely") >= 0 && s.indexOf("patho") >= 0) { cls = "sig-lp"; code = "LP"; note = "likely pathogenic"; }
+    else if (s.indexOf("likely") >= 0 && s.indexOf("benign") >= 0) { cls = "sig-lb"; code = "LB"; note = "likely benign"; }
+    else if (s.indexOf("patho") >= 0) { cls = "sig-p"; code = "P"; note = "pathogenic"; }
+    else if (s.indexOf("benign") >= 0) { cls = "sig-b"; code = "B"; note = "benign"; }
+    else if (s.indexOf("vus") >= 0 || s.indexOf("uncertain") >= 0) { cls = "sig-vus"; code = "VUS"; note = "uncertain significance"; }
+    return { cls: cls, code: code, note: note };
+  }
 
-    fig, ax = plt.subplots(figsize=(8, max(3, len(counts) * 0.42)))
-    colours = [VC_COLOURS.get(c, THEME["accent"]) for c in counts.index]
-    bars = ax.barh(counts.index, counts.values, color=colours, height=0.65, edgecolor="none")
-    mx = counts.values.max()
-    for bar, val in zip(bars, counts.values):
-        ax.text(bar.get_width() + mx * 0.01, bar.get_y() + bar.get_height() / 2,
-                str(val), va="center", ha="left", color=THEME["muted"],
-                fontsize=7.5, fontfamily="monospace")
-    ax.set_xlabel("Count", fontsize=8)
-    ax.set_title("Variant Classification", fontsize=10, fontweight="600", pad=10)
-    ax.invert_yaxis()
-    ax.set_yticks(range(len(counts.index)))
-    ax.set_yticklabels([l.replace("_", " ") for l in counts.index], fontsize=8)
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    _apply_dark_style(ax, fig)
-    fig.tight_layout(pad=1.2)
-    return _fig_to_b64(fig)
+  // ReNOVo's six classes fold onto the same five-step scale ClinVar is read on, so a
+  // reader comparing the two columns is not translating between vocabularies. Mirrors
+  // RENOVO_SCALE in musa_report_style.py; the two must not drift.
+  var RENOVO_SCALE = {
+    "hp pathogenic": ["sig-p",   "P",   "ReNOVo pathogenic, high confidence"],
+    "ip pathogenic": ["sig-lp",  "LP",  "ReNOVo pathogenic, intermediate confidence"],
+    "lp pathogenic": ["sig-vus", "VUS", "ReNOVo pathogenic, low confidence"],
+    "lp benign":     ["sig-vus", "VUS", "ReNOVo benign, low confidence"],
+    "ip benign":     ["sig-lb",  "LB",  "ReNOVo benign, intermediate confidence"],
+    "hp benign":     ["sig-b",   "B",   "ReNOVo benign, high confidence"]
+  };
+  function renovoChip(v) {
+    if (absent(v)) return { cls: "sig-nc", code: "NC", note: "no ReNOVo call" };
+    var hit = RENOVO_SCALE[String(v).replace(/\s+/g, " ").trim().toLowerCase()];
+    if (!hit) return { cls: "sig-nc", code: v, note: v };
+    return { cls: hit[0], code: hit[1], note: hit[2] };
+  }
 
+  // Allele frequency reads as a figure, not a chip. In the review set every variant is
+  // rare by construction, so chipping the column produced a solid wall of warm colour
+  // that carried no information. Only absence from the population databases, which is
+  // the genuinely notable case, gets emphasis.
+  function afCell(v) {
+    if (absent(v)) return '<span class="af-absent">not observed</span>';
+    var f = parseFloat(v);
+    if (isNaN(f)) return esc(v);
+    var label = f < 1e-4 ? f.toExponential(1) : f.toPrecision(2);
+    return '<span class="af-value">' + esc(label) + "</span>";
+  }
 
-def plot_top_genes(df_raw: pd.DataFrame, n: int = 20) -> str:
-    """Horizontal bar chart using Hugo_Symbol (original MAF name)."""
-    col = "Hugo_Symbol"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    counts = df_raw[col].replace("", np.nan).dropna().value_counts().head(n)
-    if counts.empty:
-        return ""
+  // CLNDN answers "pathogenic for what". It arrives underscored, with terms joined by
+  // commas while the terms themselves contain commas ("Encephalopathy,_acute,_..."),
+  // so a separator comma is one not followed by an underscore. Mirrors
+  // disease_terms() in build_annotate_report.py.
+  var DISEASE_NOISE = {
+    "not provided": 1, "not specified": 1, "none provided": 1,
+    "inborn genetic diseases": 1, "see cases": 1, "human phenotype ontology": 1,
+    "association": 1, "other": 1
+  };
+  function diseaseList(v) {
+    if (absent(v)) return [];
+    var out = [], seen = {};
+    String(v).split(/,(?!_)/).forEach(function (t) {
+      t = t.replace(/_/g, " ").trim().replace(/,$/, "").trim();
+      var k = t.toLowerCase();
+      if (!t || seen[k] || DISEASE_NOISE[k]) return;
+      seen[k] = 1;
+      out.push(t);
+    });
+    return out;
+  }
 
-    fig, ax = plt.subplots(figsize=(9, max(3, len(counts) * 0.42)))
-    colours = [THEME["ok"] if i < 3 else THEME["accent"] for i in range(len(counts))]
-    bars = ax.barh(counts.index, counts.values, color=colours, height=0.65, edgecolor="none")
-    mx = counts.values.max()
-    for bar, val in zip(bars, counts.values):
-        ax.text(bar.get_width() + mx * 0.01, bar.get_y() + bar.get_height() / 2,
-                str(val), va="center", ha="left", color=THEME["muted"],
-                fontsize=7.5, fontfamily="monospace")
-    ax.set_xlabel("Variant count", fontsize=8)
-    ax.set_title(f"Top {n} Mutated Genes", fontsize=10, fontweight="600", pad=10)
-    ax.invert_yaxis()
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    _apply_dark_style(ax, fig)
-    fig.tight_layout(pad=1.2)
-    return _fig_to_b64(fig)
+  // Several consequences per variant: MuSA's MAF joins with ',', VEP's VCF with '&'.
+  function firstConsequence(v) {
+    if (absent(v)) return "—";
+    return String(v).split(/[,&]/)[0].replace(/_/g, " ");
+  }
 
+  var STARS = {
+    "0": "no assertion criteria provided",
+    "1": "criteria provided, single submitter",
+    "2": "criteria provided, multiple submitters, no conflicts",
+    "3": "reviewed by expert panel",
+    "4": "practice guideline"
+  };
+  function clinvarStars(v) {
+    var k = String(v).trim();
+    return STARS.hasOwnProperty(k) ? { n: parseInt(k, 10), text: STARS[k] } : null;
+  }
+  // encoded_CLNREVSTAT is a 0-4 gold-star rating. A bare "2" tells a reader nothing.
+  function starsHTML(v) {
+    if (!STARS.hasOwnProperty(String(v).trim())) return null;
+    var n = parseInt(v, 10);
+    return '<span class="stars" aria-hidden="true">' +
+           "★".repeat(n) + '<span class="stars-empty">' + "☆".repeat(4 - n) + "</span></span> " +
+           '<span class="stars-note">' + esc(STARS[String(v).trim()]) + "</span>";
+  }
 
-def plot_clinvar_pie(df_raw: pd.DataFrame) -> str:
-    """Donut chart using CLIN_SIG (original MAF name)."""
-    col = "encoded_CLNSIG"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    sig = df_raw[col].replace("", np.nan).dropna()
-    if sig.empty:
-        return ""
+  // src is set where the two chips sit side by side without a column heading to say
+  // which classifier produced which; inside the table the header already does that.
+  function chipHTML(c, src) {
+    return '<span class="chip ' + c.cls + '">' +
+           (src ? '<span class="chip-src">' + esc(src) + "</span>" : "") +
+           "<b>" + esc(c.code) + "</b>" +
+           '<span class="sr-only"> ' + esc(c.note) + "</span></span>";
+  }
 
-    counts = sig.value_counts()
-    colour_map = {
-        "pathogenic":             THEME["fail"],
-        "likely_pathogenic":      "#e87a5a",
-        "uncertain_significance": THEME["pend"],
-        "likely_benign":          "#3a8fad",
-        "benign":                 THEME["ok"],
-    }
-    colours = []
-    for idx in counts.index:
-        matched = THEME["border2"]
-        for k, v in colour_map.items():
-            if k in idx.lower():
-                matched = v
-                break
-        colours.append(matched)
+  // Franklin URLs are derived here rather than embedded: one URL per variant would
+  // add a 68,000-entry unique column to the payload for data we can recompute.
+  function franklinURL(gc) {
+    if (absent(gc)) return "";
+    var g = String(gc).replace(/^g\./, "");
+    var m = /^chr([^:]+):/.exec(g);
+    if (!m) return "";
+    var chrom = m[1], snv = /:([0-9]+)([ACGT])>([ACGT])$/.exec(g);
+    if (snv) return "https://franklin.genoox.com/clinical-db/variant/snp/chr" +
+                    chrom + "-" + snv[1] + "-" + snv[2] + "-" + snv[3] + "-hg38";
+    return "";
+  }
 
-    fig, ax = plt.subplots(figsize=(6.5, 5))
-    wedges, _, autotexts = ax.pie(
-        counts.values, labels=None, colors=colours, autopct="%1.1f%%",
-        startangle=90, pctdistance=0.78,
-        wedgeprops={"edgecolor": THEME["surface"], "linewidth": 2},
-    )
-    for at in autotexts:
-        at.set_color(THEME["text"])
-        at.set_fontsize(7.5)
-        at.set_fontfamily("monospace")
-    ax.add_patch(plt.Circle((0, 0), 0.55, fc=THEME["surface"]))
-    ax.legend(wedges, [l.replace("_", " ") for l in counts.index],
-              loc="center left", bbox_to_anchor=(1, 0.5),
-              fontsize=8, frameon=False, labelcolor=THEME["muted"])
-    ax.set_title("ClinVar Significance", fontsize=10, fontweight="600", pad=10,
-                 color=THEME["text"])
-    fig.patch.set_facecolor(THEME["surface"])
-    ax.set_facecolor(THEME["surface"])
-    fig.tight_layout(pad=1)
-    return _fig_to_b64(fig)
+  // ── state ────────────────────────────────────────────────────────────────
+  var view = "review";
+  var query = "";
+  var sortKey = "__prio", sortDir = -1;   // ClinVar pathogenic first, on open
+  var order = [];
+  var selected = -1;
+  // Non-null when the table was opened from a findings block: the table then shows
+  // exactly the variants behind that block and says so.
+  var groupKey = null, groupSet = null;
 
+  var SEARCH_KEYS = ["Hugo_Symbol", "genome_change", "HGVSc", "HGVSp_VEP"];
 
-def plot_acmg_histogram(df_raw: pd.DataFrame) -> str:
-    """Histogram using acmg_score (original MAF name)."""
-    col = "renovo_adj_acmg_score"
-    if col not in df_raw.columns:
-        print(f"  WARNING: Plot skipped, '{col}' not in MAF", file=sys.stderr)
-        return ""
-    vals = pd.to_numeric(df_raw[col], errors="coerce").dropna()
-    if vals.empty:
-        return ""
+  function rebuild() {
+    var n = P.n, review = P.review, out = [];
+    var q = query.trim().toLowerCase();
+    var searchCols = q ? SEARCH_KEYS.map(col) : null;
 
-    fig, ax = plt.subplots(figsize=(7, 3.8))
-    bins = np.linspace(vals.min() - 1, vals.max() + 1, 30)
-    _, bin_edges, patches = ax.hist(vals, bins=bins, edgecolor="none", color=THEME["accent"])
-    for patch, left in zip(patches, bin_edges[:-1]):
-        if   left <= -7: patch.set_facecolor(THEME["ok"])
-        elif left <= -1: patch.set_facecolor("#3a8fad")
-        elif left <=  5: patch.set_facecolor(THEME["pend"])
-        elif left <=  9: patch.set_facecolor("#e87a5a")
-        else:            patch.set_facecolor(THEME["fail"])
-
-    y_top = ax.get_ylim()[1]
-    for cutoff, label, col_c in [
-        (-7, "Benign",   THEME["ok"]),
-        (-1, "L.Benign", "#3a8fad"),
-        ( 5, "VUS-LP",   THEME["pend"]),
-        ( 9, "LP-P",     "#e87a5a"),
-    ]:
-        ax.axvline(cutoff, color=col_c, lw=0.8, linestyle="--", alpha=0.6)
-        ax.text(cutoff + 0.1, y_top * 0.92, label,
-                color=col_c, fontsize=6.5, fontfamily="monospace", va="top")
-
-    ax.set_xlabel("ACMG Score", fontsize=8)
-    ax.set_ylabel("Count", fontsize=8)
-    ax.set_title("Suggested Classification Distribution", fontsize=10,
-                 fontweight="600", pad=10)
-    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
-    _apply_dark_style(ax, fig)
-    fig.tight_layout(pad=1.2)
-    return _fig_to_b64(fig)
-
-
-def generate_all_plots(df_raw: pd.DataFrame) -> dict:
-    """
-    Generate all four analysis plots from the raw MAF DataFrame.
-
-    Receives df_raw (not df_display) so that plots are completely independent
-    of the display column selection (online/offline/plugin flags) and always
-    use the original MAF column names.
-    """
-    plots = {}
-    print("  Generating variant classification plot...", file=sys.stderr)
-    plots["vc"]      = plot_vc_distribution(df_raw)
-    print("  Generating top-genes plot...", file=sys.stderr)
-    plots["genes"]   = plot_top_genes(df_raw)
-    print("  Generating ClinVar plot...", file=sys.stderr)
-    plots["clinvar"] = plot_clinvar_pie(df_raw)
-    print("  Generating ACMG histogram...", file=sys.stderr)
-    plots["acmg"]    = plot_acmg_histogram(df_raw)
-    return plots
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-#  SUMMARY STATISTICS  (uses df_raw / original MAF column names)
-# ══════════════════════════════════════════════════════════════════════════════
-def compute_stats(df_raw: pd.DataFrame) -> dict:
-    sample_col = "Tumor_Sample_Barcode"   if "Tumor_Sample_Barcode"   in df_raw.columns else None
-    sig_col    = "encoded_CLNSIG" if "encoded_CLNSIG" in df_raw.columns else None
-
-    total_variants = len(df_raw)
-    total_samples  = df_raw[sample_col].replace("", np.nan).nunique() if sample_col else 1
-    pathogenic     = (
-        df_raw[sig_col].str.lower().str.contains("pathogenic", na=False).sum()
-        if sig_col else 0
-    )
-    vus     = (
-        df_raw[sig_col].str.lower().str.contains("vus", na=False).sum()
-        if sig_col else 0
-    )
-    return {
-        "total_samples":  total_samples,
-        "total_variants": total_variants,
-        "vus":            int(vus),
-        "pathogenic":     int(pathogenic),
+    for (var i = 0; i < n; i++) {
+      if (groupSet) { if (!groupSet[i]) continue; }
+      else if (view === "review" && !review[i]) continue;
+      if (q) {
+        var hit = false;
+        for (var c = 0; c < searchCols.length; c++) {
+          var val = searchCols[c][i];
+          if (val && val.toLowerCase().indexOf(q) >= 0) { hit = true; break; }
+        }
+        if (!hit) continue;
+      }
+      out.push(i);
     }
 
+    if (sortKey) {
+      var vals = sortKey === "__prio" ? P.prio : col(sortKey);
+      var numeric = sortKey === "__prio" || sortKey === "MAX_AF" || sortKey === "PL_score";
+      out.sort(function (a, b) {
+        var x = vals[a], y = vals[b];
+        if (numeric) {
+          var fx = parseFloat(x), fy = parseFloat(y);
+          if (isNaN(fx)) fx = -Infinity;
+          if (isNaN(fy)) fy = -Infinity;
+          return (fx - fy) * sortDir;
+        }
+        return String(x).localeCompare(String(y)) * sortDir;
+      });
+    }
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  HTML PAGE BUILDER
-# ══════════════════════════════════════════════════════════════════════════════
-def _plot_card(title: str, icon: str, b64: str) -> str:
-    if not b64:
-        return ""
-    return (
-        f'<div class="card">'
-        f'<div class="card-header"><span class="card-icon">{icon}</span>'
-        f'<h2 class="card-title">{title}</h2></div>'
-        f'<div class="plot-container">'
-        f'<img src="data:image/png;base64,{b64}" alt="{title}"/>'
-        f'</div></div>'
-    )
+    order = out;
+    document.getElementById("resultCount").textContent =
+      out.length.toLocaleString() + (out.length === 1 ? " variant" : " variants");
+    scroller.scrollTop = 0;
+    render();
+  }
+
+  // ── virtual rendering ────────────────────────────────────────────────────
+  var scroller = document.getElementById("scroller");
+  var tbody = document.getElementById("tbody");
+  var padTop = document.getElementById("padTop");
+  var padBottom = document.getElementById("padBottom");
+
+  function render() {
+    var total = order.length;
+    var viewH = scroller.clientHeight;
+    var first = Math.max(0, Math.floor(scroller.scrollTop / ROW_H) - OVERSCAN);
+    var count = Math.min(total - first, Math.ceil(viewH / ROW_H) + OVERSCAN * 2);
+
+    padTop.style.height = (first * ROW_H) + "px";
+    padBottom.style.height = Math.max(0, (total - first - count) * ROW_H) + "px";
+
+    var gene = col("Hugo_Symbol"), gdna = col("genome_change"), cdna = col("HGVSc"),
+        prot = col("HGVSp_VEP"), csq = col("Consequence"),
+        cvs = col("encoded_CLNSIG"), rnv = col("RENOVO_Class"), maf = col("MAX_AF");
+
+    var html = [];
+    for (var k = 0; k < count; k++) {
+      var i = order[first + k];
+      html.push(
+        '<tr data-row="' + i + '" role="row" aria-selected="' + (i === selected) + '">' +
+        '<td class="col-gene">' + esc(absent(gene[i]) ? "—" : gene[i]) + '</td>' +
+        '<td class="col-mono">' + esc(absent(gdna[i]) ? "—" : gdna[i]) + '</td>' +
+        '<td class="col-mono">' + esc(absent(cdna[i]) ? "—" : cdna[i]) + '</td>' +
+        '<td class="col-mono">' + esc(absent(prot[i]) ? "—" : prot[i]) + '</td>' +
+        '<td class="csq">' + esc(firstConsequence(csq[i])) + '</td>' +
+        '<td>' + chipHTML(clinvarChip(cvs[i])) + '</td>' +
+        '<td>' + chipHTML(renovoChip(rnv[i])) + '</td>' +
+        '<td class="col-af">' + afCell(maf[i]) + '</td>' +
+        '</tr>'
+      );
+    }
+    tbody.innerHTML = html.join("");
+  }
+
+  // ── identifiers ──────────────────────────────────────────────────────────
+  // Every accession in the MAF is a dead end unless it is a link, and the fields
+  // that carry them are inconsistent: clinvar_OMIM_id is populated on 1,781 of
+  // 73,008 rows while CLNDISDB carries OMIM numbers on 18,113 and MIM_disease
+  // embeds more as "[MIM:615413]Disease name". Collect from all three.
+  function link(href, text, cls) {
+    return '<a class="' + (cls || "ref") + '" href="' + href +
+           '" target="_blank" rel="noopener noreferrer">' + esc(text) + "</a>";
+  }
+  function uniq(list) {
+    var seen = {}, out = [];
+    list.forEach(function (v) { if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out;
+  }
+  function grab(re, s) {
+    var out = [], m;
+    re.lastIndex = 0;
+    while ((m = re.exec(String(s))) !== null) out.push(m[1]);
+    return out;
+  }
+
+  function omimIds(i) {
+    var direct = absent(col("clinvar_OMIM_id")[i]) ? [] :
+      String(col("clinvar_OMIM_id")[i]).split(/[,|;\s]+/).filter(function (x) { return /^\d+$/.test(x); });
+    return uniq(direct
+      .concat(grab(/OMIM:(\d+)/g, col("CLNDISDB")[i] || ""))
+      .concat(grab(/\[MIM:(\d+)\]/g, col("MIM_disease")[i] || "")));
+  }
+  function pubmedIds(i) {
+    return uniq(grab(/(\d{5,8})/g, col("PUBMED")[i] || ""));
+  }
+  function rsIds(i) {
+    return uniq(grab(/(rs\d+)/g, (col("ClinVar_RS")[i] || "") + " " + (col("Existing_variation")[i] || ""))
+      .concat((String(col("ClinVar_RS")[i] || "").match(/^\d+$/) ? ["rs" + col("ClinVar_RS")[i]] : [])));
+  }
+
+  // The MAF's own identifiers, as a row of links.
+  function referenceLinks(i) {
+    var out = [], gdna = col("genome_change")[i];
+    var cvid = col("clinvar_id")[i], allele = col("ALLELEID")[i];
+    if (!absent(cvid)) {
+      String(cvid).split(/[,|]/).forEach(function (id) {
+        id = id.trim();
+        if (id) out.push(link("https://www.ncbi.nlm.nih.gov/clinvar/variation/" + encodeURIComponent(id),
+                              "ClinVar " + id));
+      });
+    } else if (!absent(allele)) {
+      // No variation ID on this row, but the allele ID resolves to the same record.
+      out.push(link("https://www.ncbi.nlm.nih.gov/clinvar/?term=" + encodeURIComponent(allele) + "%5Balleleid%5D",
+                    "ClinVar allele " + allele));
+    }
+    rsIds(i).forEach(function (rs) {
+      out.push(link("https://www.ncbi.nlm.nih.gov/snp/" + encodeURIComponent(rs), rs));
+    });
+    omimIds(i).forEach(function (id) {
+      out.push(link("https://www.omim.org/entry/" + encodeURIComponent(id), "OMIM " + id));
+    });
+    uniq(grab(/MONDO:MONDO:(\d+)/g, col("CLNDISDB")[i] || "")).forEach(function (id) {
+      out.push(link("https://monarchinitiative.org/MONDO:" + id, "MONDO " + id));
+    });
+    uniq(grab(/Orphanet:(\d+)/g, col("CLNDISDB")[i] || "")).forEach(function (id) {
+      out.push(link("https://www.orpha.net/en/disease/detail/" + id, "Orphanet " + id));
+    });
+    // Existing_variation also carries COSMIC (COSV/COSM) and HGMD (CM/CD) accessions.
+    grab(/(COS[VM]\d+)/g, col("Existing_variation")[i] || "").forEach(function (id) {
+      out.push(link("https://cancer.sanger.ac.uk/cosmic/search?q=" + id, id));
+    });
+    pubmedIds(i).forEach(function (id) {
+      out.push(link("https://pubmed.ncbi.nlm.nih.gov/" + id + "/", "PMID " + id));
+    });
+    var gene = col("Hugo_Symbol")[i];
+    if (!absent(gene)) {
+      out.push(link("https://gnomad.broadinstitute.org/gene/" + encodeURIComponent(gene) + "?dataset=gnomad_r4",
+                    "gnomAD " + gene));
+    }
+    var fu = franklinURL(gdna);
+    if (fu) out.push(link(fu, "Franklin"));
+    return out;
+  }
+
+  // ── call quality ─────────────────────────────────────────────────────────
+  // bioinfo_params is the INFO field as one string. The two things a reviewer
+  // actually asks of it are the zygosity and whether there were enough reads to
+  // believe the call, and both were buried in a 150-character run-on.
+  function infoFields(v) {
+    var out = {};
+    if (absent(v)) return out;
+    String(v).split(";").forEach(function (kv) {
+      var eq = kv.indexOf("=");
+      if (eq > 0) out[kv.slice(0, eq).trim()] = kv.slice(eq + 1).trim();
+    });
+    return out;
+  }
+  function zygosity(f) {
+    var ac = parseFloat(f.AC), an = parseFloat(f.AN);
+    if (isNaN(ac) || isNaN(an) || an <= 0) return "";
+    if (an === 1) return "hemizygous";
+    return ac >= an ? "homozygous" : "heterozygous";
+  }
+
+  // ── assessment ───────────────────────────────────────────────────────────
+  // The panel used to be a flat dump of every column, leaving the reader to hold
+  // eight fields in their head and decide. These are the same fields, read.
+  function assessment(i) {
+    var out = [];
+    var cv = clinvarChip(col("encoded_CLNSIG")[i]), rn = renovoChip(col("RENOVO_Class")[i]);
+    var pathoish = { P: 1, LP: 1 }, benignish = { B: 1, LB: 1 };
+
+    if (pathoish[cv.code] && pathoish[rn.code]) {
+      out.push(["hit", "ClinVar and ReNOVo both call this pathogenic."]);
+    } else if ((pathoish[cv.code] && benignish[rn.code]) || (benignish[cv.code] && pathoish[rn.code])) {
+      out.push(["warn", "The two classifiers contradict each other: ClinVar " + cv.code +
+                        ", ReNOVo " + rn.code + "."]);
+    } else if (cv.code === "NC" && pathoish[rn.code]) {
+      out.push(["hit", "ClinVar has never classified this variant; ReNOVo calls it pathogenic."]);
+    }
+
+    var impact = col("IMPACT")[i], csq = firstConsequence(col("Consequence")[i]);
+    if (impact === "HIGH") out.push(["hit", "High-impact change (" + csq + "), predicted to disrupt the protein."]);
+    else if (impact === "MODERATE") out.push(["", "Moderate-impact change (" + csq + ")."]);
+    else if (!absent(impact)) out.push(["", esc(impact.toLowerCase()) + "-impact change (" + csq + ")."]);
+
+    var f = infoFields(col("bioinfo_params")[i]), z = zygosity(f);
+    if (z === "homozygous" || z === "hemizygous") {
+      out.push(["hit", "Called " + z + ": no wild-type allele in this sample."]);
+    } else if (z) {
+      out.push(["", "Called heterozygous."]);
+    }
+    var dp = parseFloat(f.DP);
+    if (!isNaN(dp) && dp < 20) {
+      out.push(["warn", "Only " + dp + " reads at this position; the call is weakly supported."]);
+    }
+
+    var af = col("MAX_AF")[i];
+    if (absent(af)) out.push(["hit", "Absent from gnomAD."]);
+    else {
+      var fv = parseFloat(af), pop = col("MAX_AF_POPS")[i];
+      var where = absent(pop) ? "" : " (" + String(pop).replace(/_/g, " ") + ")";
+      out.push([fv < 1e-4 ? "hit" : "",
+                "Max population frequency " + (fv < 1e-4 ? fv.toExponential(1) : fv.toPrecision(2)) +
+                where + "."]);
+    }
+
+    var gene = col("Hugo_Symbol")[i];
+    var gd = col("ClinGen_GeneDisease_Disease")[i], moi = col("ClinGen_GeneDisease_MOI")[i],
+        val = col("ClinGen_GeneDisease_Classification")[i];
+    if (!absent(gd)) {
+      var MOI = { AD: "autosomal dominant", AR: "autosomal recessive", XL: "X-linked",
+                  XLR: "X-linked recessive", XLD: "X-linked dominant", MT: "mitochondrial" };
+      out.push([/Definitive|Strong/i.test(val || "") ? "hit" : "",
+                gene + " has a " + (absent(val) ? "recorded" : String(val).toLowerCase()) +
+                " gene-disease relationship with " + gd +
+                (absent(moi) ? "" : " (" + (MOI[moi] || moi) + ")") + "."]);
+    }
+
+    // LOEUF is a confidence bound, so it reads in bands. The usual line for "highly
+    // constrained" is 0.35; anything up to about 1 is still some constraint, and only
+    // above 1 is the gene genuinely unconstrained. Calling 0.6 "tolerant" would be a
+    // claim a reader might act on, and it would be wrong.
+    var loeuf = parseFloat(col("gnomAD_LOEUF")[i]), pli = parseFloat(col("gnomAD_pLI")[i]);
+    if (!isNaN(loeuf)) {
+      var band = loeuf < 0.35 ? ["hit", "strongly constrained against loss of function"]
+               : loeuf < 1.0  ? ["", "moderately constrained against loss of function"]
+                              : ["", "not constrained against loss of function"];
+      out.push([band[0], "The gene is " + band[1] + " (LOEUF " + loeuf + ")."]);
+    } else if (!isNaN(pli)) {
+      out.push([pli >= 0.9 ? "hit" : "",
+                "gnomAD pLI " + pli.toPrecision(2) +
+                (pli >= 0.9 ? ", loss-of-function intolerant." : ".")]);
+    }
+
+    var stars = clinvarStars(col("encoded_CLNREVSTAT")[i]);
+    if (stars) out.push([stars.n >= 2 ? "hit" : "", "ClinVar review: " + stars.text + "."]);
+
+    return out;
+  }
+
+  // ── variant detail ───────────────────────────────────────────────────────
+  function renderValue(k, v, i) {
+    if (k === "encoded_CLNREVSTAT") {
+      var st = starsHTML(v);
+      return '<dd class="plain">' + (st || esc(v)) + "</dd>";
+    }
+    if (k.indexOf("PhenotypeOrthologous") === 0) {
+      // These run to 30+ comma-separated terms. Kept, but folded away.
+      var items = uniq(String(v).split(",").map(function (t) {
+        return t.trim().replace(/^_+/, "").replace(/_/g, " ");
+      }));
+      if (!items.length) return '<dd class="absent">not reported</dd>';
+      var head = items.slice(0, 4).join(", ");
+      if (items.length <= 4) return '<dd class="plain">' + esc(head) + "</dd>";
+      return '<dd class="plain"><details><summary>' + esc(head) + " … " +
+             (items.length - 4) + " more</summary>" + esc(items.join(", ")) + "</details></dd>";
+    }
+    if (k === "Consequence") {
+      return '<dd class="plain">' + esc(String(v).split(/[,&]/).join(", ").replace(/_/g, " ")) + "</dd>";
+    }
+    if (k === "CLNDN") {
+      var ds = diseaseList(v);
+      return ds.length ? '<dd class="plain">' + esc(ds.join(" · ")) + "</dd>"
+                       : '<dd class="absent">not reported</dd>';
+    }
+    if (k === "MIM_disease") {
+      // "[MIM:615413]Spermatogenic failure 12;[MIM:600649]..." -> linked names.
+      var bits = String(v).split(";").map(function (s) { return s.trim(); }).filter(Boolean);
+      var html = bits.map(function (s) {
+        var m = /^\[MIM:(\d+)\](.*)$/.exec(s);
+        if (!m) return esc(s);
+        return link("https://www.omim.org/entry/" + m[1], m[2].trim() || ("OMIM " + m[1]));
+      }).join(" · ");
+      return '<dd class="plain">' + html + "</dd>";
+    }
+    if (k === "Orphanet_disorder") {
+      return '<dd class="plain">' + esc(uniq(String(v).split(";")).join(" · ")) + "</dd>";
+    }
+    if (k === "MAX_AF") return "<dd>" + afCell(v) + "</dd>";
+    if (k === "MAX_AF_POPS") return '<dd class="plain">' + esc(String(v).replace(/_/g, " ")) + "</dd>";
+    if (k === "IMPACT") return '<dd class="plain">' + esc(String(v).toLowerCase()) + "</dd>";
+    if (k === "PUBMED") {
+      return '<dd class="plain refs">' + pubmedIds(i).map(function (id) {
+        return link("https://pubmed.ncbi.nlm.nih.gov/" + id + "/", id);
+      }).join(" ") + "</dd>";
+    }
+    if (k === "clinvar_OMIM_id" || k === "CLNDISDB") {
+      var ids = omimIds(i);
+      if (!ids.length) return '<dd class="absent">not reported</dd>';
+      return '<dd class="plain refs">' + ids.map(function (id) {
+        return link("https://www.omim.org/entry/" + id, "OMIM " + id);
+      }).join(" ") + "</dd>";
+    }
+    if (k === "clinvar_id") {
+      return '<dd class="plain refs">' + String(v).split(/[,|]/).map(function (id) {
+        id = id.trim();
+        return id ? link("https://www.ncbi.nlm.nih.gov/clinvar/variation/" + id, id) : "";
+      }).join(" ") + "</dd>";
+    }
+    if (k === "ALLELEID") {
+      return '<dd class="plain refs">' +
+        link("https://www.ncbi.nlm.nih.gov/clinvar/?term=" + encodeURIComponent(v) + "%5Balleleid%5D", v) +
+        "</dd>";
+    }
+    if (k === "ClinVar_RS" || k === "Existing_variation") {
+      var rs = rsIds(i);
+      var other = String(v).split(",").map(function (s) { return s.trim(); })
+        .filter(function (s) { return s && !/^rs\d+$/.test(s); });
+      var html = rs.map(function (r) {
+        return link("https://www.ncbi.nlm.nih.gov/snp/" + r, r);
+      }).concat(other.map(esc)).join(" ");
+      return '<dd class="plain refs">' + html + "</dd>";
+    }
+    if (k === "bioinfo_params") {
+      var f = infoFields(v), z = zygosity(f);
+      var rows = [];
+      if (z) rows.push(["Zygosity", z + (f.AC && f.AN ? " (" + f.AC + " of " + f.AN + " alleles)" : "")]);
+      if (f.DP) rows.push(["Read depth", f.DP + "×"]);
+      if (f.QD) rows.push(["Quality by depth", f.QD]);
+      if (f.MQ) rows.push(["Mapping quality", f.MQ]);
+      if (f.FS) rows.push(["Strand bias (FS)", f.FS]);
+      if (f.SOR) rows.push(["Strand odds ratio", f.SOR]);
+      if (!rows.length) return "<dd>" + esc(v) + "</dd>";
+      return '<dd class="plain"><table class="qual">' + rows.map(function (r) {
+        return "<tr><th>" + esc(r[0]) + "</th><td>" + esc(r[1]) + "</td></tr>";
+      }).join("") + "</table></dd>";
+    }
+    return "<dd>" + esc(v).replace(/,/g, ", ") + "</dd>";
+  }
+
+  var LABEL = {};
+  P.detail.forEach(function (d) { LABEL[d.k] = d.label; });
+
+  function detailHTML(i) {
+    var gene = col("Hugo_Symbol")[i], gdna = col("genome_change")[i];
+    var prot = col("HGVSp_VEP")[i];
+    var parts = ['<div class="detail">'];
+    parts.push("<h3>" + esc(absent(gene) ? "Unnamed gene" : gene) +
+               (absent(prot) ? "" : ' <span class="detail-change">' + esc(prot) + "</span>") + "</h3>");
+    parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + "</p>");
+    parts.push('<div class="panel-chips">' +
+      chipHTML(clinvarChip(col("encoded_CLNSIG")[i]), "ClinVar") +
+      chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") + "</div>");
+
+    var a = assessment(i);
+    if (a.length) {
+      parts.push('<ul class="assess">' + a.map(function (row) {
+        return '<li class="' + row[0] + '">' + esc(row[1]) + "</li>";
+      }).join("") + "</ul>");
+    }
+
+    // A well-annotated variant can carry forty accessions. The first ten identify it;
+    // the rest are the disease ontologies restating each other, so they fold away.
+    var refs = referenceLinks(i);
+    if (refs.length > 10) {
+      parts.push('<div class="panel-links">' + refs.slice(0, 10).join("") +
+        "<details><summary>" + (refs.length - 10) + " more references</summary>" +
+        '<span class="panel-links">' + refs.slice(10).join("") + "</span></details></div>");
+    } else if (refs.length) {
+      parts.push('<div class="panel-links">' + refs.join("") + "</div>");
+    }
+
+    P.sections.forEach(function (sec) {
+      var body = [];
+      sec.keys.forEach(function (k) {
+        if (!LABEL.hasOwnProperty(k)) return;          // column absent from this MAF
+        var v = col(k)[i];
+        if (absent(v)) return;                          // nothing to say, so say nothing
+        body.push("<dt>" + esc(LABEL[k]) + "</dt>" + renderValue(k, v, i));
+      });
+      if (!body.length) return;
+      parts.push('<section class="detail-sec"><h4>' + esc(sec.name) + "</h4><dl>" +
+                 body.join("") + "</dl></section>");
+    });
+
+    parts.push("</div>");
+    return parts.join("");
+  }
+
+  // Both views show the evidence in a panel beside the list, never over it: a reader
+  // comparing several candidates must be able to see the list and one variant at the
+  // same time, and a dialog hides exactly the thing being compared against.
+  var EMPTY_PANEL =
+    '<p class="panel-empty">Select a variant to see its evidence.<br><br>' +
+    'Use <kbd>&uarr;</kbd> and <kbd>&darr;</kbd> to walk the list without losing your place.</p>';
+
+  function select(i, where) {
+    selected = i;
+    var html = i < 0 ? EMPTY_PANEL : detailHTML(i);
+    var target = document.getElementById(where === "overview" ? "ovPanel" : "panel");
+    target.innerHTML = html;
+    if (where === "overview") target.scrollTop = 0;
+    render();
+  }
+
+  // ── events ───────────────────────────────────────────────────────────────
+  scroller.addEventListener("scroll", render, { passive: true });
+  window.addEventListener("resize", render);
+
+  tbody.addEventListener("click", function (e) {
+    var tr = e.target.closest("tr[data-row]");
+    if (tr) select(parseInt(tr.dataset.row, 10));
+  });
+
+  // ── views ────────────────────────────────────────────────────────────────
+  // The table is a second page rather than the bottom of the first one. Opening a
+  // report should present findings; the 68,000-row surface is deliberately a step
+  // away, and it does not exist in the layout until it is asked for.
+  var overviewView = document.getElementById("view-overview");
+  var tableView = document.getElementById("view-table");
+  var chip = document.getElementById("filterChip");
+
+  function showView(which) {
+    var toTable = which === "table";
+    overviewView.hidden = toTable;
+    tableView.hidden = !toTable;
+    window.scrollTo(0, 0);
+    if (toTable) render();          // the scroller has no height while hidden
+  }
+
+  function setGroup(key) {
+    groupKey = key;
+    groupSet = null;
+    if (key && P.groups && P.groups[key]) {
+      groupSet = {};
+      P.groups[key].forEach(function (i) { groupSet[i] = 1; });
+    }
+    // The two view buttons stay live while a findings filter is on: clicking one is
+    // the obvious way out of the filter, and a disabled control that looks identical
+    // to an enabled one on this toolbar's ground is worse than no control.
+    Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (b) {
+      b.setAttribute("aria-pressed", String(!groupKey && b.dataset.view === view));
+    });
+    if (groupKey) {
+      var label = document.querySelector('[data-group="' + groupKey + '"]');
+      chip.innerHTML = "Showing: " + esc(label ? label.dataset.groupLabel : groupKey) +
+        ' <button type="button" id="clearFilter" aria-label="Clear this filter">&times;</button>';
+      chip.hidden = false;
+      document.getElementById("clearFilter").addEventListener("click", function () {
+        setGroup(null);
+        rebuild();
+      });
+    } else {
+      chip.hidden = true;
+      chip.innerHTML = "";
+    }
+  }
+
+  // A finding on the overview fills the panel beside it. Nothing navigates.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (btn) {
+    btn.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-goto]"), function (b) {
+        b.setAttribute("aria-current", String(b === btn));
+      });
+      select(parseInt(btn.dataset.goto, 10), "overview");
+    });
+  });
+
+  // A findings block header opens the table filtered to exactly that block.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-group]"), function (btn) {
+    btn.addEventListener("click", function () {
+      query = "";
+      document.getElementById("search").value = "";
+      setGroup(btn.dataset.group);
+      rebuild();
+      showView("table");
+      select(-1);
+    });
+  });
+
+  // The sticky band's height, published as --band-h so the CSS can clear it. It is
+  // measured rather than assumed: the block grows with the HPO list and with how many
+  // findings blocks the case has, and the media queries drop the band back to static on
+  // a narrow or short screen, in which case nothing has to clear anything.
+__BAND_MEASURE_JS__
+
+  // The band's index jumps to a block on the findings page. It works from the table
+  // view too, so it doubles as the way back to a specific block rather than to the
+  // top of the page.
+  Array.prototype.forEach.call(document.querySelectorAll("[data-jump]"), function (btn) {
+    btn.addEventListener("click", function () {
+      var target = document.getElementById(btn.dataset.jump);
+      if (!target) return;
+      if (!tableView.hidden) showView("overview");
+      var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+      target.querySelector(".priority-head").focus({ preventScroll: true });
+    });
+  });
+
+  document.getElementById("openTable").addEventListener("click", function () {
+    setGroup(null);
+    rebuild();
+    showView("table");
+  });
+
+  document.getElementById("backToOverview").addEventListener("click", function () {
+    showView("overview");
+  });
+
+  document.getElementById("search").addEventListener("input", function (e) {
+    query = e.target.value;
+    rebuild();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("[data-view]"), function (btn) {
+    btn.addEventListener("click", function () {
+      view = btn.dataset.view;
+      setGroup(null);
+      rebuild();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("th[data-key]"), function (th) {
+    th.addEventListener("click", function () {
+      var key = th.dataset.key;
+      if (sortKey === key) sortDir = -sortDir;
+      else { sortKey = key; sortDir = 1; }
+      Array.prototype.forEach.call(document.querySelectorAll("th[data-key]"), function (t) {
+        t.removeAttribute("aria-sort");
+      });
+      th.setAttribute("aria-sort", sortDir === 1 ? "ascending" : "descending");
+      rebuild();
+    });
+    th.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); th.click(); }
+    });
+  });
+
+  // Arrow keys walk the list with the panel pinned, which is the point of docking
+  // it rather than expanding rows inline.
+  document.addEventListener("keydown", function (e) {
+    if (tableView.hidden) return;
+    if (e.target.tagName === "INPUT") return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    var pos = order.indexOf(selected);
+    if (pos < 0) pos = e.key === "ArrowDown" ? -1 : order.length;
+    var next = pos + (e.key === "ArrowDown" ? 1 : -1);
+    if (next < 0 || next >= order.length) return;
+    select(order[next]);
+    var top = next * ROW_H, bottom = top + ROW_H;
+    if (top < scroller.scrollTop) scroller.scrollTop = top;
+    else if (bottom > scroller.scrollTop + scroller.clientHeight)
+      scroller.scrollTop = bottom - scroller.clientHeight;
+  });
+
+  select(-1, "overview");
+  select(-1);
+  setGroup(null);
+  rebuild();
+})();
+"""
 
 
-def build_html_page(
-    patient_code: str,
-    table_html: str,
-    stats: dict,
-    logo_b64,
-    logo_mime,
-) -> str:
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    t   = THEME
-
-    logo_header = (
-        f'<img src="data:{logo_mime};base64,{logo_b64}" class="header-logo" alt="MuSA"/>'
-        if logo_b64 else ""
-    )
-    logo_hero = (
-        f'<img src="data:{logo_mime};base64,{logo_b64}" class="hero-logo" alt="MuSA"/>'
-        if logo_b64 else '<span class="logo-fallback">MuSA</span>'
-    )
-
-    stat_items = [
-        ("total_variants", "Total Variants",    "total"),
-        ("total_samples",  "Samples",           "total"),
-        ("vus",            "Clinvar VUS",       "pend"),
-        ("pathogenic",     "Clinvar Pathogenic","fail"),
-    ]
-    stats_html = "".join(
-        f'<div class="stat {cls}">'
-        f'<span class="stat-num">{stats.get(k, 0):,}</span>'
-        f'<span class="stat-label">{label}</span></div>'
-        for k, label, cls in stat_items
-    )
-
-    return f"""<!DOCTYPE html>
+# ── page assembly ─────────────────────────────────────────────────────────────
+PAGE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>MuSA &middot; Variants Report &middot; {patient_code.upper()}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="{t['google_fonts']}" rel="stylesheet"/>
-<link rel="stylesheet" href="https://cdn.datatables.net/2.0.7/css/dataTables.dataTables.min.css"/>
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script src="https://cdn.datatables.net/2.0.7/js/dataTables.min.js"></script>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>__PATIENT__ &middot; MuSA variant review</title>
 <style>
-{css_vars(t)}
-
-*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-
-body {{
-  background: var(--bg); color: var(--text);
-  font-family: var(--font-body); min-height: 100vh;
-  overflow-x: hidden; font-size: 14px; line-height: 1.6;
-}}
-body::before {{
-  content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: radial-gradient(circle, var(--border2) 1px, transparent 1px);
-  background-size: 24px 24px; opacity: .18;
-}}
-
-/* header */
-header {{
-  position: relative; z-index: 10; border-bottom: 1px solid var(--border);
-  padding: 0 2.5rem; display: flex; align-items: center;
-  justify-content: space-between; height: 56px;
-  background: var(--surface); box-shadow: 0 1px 0 var(--border);
-}}
-.header-left  {{ display: flex; align-items: center; gap: .75rem; }}
-.header-logo  {{ height: 28px; width: auto; display: block; opacity: .9; }}
-.header-title {{
-  font-size: .75rem; font-weight: 500; color: var(--muted);
-  letter-spacing: .06em; text-transform: uppercase;
-  border-left: 1px solid var(--border2); padding-left: .75rem;
-}}
-.header-right {{
-  font-family: var(--font-mono); font-size: .68rem; color: var(--muted);
-  display: flex; gap: 1.8rem; align-items: center;
-}}
-.header-right span {{ display: flex; gap: .35rem; align-items: center; }}
-.header-right b    {{ color: var(--text); font-weight: 500; }}
-
-/* hero */
-.hero {{
-  position: relative; z-index: 5; padding: 3rem 2.5rem 2.5rem;
-  border-bottom: 1px solid var(--border); overflow: hidden;
-  background: linear-gradient(135deg, #141828 0%, var(--bg) 60%);
-}}
-.hero::after {{
-  content: "MuSA"; position: absolute; right: -1rem; bottom: -1.5rem;
-  font-family: var(--font-display); font-size: 11rem; font-weight: 700;
-  line-height: 1; color: var(--accent); opacity: .04;
-  pointer-events: none; letter-spacing: -.04em; user-select: none;
-}}
-.hero-top {{ display: flex; align-items: center; gap: 2rem; margin-bottom: 1.6rem; }}
-.hero-logo     {{ height: 12rem; width: auto; flex-shrink: 0; filter: brightness(1.05); }}
-.logo-fallback {{
-  font-family: var(--font-display); font-size: 2.4rem; font-weight: 700;
-  color: var(--accent); letter-spacing: -.02em; flex-shrink: 0;
-}}
-.hero h1 {{
-  font-family: var(--font-display);
-  font-size: clamp(2.5rem, 3vw, 2.6rem);
-  font-weight: 600; line-height: 1.2; letter-spacing: -.02em; color: var(--text);
-}}
-.hero h1 em {{ font-style: italic; font-weight: 300; color: var(--accent); }}
-.hero-meta {{
-  color: var(--muted); font-size: 1rem; margin-bottom: 2rem;
-  font-family: var(--font-mono); letter-spacing: .03em;
-  display: flex; gap: 1.5rem; flex-wrap: wrap;
-}}
-.hero-meta span {{ display: flex; gap: .4rem; align-items: center; }}
-.hero-meta b    {{ color: var(--text); font-weight: 500; }}
-
-/* stats grid */
-.stats {{
-  display: grid; grid-template-columns: repeat(4,1fr);
-  gap: 1px; background: var(--border);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.3);
-}}
-.stat {{
-  background: var(--surface); padding: 1.1rem 1.4rem;
-  display: flex; flex-direction: column; gap: .2rem;
-}}
-.stat-num {{
-  font-family: var(--font-display); font-size: 2.4rem; font-weight: 700;
-  line-height: 1; letter-spacing: -.03em;
-}}
-.stat-label {{
-  font-family: var(--font-mono); font-size: .62rem;
-  text-transform: uppercase; letter-spacing: .12em; color: var(--muted);
-}}
-.stat.ok    .stat-num {{ color: var(--ok); }}
-.stat.fail  .stat-num {{ color: var(--fail); }}
-.stat.pend  .stat-num {{ color: var(--pend); }}
-.stat.total .stat-num {{ color: var(--text); }}
-
-/* content */
-.content {{
-  position: relative; z-index: 5; padding: 1.5rem 2.5rem 4rem;
-  display: flex; flex-direction: column; gap: 1.5rem;
-}}
-.card {{
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--surface); overflow: hidden;
-  animation: slideIn .3s ease both;
-}}
-@keyframes slideIn {{ from{{opacity:0;transform:translateY(6px)}} to{{opacity:1;transform:translateY(0)}} }}
-.card-header {{
-  padding: .75rem 1.4rem; display: flex; align-items: center; gap: .75rem;
-  border-bottom: 1px solid var(--border); background: var(--surface2);
-}}
-.card-icon  {{ font-size: 1.1rem; }}
-.card-title {{ font-weight: 600; font-size: 1rem; color: var(--text); margin: 0; }}
-
-/* table */
-.table-wrap {{ padding: 1rem 1.2rem; overflow-x: auto; }}
-#variantTable_wrapper .dt-search input,
-#variantTable_wrapper select {{
-  background: var(--surface2) !important; color: var(--text) !important;
-  border: 1px solid var(--border2) !important; border-radius: 99px !important;
-  padding: .28rem 1rem !important; font-family: var(--font-mono) !important;
-  font-size: .72rem !important; outline: none !important;
-}}
-#variantTable_wrapper .dt-search input:focus {{
-  border-color: var(--accent) !important; box-shadow: 0 0 0 3px #6c5fff20 !important;
-}}
-#variantTable_wrapper .dt-search input::placeholder {{ color: var(--muted) !important; }}
-table.dataTable {{
-  border-collapse: collapse !important; font-family: var(--font-mono);
-  font-size: .7rem; width: 100% !important; color: var(--text);
-}}
-table.dataTable thead th {{
-  background: var(--surface2) !important; color: var(--ok) !important;
-  border-bottom: 1px solid var(--border2) !important;
-  font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
-  padding: .55rem .75rem; white-space: nowrap;
-}}
-table.dataTable tbody tr {{
-  background: var(--surface) !important; border-bottom: 1px solid var(--border) !important;
-  transition: background .12s;
-}}
-table.dataTable tbody tr:hover {{ background: var(--surface2) !important; }}
-table.dataTable tbody tr.shown {{ background: var(--surface2) !important; }}
-table.dataTable tbody td {{
-  padding: .45rem .75rem !important; border-right: 1px solid var(--border) !important;
-  vertical-align: middle; white-space: nowrap;
-}}
-.dt-container .dt-paging .dt-paging-button {{
-  background: var(--surface2) !important; color: var(--muted) !important;
-  border: 1px solid var(--border) !important; border-radius: 4px !important;
-  font-family: var(--font-mono) !important; font-size: .7rem !important; margin: 0 2px !important;
-}}
-.dt-container .dt-paging .dt-paging-button.current,
-.dt-container .dt-paging .dt-paging-button:hover {{
-  background: var(--accent) !important; color: #fff !important; border-color: var(--accent) !important;
-}}
-.dt-container .dt-info  {{ color: var(--muted) !important; font-size: .68rem; font-family: var(--font-mono); }}
-.dt-container .dt-length label {{ color: var(--muted) !important; font-size: .68rem; font-family: var(--font-mono); }}
-.expand-cell {{
-  cursor: pointer; text-align: center; color: var(--accent);
-  font-size: .75rem; width: 28px; user-select: none;
-}}
-.child-table {{ width: 100%; border-collapse: collapse; }}
-.child-table td {{ padding: .35rem .8rem; border-bottom: 1px solid var(--border); font-size: .7rem; }}
-.det-label {{
-  color: var(--muted); font-size: .62rem;
-  text-transform: uppercase; letter-spacing: .08em; min-width: 160px;
-}}
-.det-val {{ color: var(--text); word-break: break-word; white-space: normal; }}
-
-/* badges */
-.af-badge {{
-  font-family: var(--font-mono); font-size: .6rem;
-  padding: .15rem .45rem; border-radius: 4px; white-space: nowrap;
-}}
-.af-badge.private {{ background: var(--fail-dim); color: var(--fail); border: 1px solid var(--fail-border); }}
-.af-badge.common  {{ background: var(--ok-dim);   color: var(--ok);    border: 1px solid var(--ok-border); }}
-.af-badge.rare   {{var(--pend-dim); color: var(--pend);  border: 1px solid var(--pend-border); }} 
-.acmg-badge {{
-  font-family: var(--font-mono); font-size: .6rem;
-  padding: .15rem .5rem; border-radius: 4px; white-space: nowrap; font-weight: 600;
-}}
-.acmg-badge.benign            {{ background: var(--ok-dim);   color: var(--ok);   border: 1px solid var(--ok-border); }}
-.acmg-badge.likely-benign     {{ background: #3a8fad1a;       color: #3a8fad;     border: 1px solid #3a8fad55; }}
-.acmg-badge.vus               {{ background: var(--pend-dim); color: var(--pend); border: 1px solid var(--pend-border); }}
-.acmg-badge.likely-pathogenic {{ background: #e87a5a1a;       color: #e87a5a;     border: 1px solid #e87a5a55; }}
-.acmg-badge.pathogenic        {{ background: var(--fail-dim); color: var(--fail); border: 1px solid var(--fail-border); }}
-
-.cv-badge {{
-  font-family: var(--font-mono); font-size: .58rem;
-  padding: .12rem .42rem; border-radius: 4px; white-space: nowrap;
-}}
-.cv-pathogenic        {{ background: var(--fail-dim); color: var(--fail); border: 1px solid var(--fail-border); font-weight: 600; }}
-.cv-likely-pathogenic {{ background: #e87a5a1a; color: #e87a5a; border: 1px solid #e87a5a55; }}
-.cv-benign            {{ background: var(--ok-dim);   color: var(--ok);   border: 1px solid var(--ok-border); }}
-.cv-likely-benign     {{ background: #3a8fad1a; color: #3a8fad; border: 1px solid #3a8fad55; }}
-.cv-vus               {{ background: var(--pend-dim); color: var(--pend); border: 1px solid var(--pend-border); }}
-.cv-notclassified     {{ background: var(--pend-surface2); color: var(--pend); border: 1px solid var(--pend-border); }}
-.cv-other             {{ background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }}
-
-.vc-badge {{
-  font-family: var(--font-mono); font-size: .6rem; padding: .12rem .42rem;
-  border-radius: 4px; border: 1px solid; white-space: nowrap; background: transparent;
-}}
-.pubmed-link {{
-  color: var(--accent); text-decoration: none;
-  font-family: var(--font-mono); font-size: .65rem;
-}}
-.pubmed-link:hover {{ text-decoration: underline; }}
-.franklin-link {{
-  color: var(--ok); text-decoration: none; font-weight: 600; font-size: .7rem;
-}}
-.franklin-link:hover {{ text-decoration: underline; }}
-
-/* plot grid */
-.plot-grid {{
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(420px,1fr)); gap: 1.2rem;
-}}
-.plot-container {{ padding: 1rem 1.2rem; }}
-.plot-container img {{ width: 100%; height: auto; display: block; border-radius: 6px; }}
-
-/* footer */
-footer {{
-  position: relative; z-index: 5; border-top: 1px solid var(--border);
-  padding: .9rem 2.5rem; display: flex; justify-content: space-between;
-  align-items: center; font-family: var(--font-mono); font-size: .62rem;
-  color: var(--muted); background: var(--surface);
-}}
-
-@media (max-width: 680px) {{
-  .stats {{ grid-template-columns: repeat(2,1fr); }}
-  .hero-top {{ flex-direction: column; align-items: flex-start; gap: 1rem; }}
-  .hero-logo {{ height: 3rem; }}
-  header, .hero, .content, footer {{ padding-left: 1rem; padding-right: 1rem; }}
-  .hero::after {{ font-size: 6rem; }}
-  .plot-grid {{ grid-template-columns: 1fr; }}
-}}
+__FONTS__
+__TOKENS__
+__BASE_CSS__
+__BAND_CSS__
+__PAGE_CSS__
 </style>
 </head>
 <body>
 
-<header>
-  <div class="header-left">
-    {logo_header}
-    <span class="header-title">Variants Report</span>
-  </div>
-  <div class="header-right">
-    <span>patient <b>{patient_code.upper()}</b></span>
-    <span>generated <b>{now}</b></span>
-  </div>
+<header class="masthead">
+  __MASTHEAD_ID__
+  <div class="masthead-right">__GITHUB__</div>
 </header>
 
-<div class="hero">
-  <div class="hero-top">
-    {logo_hero}
-    <h1>{patient_code.upper()}<br/><em>Variants Report</em></h1>
+<section class="band">
+  <div class="band-case">
+    <h1 class="case-id">Patient __PATIENT__</h1>
+    <dl class="case-meta">
+      <dt>Assembly</dt><dd>hg38</dd>
+      <dt>Generated</dt><dd>__GENERATED__</dd>
+      <dt>Mode</dt><dd>__MODE__</dd>
+    </dl>
+    __HPO__
   </div>
-  <div class="hero-meta">
-    <span>patient <b>{patient_code.upper()}</b></span>
-    <span>reference <b>hg38</b></span>
-    <span>{stats['total_variants']:,} variants</span>
-  </div>
-  <div class="stats">{stats_html}</div>
-</div>
-
-<div class="content">
-  <div class="card">
-    <div class="card-header">
-      <span class="card-icon">&#128203;</span>
-      <h2 class="card-title">Variants browser</h2>
+  <div class="band-stats">
+    <div class="band-figure">
+      <span class="band-n">__REVIEW__</span>
+      <span class="band-label" title="Rare, protein-affecting, and not called benign or likely benign by ClinVar. Drawn from __TOTAL__ annotated, all of which are in this document.">variants in the review set</span>
     </div>
-    <div class="table-wrap">{table_html}</div>
+    <div class="band-scales">__SCALES__</div>
+    __VERSIONS__
   </div>
-</div>
-<footer>
-  <span>MuSA &middot; Multi Source Variant Annotation</span>
-  <span>Patient <b>{patient_code.upper()}</b> &middot; {now}</span>
-  <span>Made with &#10084; at IRCCS Istituto Ortopedico Rizzoli, Bologna, Italy</span>
+  <nav class="band-index" aria-label="Findings blocks">__INDEX__</nav>
+</section>
+
+<main class="view" id="view-overview">
+  <section class="overview">
+    <div class="ov-main">
+      <div class="priority">__PRIORITY__</div>
+      <div class="ov-actions no-print">
+        <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
+      </div>
+    </div>
+    <aside class="ov-detail" id="ovPanel" aria-live="polite" aria-label="Variant evidence"></aside>
+  </section>
+</main>
+
+<main class="view" id="view-table" hidden>
+  <div class="controls no-print">
+    <button class="btn" type="button" id="backToOverview">&larr; Findings</button>
+    <div class="controls-sep" aria-hidden="true"></div>
+    <div class="controls-group" role="group" aria-label="Which variants to show">
+      <button class="btn" type="button" data-view="review" aria-pressed="true">Review set</button>
+      <button class="btn" type="button" data-view="all" aria-pressed="false">All variants</button>
+    </div>
+    <span id="filterChip" hidden></span>
+    <label class="sr-only" for="search">Search by gene, coordinate, cDNA or protein change</label>
+    <input class="field" id="search" type="search" placeholder="Gene, coordinate, cDNA or protein change"/>
+    <span class="result-count" id="resultCount" role="status" aria-live="polite"></span>
+  </div>
+
+  <div class="workspace">
+    <div class="table-region">
+      <div id="scroller">
+        <table class="variants">
+          <thead><tr>__HEADERS__</tr></thead>
+          <tbody id="tbody-pad-top-holder">
+            <tr id="padTop" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
+          </tbody>
+          <tbody id="tbody"></tbody>
+          <tbody>
+            <tr id="padBottom" aria-hidden="true"><td colspan="__NCOL__"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite" aria-label="Variant detail"></aside>
+  </div>
+</main>
+
+
+<footer class="doc-footer">
+  <span>MuSA &middot; multi-source variant annotation</span>
+  __DOC_CREDIT__
+  __DOC_CITATION__
 </footer>
 
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+window.__MUSA__ = JSON.parse(document.getElementById("payload").textContent);
+__PAGE_JS__
+</script>
 </body>
-</html>"""
+</html>
+"""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-#  MAIN
-# ══════════════════════════════════════════════════════════════════════════════
+SIG_WORDS = {
+    "P": "pathogenic", "LP": "likely pathogenic", "VUS": "uncertain significance",
+    "LB": "likely benign", "B": "benign", "NC": "not classified",
+}
+SIG_CLASS = {"P": "sig-p", "LP": "sig-lp", "VUS": "sig-vus",
+             "LB": "sig-lb", "B": "sig-b", "NC": "sig-nc"}
+
+
+def _scale_html(name, counts, meta=""):
+    """One classifier as a row of labelled count chips.
+
+    This was a proportional stacked bar. It was dropped because it was mostly one
+    grey block: on the review set ClinVar has no classification for the large
+    majority, so the segment carrying the four variants that matter was a 7px sliver
+    while "never seen" filled the width. The figure spent all its ink on the least
+    interesting fact and made the most interesting one invisible.
+    """
+    order = [k for k in style.SIG_SCALE + ["NC"] if counts.get(k)]
+    if not order:
+        return ""
+    keys = "".join(
+        f'<span class="key {SIG_CLASS[k]}"><b>{k}</b>'
+        f'<span class="key-n">{counts[k]:,}</span>'
+        f'<span class="sr-only"> {SIG_WORDS[k]}</span></span>' for k in order)
+    return (
+        f'<div class="scale"><div class="scale-head"><span class="scale-name">{name}</span>'
+        f'<span class="scale-meta">{meta}</span></div>'
+        f'<div class="scale-keys">{keys}</div></div>'
+    )
+
+
+def html_escape(s):
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def _pick_preview(df, indices, limit=6, per_gene=2):
+    """Choose which rows of a group to show, preferring distinct genes.
+
+    A group of 175 can begin with six indels in one gene (CFAP58 on patient 5724, a
+    cluster in one 60 bp window). Showing all six spends the whole preview on one
+    locus and tells the reader nothing about the other 169, so the preview takes at
+    most two per gene and backfills only if that leaves it short.
+    """
+    if "Hugo_Symbol" not in df.columns:
+        return indices[:limit]
+    genes = df["Hugo_Symbol"]
+    picked, counts, rest = [], {}, []
+    for i in indices:
+        g = str(genes.iloc[i])
+        if counts.get(g, 0) < per_gene:
+            counts[g] = counts.get(g, 0) + 1
+            picked.append(i)
+            if len(picked) == limit:
+                return picked
+        else:
+            rest.append(i)
+    return picked + rest[:limit - len(picked)]
+
+
+def _finding_rows(df, indices, limit=6):
+    """Compact clickable rows for a findings block. Clicking one opens its evidence.
+
+    The disease line is the reason this is a two-line row: "CPT2 p.Ser113Leu P" does
+    not tell a reader what the variant is pathogenic *for*, which is the first thing
+    they need in order to decide whether it is relevant to the case in front of them.
+    """
+    get = lambda col, i: (str(df[col].iloc[i]) if col in df.columns else ".")
+    out = []
+    for i in _pick_preview(df, indices, limit):
+        gene = get("Hugo_Symbol", i)
+        prot = get("HGVSp_VEP", i)
+        gdna = get("genome_change", i)
+        cvc, cvcode, cvnote = style.clinvar_chip(get("encoded_CLNSIG", i))
+        rnc, rncode, rnnote = style.renovo_chip(get("RENOVO_Class", i))
+        terms = disease_terms(get("CLNDN", i))
+        if terms:
+            head = terms[0]
+            if len(head) > 78:
+                head = head[:77].rstrip() + "…"
+            extra = (f' <i class="finding-more">+{len(terms) - 1} more</i>'
+                     if len(terms) > 1 else "")
+            disease_html = f'<span class="finding-disease">{html_escape(head)}{extra}</span>'
+        else:
+            disease_html = '<span class="finding-disease absent">no ClinVar disease recorded</span>'
+        coords = " · ".join(x for x in (prot, gdna) if x not in (".", "nan", ""))
+        out.append(
+            f'<button class="finding" type="button" data-goto="{i}">'
+            f'<span class="finding-head">'
+            f'<span class="finding-gene">{html_escape(gene if gene != "." else "—")}</span>'
+            f'{disease_html}</span>'
+            f'<span class="chip {cvc}"><span class="chip-src">ClinVar</span><b>{cvcode}</b>'
+            f'<span class="sr-only"> {cvnote}</span></span>'
+            f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
+            f'<span class="sr-only"> {rnnote}</span></span>'
+            f'{_finding_tags(df, i)}'
+            f'<span class="finding-change">{html_escape(coords)}</span>'
+            "</button>"
+        )
+    return "".join(out)
+
+
+_MOI_WORDS = {"AD": "dominant", "AR": "recessive", "XL": "X-linked",
+              "XLR": "X-linked recessive", "XLD": "X-linked dominant",
+              "MT": "mitochondrial", "SD": "semidominant"}
+
+
+def _finding_tags(df, i):
+    """The signals that decide whether a row is worth opening, read off the row.
+
+    Deliberately short and few: impact, zygosity, absence from gnomAD, and whether
+    the gene has an established disease relationship. A reviewer scanning the list
+    should be able to pick the candidates without opening anything.
+    """
+    get = lambda col: (str(df[col].iloc[i]) if col in df.columns else ".")
+    tags = []
+
+    if get("IMPACT").upper() == "HIGH":
+        tags.append(('<span class="tag on">high impact</span>'))
+
+    z = zygosity(get("bioinfo_params"))
+    if z in ("homozygous", "hemizygous"):
+        tags.append(f'<span class="tag on">{z}</span>')
+
+    af = get("MAX_AF")
+    if af in (".", "nan", ""):
+        tags.append('<span class="tag on">not in gnomAD</span>')
+    else:
+        try:
+            tags.append(f'<span class="tag">AF {float(af):.2g}</span>')
+        except ValueError:
+            pass
+
+    valid, moi = get("ClinGen_GeneDisease_Classification"), get("ClinGen_GeneDisease_MOI")
+    if valid not in (".", "nan", ""):
+        word = _MOI_WORDS.get(moi, moi if moi not in (".", "nan", "") else "")
+        label = f"{valid.lower()} gene-disease" + (f", {word}" if word else "")
+        tags.append(f'<span class="tag gene">{html_escape(label)}</span>')
+
+    stars = style.clinvar_stars(get("encoded_CLNREVSTAT"))
+    if stars and stars[0] >= 2:
+        tags.append(f'<span class="tag">{"★" * stars[0]} ClinVar</span>')
+
+    return f'<span class="finding-tags">{"".join(tags)}</span>' if tags else ""
+
+
+# ── annotation source versions ────────────────────────────────────────────────
+# Which VEP and which ClinVar produced these calls. Neither is written into the MAF,
+# so both are read back from what the run was actually pointed at: the VEP image
+# reference the pipeline declares, and the ClinVar VCF sitting in the mounted data
+# directory. A classification is only as current as the release it came from, and a
+# report that does not say which release is not reproducible evidence.
+
+def vep_version(image):
+    """The tag of the VEP container reference, e.g. dsbioinfo/ensembl-vep:115.2."""
+    ref = (image or "").strip()
+    if not ref or ":" not in ref:
+        return ""
+    tag = ref.rsplit(":", 1)[1].strip()
+    # A registry port, not a tag: host:5000/image has no tag at all.
+    return "" if "/" in tag else tag
+
+
+def clinvar_version(data_root):
+    """The release date of the ClinVar VCF VEP was given as a --custom source.
+
+    The VCF's own ##fileDate is the authority: the file is installed under a fixed
+    name so the VEP command line never changes, and the manifest can name a release
+    that a later run has already replaced on disk.
+    """
+    if not data_root:
+        return ""
+    vcf = os.path.join(data_root, "vep_data", "ClinVar", "clinvar.vcf.gz")
+    try:
+        with gzip.open(vcf, "rt", errors="replace") as fh:
+            for line in fh:
+                if not line.startswith("##"):
+                    break
+                if line.startswith("##fileDate="):
+                    return line.split("=", 1)[1].strip()
+    except OSError as exc:
+        print(f"  ClinVar version unavailable ({exc}); falling back to the manifest",
+              file=sys.stderr)
+
+    # Fall back to the installed manifest. Parsed by hand rather than with PyYAML:
+    # the report container does not ship it, and this is two flat keys deep.
+    path = os.path.join(data_root, "dbs_manifest.yaml")
+    try:
+        with open(path, errors="replace") as fh:
+            in_entry = False
+            for line in fh:
+                if re.match(r"^\s{2}\S", line):
+                    in_entry = line.strip().rstrip(":") == "clinvar"
+                elif in_entry:
+                    m = re.match(r'^\s+version:\s*"?([^"\s]+)"?', line)
+                    if m:
+                        return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
+def _versions_html(vep, clinvar):
+    rows = ""
+    if vep:
+        rows += f"<dt>VEP</dt><dd>{html_escape(vep)}</dd>"
+    if clinvar:
+        rows += f"<dt>ClinVar</dt><dd>{html_escape(clinvar)}</dd>"
+    if not rows:
+        return ""
+    return (f'<dl class="band-versions" aria-label="Annotation source versions">'
+            f'{rows}</dl>')
+
+
+def _hpo_html(terms):
+    if not terms:
+        return ('<div class="case-hpo"><span class="case-hpo-none">'
+                'No phenotype terms in the samplesheet.</span></div>')
+    links = "".join(
+        f'<a href="https://hpo.jax.org/browse/term/{t}" target="_blank" '
+        f'rel="noopener noreferrer">{t}</a>' for t in terms)
+    word = "term" if len(terms) == 1 else "terms"
+    return (f'<div class="case-hpo"><span class="case-hpo-label">Phenotype '
+            f'({len(terms)} HPO {word})</span>'
+            f'<div class="case-hpo-terms">{links}</div></div>')
+
+
+def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
+                    version="", hpo=(), assets_dir=None, vep="", clinvar=""):
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
+
+    n_conf = stats["conflicting"]
+    scales = (
+        _scale_html("ClinVar", stats["clinvar"],
+                    f"{n_conf} conflicting" if n_conf else "")
+        + _scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier")
+    )
+
+    # ── findings blocks, grouped by why a variant is here ────────────────────
+    # Each block header is the control that opens the table filtered to that block,
+    # so the number a reader sees and the rows they get are the same set by
+    # construction rather than by two definitions that could drift.
+    tones = {"flagged": "p", "lof": "p", "biallelic": "lp", "escalated": "lp",
+             "novel": "acc", "contested": "p"}
+    blocks, index = [], []
+    for key, title, why in GROUPS:
+        items = ov[key]
+        if not items:
+            continue
+        shown = min(len(items), 6)
+        more = (f'<p class="priority-more">{len(items) - shown:,} more in this group</p>'
+                if len(items) > shown else "")
+        blocks.append(
+            f'<section class="priority-group" id="g-{key}" data-tone="{tones[key]}">'
+            f'<button class="priority-head" type="button" data-group="{key}" '
+            f'data-group-label="{html_escape(title)}">'
+            f'<span class="priority-n">{len(items):,}</span>'
+            f'<span class="priority-title">{html_escape(title)}</span>'
+            f'<span class="priority-open no-print">see all in table &rarr;</span>'
+            f'</button>'
+            f'<p class="priority-why">{html_escape(why)}</p>'
+            f'{_finding_rows(df, items)}{more}</section>'
+        )
+        index.append(
+            f'<button class="index-item" type="button" data-jump="g-{key}" '
+            f'data-tone="{tones[key]}">'
+            f'<span class="index-n">{len(items):,}</span>'
+            f'<span class="index-title">{html_escape(title)}</span></button>'
+        )
+    priority_html = "".join(blocks) or (
+        '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
+        'pathogenic by ReNOVo. The full variant table is still one click away.</p>')
+    index_html = (
+        '<span class="band-index-label">Findings</span>' + "".join(index) if index
+        else '<span class="band-index-none">No findings blocks on this case.</span>')
+
+    headers = "".join(
+        f'<th scope="col" tabindex="0" data-key="{c["k"]}">{c["label"]}'
+        f'<span class="sort-mark" aria-hidden="true">&#8597;</span></th>'
+        for c in payload["main"]
+    )
+
+    return (PAGE_HTML
+            .replace("__FONTS__", style.load_fonts(assets_dir))
+            .replace("__TOKENS__", style.TOKENS)
+            .replace("__BASE_CSS__", style.BASE_CSS)
+            .replace("__BAND_CSS__", style.BAND_CSS)
+            .replace("__PAGE_CSS__", PAGE_CSS)
+            .replace("__PAGE_JS__", PAGE_JS)
+            .replace("__BAND_MEASURE_JS__", style.band_measure_js([(".band", "--band-h")]))
+            .replace("__PRIORITY__", priority_html)
+            .replace("__INDEX__", index_html)
+            .replace("__SCALES__", scales)
+            .replace("__VERSIONS__", _versions_html(vep, clinvar))
+            .replace("__HPO__", _hpo_html(hpo))
+            .replace("__NCOL__", str(len(payload["main"])))
+            .replace("__HEADERS__", headers)
+            .replace("__REVIEW__", f"{stats['review']:,}")
+            .replace("__TOTAL__", f"{stats['total']:,}")
+            .replace("__GENERATED__", now)
+            .replace("__MODE__", mode)
+            .replace("__MASTHEAD_ID__", masthead)
+            .replace("__GITHUB__", style.github_badge(style.MUSA_REPO_URL))
+            .replace("__DOC_CREDIT__", style.DOC_CREDIT_HTML)
+            .replace("__DOC_CITATION__", style.DOC_CITATION_HTML)
+            .replace("__PATIENT__", patient_code.upper())
+            .replace("__PAYLOAD__", json.dumps(payload, separators=(",", ":"))))
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
 def main():
     params = parse_args()
-    patient_code    = params["patient_code"]
-    use_vep_plugins = params["use_vep_plugins"]
-    offline         = params["offline"] or params["skip_genebe"]
-    logo_path       = params["logo_path"]
+    patient = params["patient_code"]
+    offline = params["offline"] or params["skip_genebe"]
 
-    print("MuSA: Annotate Reporter", file=sys.stderr)
-    print(f"  patient        : {patient_code}",    file=sys.stderr)
-    print(f"  offline        : {offline}",          file=sys.stderr)
-    print(f"  use_vep_plugins: {use_vep_plugins}",  file=sys.stderr)
-    print(f"  logo_path      : {logo_path}",        file=sys.stderr)
+    print("MuSA: annotation report", file=sys.stderr)
+    print(f"  patient        : {patient}", file=sys.stderr)
+    print(f"  offline        : {offline}", file=sys.stderr)
+    print(f"  use_vep_plugins: {params['use_vep_plugins']}", file=sys.stderr)
+    hpo = parse_hpo(params["hpo"])
+    print(f"  HPO terms      : {len(hpo)}"
+          + (f" ({', '.join(hpo)})" if hpo else " (none in samplesheet)"), file=sys.stderr)
 
-    logo_b64, logo_mime = load_logo_base64(logo_path)
+    vep = vep_version(params["vep_image"])
+    clinvar = clinvar_version(params["data_root"])
+    print(f"  VEP            : {vep or 'unknown'}", file=sys.stderr)
+    print(f"  ClinVar        : {clinvar or 'unknown'}", file=sys.stderr)
 
-    print("Loading MAF data...", file=sys.stderr)
-    df_raw = load_maf_data(patient_code)
+    logo_b64, logo_mime = load_logo_base64(params["logo_path"])
+    df = load_maf_data(patient)
 
-    print("Preparing display data...", file=sys.stderr)
-    df_display, main_cols, det_cols = prepare_display_data(
-        df_raw, offline, use_vep_plugins
-    )
+    main_cols = [c for c in MAIN_COLUMNS if c[0] in df.columns]
+    detail_cols = [c for c in DETAIL_COLUMNS if c[0] in df.columns]
 
-    # Stats and plots both use df_raw (original column names)
-    print("Computing statistics...", file=sys.stderr)
-    stats = compute_stats(df_raw)
+    missing = [c[0] for c in MAIN_COLUMNS + DETAIL_COLUMNS if c[0] not in df.columns]
+    if missing:
+        print(f"  Columns absent from MAF, omitted from the report: {', '.join(missing)}",
+              file=sys.stderr)
 
-    print("Generating plots...", file=sys.stderr)
-    plots = generate_all_plots(df_raw)
+    flags = review_flags(df)
+    prio = priority_scores(df)
+    stats = summarise(df, flags)
+    ov = overview(df, flags)
+    # Groups come out of overview() in genomic order, which is arbitrary here. Order
+    # them the way the table orders itself so the preview and the filtered table
+    # agree about what comes first.
+    for key, _, _ in GROUPS:
+        ov[key] = sorted(ov[key], key=lambda i: -prio[i])
+    groups = {key: ov[key] for key, _, _ in GROUPS}
+    payload = build_payload(df, main_cols, detail_cols, flags, prio, groups)
+    print(f"  Priority: {len(ov['flagged'])} ClinVar-flagged, {len(ov['escalated'])} escalated "
+          f"VUS, {len(ov['novel'])} ReNOVo-only, {len(ov['contested'])} contested",
+          file=sys.stderr)
 
-    print("Building table...", file=sys.stderr)
-    table_html = build_table_html(df_display, main_cols, det_cols)
-
-    print("Assembling HTML...", file=sys.stderr)
     html = build_html_page(
-        patient_code=patient_code,
-        table_html=table_html,
+        patient_code=patient,
+        payload=payload,
         stats=stats,
+        ov=ov,
+        df=df,
         logo_b64=logo_b64,
         logo_mime=logo_mime,
+        mode="offline" if offline else "online",
+        version=params["version"],
+        hpo=hpo,
+        # The typefaces live beside the logo, in the same assets directory the module
+        # already passes in, so no new argument has to be threaded through Nextflow.
+        assets_dir=(os.path.dirname(params["logo_path"]) if params["logo_path"] else None),
+        vep=vep,
+        clinvar=clinvar,
     )
 
-    out_file = f"{patient_code}_maf_dashboard.html"
-    with open(out_file, "w", encoding="utf-8") as f:
-        f.write(html)
-    print(f"OK  Report written: {out_file}", file=sys.stderr)
+    out_file = f"{patient}_maf_dashboard.html"
+    with open(out_file, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    print(f"OK  Report written: {out_file} ({os.path.getsize(out_file) / 1e6:.1f} MB)",
+          file=sys.stderr)
 
-    # lib/ directory expected by Nextflow output tuple
+    # lib/ directory expected by the Nextflow output tuple
     os.makedirs("lib", exist_ok=True)
     open("lib/.keep", "w").close()
 

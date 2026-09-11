@@ -13,13 +13,14 @@ include { BUILD_SETUP_REPORT } from '../../modules/local/build_setup_report'
 workflow SETUP {
 
     main:
-        // Always run basic setup, emits a merged yaml
+        // Always run basic setup, emits a merged yaml (+ changed-entries gate for --update_db_only)
         BASIC_SETUP()
         basic_yaml = BASIC_SETUP.out.merged_yaml
+        changed_entries = BASIC_SETUP.out.changed_entries
 
         if (params.download_vep_plugins == true) {
-            // Extended setup takes the basic merged yaml as input
-            EXTENDED_SETUP(basic_yaml)
+            // Extended setup takes the basic merged yaml + changed-entries gate as input
+            EXTENDED_SETUP(basic_yaml, changed_entries)
             report_input = EXTENDED_SETUP.out.merged_yaml
         } else {
             report_input = basic_yaml

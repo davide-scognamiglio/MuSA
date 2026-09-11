@@ -6,7 +6,7 @@
 
 process CLEAN_COLUMNS {
     tag "clean-maf"
-    cpus 1
+        cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2
@@ -55,7 +55,6 @@ process CLEAN_COLUMNS {
     #   #CHROM             -> keep Chromosome        (VCF header field, partially filled)
     #   #chr               -> keep Chromosome        (dbNSFP field, no chr-prefix)
     #   HGVSc_VEP          -> keep HGVSc             (dbNSFP bare notation vs VEP canonical)
-    #   Ensembl_transcriptid -> keep Feature         (dbNSFP all-transcripts vs VEP canonical)
     #   Ensembl_proteinid  -> keep ENSP              (same)
     #   Uniprot_acc        -> keep SWISSPROT         (dbNSFP multi-isoform vs VEP versioned)
     #   genename           -> keep Hugo_Symbol       (dbNSFP duplicates per transcript)
@@ -67,27 +66,71 @@ process CLEAN_COLUMNS {
     #   am_pathogenicity   -> keep AlphaMissense_score (same)
     #   Func.ensGene       -> keep Func.refGene      (91.5% match, keep refGene)
     #   Uniprot_id         -> keep Uniprot_entry     (single vs multi-transcript mnemonic)
-    T2="CLIN_SIG,Chr,#CHROM,#chr,HGVSc_VEP,Ensembl_transcriptid,Ensembl_proteinid,Uniprot_acc,genename,Gene.refGene,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Func.ensGene,Uniprot_id"
+    T2="CLIN_SIG,Chr,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,Gene.refGene,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Func.ensGene,Uniprot_id"
+    #
+    # KEPT ON PURPOSE:
+    #   MANE_dbNSFP          — dbNSFP's per-transcript MANE array (renamed in MERGE_ANNOTATIONS to
+    #                          clear the name clash with VEP's single-value MANE). This is the column
+    #                          that carries the POSITION of the canonical isoform: the offset of
+    #                          "Select" in ".;.;Select;." is the offset to read in every other
+    #                          transcript-aligned array. Nothing else in the MAF encodes it, which is
+    #                          why losing it to the name clash made the score arrays unreadable.
+    #                          After a =mane collapse, '.' here means the scores on that row are NOT
+    #                          from a MANE transcript, so it doubles as the provenance flag.
+    #   Feature              — VEP's picked transcript. The HGVSc/HGVSp/Consequence on the row are
+    #                          expressed against it, and it is the only transcript column populated
+    #                          on every row. Never drop it.
+    #   Ensembl_transcriptid — the parallel list of transcript IDs. It does NOT say which position is
+    #                          MANE (that is MANE_dbNSFP alone); it says which transcript each
+    #                          position IS. Kept purely as provenance — under =mane it names the one
+    #                          isoform the scores came from, which Feature cannot: Feature is VEP's
+    #                          pick, i.e. the most-severe consequence, not necessarily the MANE.
     #
     # DEAD — zero coverage in this file (MAF-standard fields never populated by pipeline)
     DEAD="gnomad_exomes_af,gnomad_genomes_af,Exon_Number,Entrez_Gene_Id,HGVSp_Short"
 
     DROP="\${ORIG},\${T1},\${T2},\${DEAD}"
 
-    awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" '
+    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below):
+    # the ANNOVAR-origin ClinVar columns + the bare custom ClinVar id column. The self-managed
+    # ClinVar VCF (VEP --custom: ClinVar_CLNSIG/CLNREVSTAT/CLNDN) becomes the single ClinVar source.
+    DROP_ORIG="CLNSIG,CLNREVSTAT,CLNDN,CLNDISDB,ClinVar"
+
+    awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" -v drop_orig_cols="\$DROP_ORIG" '
     BEGIN {
         n = split(drop_cols, arr, ",")
         for (i = 1; i <= n; i++) drop[arr[i]] = 1
+        m = split(drop_orig_cols, arr2, ",")
+        for (i = 1; i <= m; i++) drop_orig[arr2[i]] = 1
     }
     NR == 1 {
         for (i = 1; i <= NF; i++) {
             col = \$i
             gsub(/\r/, "", col)
 
-            # Rename SYMBOL -> Hugo_Symbol
-            if (col == "SYMBOL") {
-                col = "Hugo_Symbol"
+            # Drop by ORIGINAL name first, so the ANNOVAR-origin CLNSIG/CLNREVSTAT/CLNDN (and the bare
+            # ClinVar id col) are removed while the custom ClinVar_* fields are renamed to those
+            # canonical names just below.
+            if (col in drop_orig) {
+                keep[i] = 0
+                \$i = col
+                continue
             }
+
+            # Rename to canonical MAF names
+            if (col == "SYMBOL")                       col = "Hugo_Symbol"
+            else if (col == "ClinVar_CLNSIG")          col = "CLNSIG"
+            else if (col == "ClinVar_CLNREVSTAT")      col = "CLNREVSTAT"
+            else if (col == "ClinVar_CLNDN")           col = "CLNDN"
+            else if (col == "ClinVar_CLNSIGCONF")      col = "CLNSIGCONF"
+            else if (col == "ClinVar_CLNDISDB")        col = "CLNDISDB"
+            else if (col == "ClinVar_CLNHGVS")         col = "CLNHGVS"
+            else if (col == "ClinVar_MC")              col = "MC"
+            else if (col == "ClinVar_GENEINFO")        col = "GENEINFO"
+            else if (col == "ClinVar_ALLELEID")        col = "ALLELEID"
+            else if (col == "ClinGenVCEP_Assertion")     col = "ClinGen_Variant_Assertion"
+            else if (col == "ClinGenVCEP_EvidenceCodes") col = "ClinGen_Variant_EvidenceCodes"
+            else if (col == "ClinGenVCEP_Disease")       col = "ClinGen_Variant_Disease"
 
             # Skip if explicitly dropped or already seen (keep first occurrence only)
             if ((col in drop) || (col in seen)) {

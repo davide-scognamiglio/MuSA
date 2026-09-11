@@ -11,6 +11,7 @@ process MERGE_YAML {
     errorStrategy 'retry'
     maxRetries 3
     container "dsbioinfo/musa-helper:rebuild"
+    publishDir "${params.data_dir}", mode: 'copy', overwrite: true, saveAs: { filename -> filename == "merged.yaml" ? "dbs_manifest.yaml" : null }
 
     input:
     path(yamls)

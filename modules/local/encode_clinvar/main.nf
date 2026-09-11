@@ -7,7 +7,7 @@
 
 process ENCODE_CLINVAR {
     tag "encode-clinvar"
-    cpus 1
+        cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'
     maxRetries 2

@@ -12,9 +12,10 @@ process DOWNLOAD_REFGENOME{
 
     input:
         file manifest
-        
+        path changed_entries
+
     output:
-        tuple path('reference_genome'),file('refGenome_manifest.yaml')
+        file('refGenome_manifest.yaml')
 
     script:
     """
@@ -23,6 +24,12 @@ process DOWNLOAD_REFGENOME{
     source manifest_parser.sh
     source download_and_hash.sh
     parse_manifest "${manifest}"
+
+    if should_skip_module "reference_genome" "${changed_entries}" "/data/vep_data/reference_genome"; then
+        echo "[INFO] No changes for download_refgenome -- skipping download, reusing existing data."
+        cp "${manifest}" refGenome_manifest.yaml
+        exit 0
+    fi
 
     mkdir reference_genome
     cd reference_genome

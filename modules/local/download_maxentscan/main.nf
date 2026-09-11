@@ -12,9 +12,10 @@ process DOWNLOAD_MAXENTSCAN {
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path("MaxEntScan"),file('maxentscan_manifest.yaml')
+        file('maxentscan_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,12 @@ process DOWNLOAD_MAXENTSCAN {
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    if should_skip_module "vep_maxentscan" "${changed_entries}" "/data/vep_data/MaxEntScan"; then
+        echo "[INFO] No changes for download_maxentscan -- skipping download, reusing existing data."
+        cp "${manifest}" maxentscan_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p MaxEntScan
     cd MaxEntScan

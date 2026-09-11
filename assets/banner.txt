@@ -5,9 +5,13 @@
 ░▒▓█▓▒  ▒▓█▓▒  ▒▓█▓▒ ▒▓█▓▒  ▒▓█▓▒░       ▒▓█▓▒ ▒▓█▓▒  ▒▓█▓▒ 
 ░▒▓█▓▒  ▒▓█▓▒  ▒▓█▓▒ ▒▓█▓▒  ▒▓█▓▒░       ▒▓█▓▒ ▒▓█▓▒  ▒▓█▓▒ 
 ░▒▓█▓▒  ▒▓█▓▒  ▒▓█▓▒  ▒▓██████▓▒  ▒▓███████▓▒  ▒▓█▓▒  ▒▓█▓▒ 
-                                                                                                              
-Developed with ❤ by D. Scognamiglio and E. Bonetti 
+
+Developed with ❤ by D. Scognamiglio and E. Bonetti
 at IRCCS Istituto Ortopedico Rizzoli, Bologna, Italy.
 
-If you use this pipeline, please cite: [doi]
+If you use this pipeline, please cite:
+  Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow
+  pipeline for deep, reproducible annotation and clinical ranking of genomic
+  variants. BMC Bioinformatics. 2026 Jun 16;27(1):199.
+  doi: 10.1186/s12859-026-06513-0
 

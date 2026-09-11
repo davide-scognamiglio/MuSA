@@ -1,120 +1,234 @@
 # MuSA: Usage
 
-## :warning: Please read this documentation on the nf-core website: [https://nf-co.re/variantannotation/usage](https://nf-co.re/variantannotation/usage)
-
-> _Documentation of pipeline parameters is generated automatically from the pipeline schema and can no longer be found in markdown files._
-
 ## Introduction
 
-<!-- TODO nf-core: Add documentation about anything specific to running your pipeline. For general topics, please point to (and add to) the main nf-core website. -->
+MuSA annotates germline small variants and ranks them for clinical review. It takes **VCFs** — not
+reads — so it sits downstream of whatever called your variants (nf-core/sarek, DRAGEN, GATK, a
+clinical pipeline). It is restricted to **hg38**.
+
+The pipeline has two workflows, selected with `--workflow`:
+
+| Workflow | Purpose |
+|---|---|
+| `setup` | Downloads and verifies every annotation resource. Run once per data directory. |
+| `annotate` | Annotates VCFs and produces the MAF files and HTML reports. |
+
+`setup` must complete before `annotate` will work.
+
+## Setup workflow
+
+Run this first. It populates `--data_dir` with the VEP cache, the native dbNSFP distribution,
+ANNOVAR databases, ClinVar/ClinGen, and the reference genome, recording a SHA-256 checksum for each
+in a versioned manifest.
+
+```bash
+nextflow run MuSA \
+   --workflow setup \
+   --data_dir /path/to/musa_data \
+   -profile docker
+```
+
+**Basic setup** (the command above) fetches what routine diagnostics needs: ~123 GB.
+
+**Extended setup** additionally fetches the data files for all 22 VEP plugins, bringing the total to
+~224 GB. Required before `--use_vep_plugins true`:
+
+```bash
+nextflow run MuSA \
+   --workflow setup \
+   --data_dir /path/to/musa_data \
+   --download_vep_plugins true \
+   -profile docker
+```
+
+When setup finishes, `<data_dir>/setup_report.html` lists every resource with its version, source
+and checksum, marked `VERIFIED`, `MISMATCH` or `PENDING`.
+
+To refresh databases later without re-downloading what has not changed, add `--update_db_only true`.
+The manifest is diffed against what is already on disk and only changed entries are fetched.
 
 ## Samplesheet input
 
-You will need to create a samplesheet with information about the samples you would like to analyse before running the pipeline. Use this parameter to specify its location. It has to be a comma-separated file with 3 columns, and a header row as shown in the examples below.
+`annotate` takes a comma-separated samplesheet with a header row:
 
 ```bash
 --input '[path to samplesheet file]'
 ```
 
-### Multiple runs of the same sample
-
-The `sample` identifiers have to be the same when you have re-sequenced the same sample more than once e.g. to increase sequencing depth. The pipeline will concatenate the raw reads before performing any downstream analysis. Below is an example for the same sample sequenced across 3 lanes:
-
 ```csv title="samplesheet.csv"
-sample,fastq_1,fastq_2
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz
-CONTROL_REP1,AEG588A1_S1_L003_R1_001.fastq.gz,AEG588A1_S1_L003_R2_001.fastq.gz
-CONTROL_REP1,AEG588A1_S1_L004_R1_001.fastq.gz,AEG588A1_S1_L004_R2_001.fastq.gz
+patient,sample_type,sample_file,hpo
+5510,blood,/data/vcf/5510.vcf.gz,HP:0002650;HP:0000926
+5724,blood,/data/vcf/5724.vcf.gz,
 ```
 
-### Full samplesheet
+| Column | Required | Description |
+|---|---|---|
+| `patient` | yes | Patient identifier. Names the output directory and every output file. |
+| `sample_type` | yes | Free-text sample source, e.g. `blood`, `saliva`. |
+| `sample_file` | yes | Path to the VCF. Must end `.vcf` or `.vcf.gz`. |
+| `hpo` | no | `;`-separated HPO term IDs, e.g. `HP:0002650;HP:0000926`. Drives phenotype-based gene-panel filtering; leave empty to skip it for that patient. |
 
-The pipeline will auto-detect whether a sample is single- or paired-end using the information provided in the samplesheet. The samplesheet can have as many columns as you desire, however, there is a strict requirement for the first 3 columns to match those defined in the table below.
-
-A final samplesheet file consisting of both single- and paired-end data may look something like the one below. This is for 6 samples, where `TREATMENT_REP3` has been sequenced twice.
-
-```csv title="samplesheet.csv"
-sample,fastq_1,fastq_2
-CONTROL_REP1,AEG588A1_S1_L002_R1_001.fastq.gz,AEG588A1_S1_L002_R2_001.fastq.gz
-CONTROL_REP2,AEG588A2_S2_L002_R1_001.fastq.gz,AEG588A2_S2_L002_R2_001.fastq.gz
-CONTROL_REP3,AEG588A3_S3_L002_R1_001.fastq.gz,AEG588A3_S3_L002_R2_001.fastq.gz
-TREATMENT_REP1,AEG588A4_S4_L003_R1_001.fastq.gz,
-TREATMENT_REP2,AEG588A5_S5_L003_R1_001.fastq.gz,
-TREATMENT_REP3,AEG588A6_S6_L003_R1_001.fastq.gz,
-TREATMENT_REP3,AEG588A6_S6_L004_R1_001.fastq.gz,
-```
-
-| Column    | Description                                                                                                                                                                            |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sample`  | Custom sample name. This entry will be identical for multiple sequencing libraries/runs from the same sample. Spaces in sample names are automatically converted to underscores (`_`). |
-| `fastq_1` | Full path to FastQ file for Illumina short reads 1. File has to be gzipped and have the extension ".fastq.gz" or ".fq.gz".                                                             |
-| `fastq_2` | Full path to FastQ file for Illumina short reads 2. File has to be gzipped and have the extension ".fastq.gz" or ".fq.gz".                                                             |
-
-An [example samplesheet](../assets/samplesheet.csv) has been provided with the pipeline.
+One row per patient. An example ships at [`assets/samplesheet.csv`](../assets/samplesheet.csv).
 
 ## Running the pipeline
 
-The typical command for running the pipeline is as follows:
-
 ```bash
-nextflow run MuSA --input ./samplesheet.csv --outdir ./results --genome GRCh37 -profile docker
+nextflow run MuSA \
+   --workflow annotate \
+   --input ./samplesheet.csv \
+   --outdir ./results \
+   --data_dir /path/to/musa_data \
+   --annovar_software_dir /path/to/annovar \
+   -profile docker
 ```
 
-This will launch the pipeline with the `docker` configuration profile. See below for more information about profiles.
+Results land in `<outdir>/<date>/<patient>/` — see [output.md](output.md).
 
-Note that the pipeline will create the following files in your working directory:
+### Basic and extended annotation
+
+Basic annotation is the default. To use the full plugin suite (requires extended setup):
 
 ```bash
-work                # Directory containing the nextflow working files
-<OUTDIR>            # Finished results in specified location (defined with --outdir)
-.nextflow_log       # Log file from Nextflow
-# Other nextflow hidden files, eg. history of pipeline runs and old logs.
+nextflow run MuSA \
+   --workflow annotate \
+   --input ./samplesheet.csv \
+   --outdir ./results \
+   --data_dir /path/to/musa_data \
+   --annovar_software_dir /path/to/annovar \
+   --use_vep_plugins true \
+   -profile docker
 ```
 
-If you wish to repeatedly use the same parameters for multiple runs, rather than specifying each flag in the command, you can specify these in a params file.
+### Online mode and ACMG/AMP classification
 
-Pipeline settings can be provided in a `yaml` or `json` file via `-params-file <file>`.
+MuSA runs offline by default. Automated ACMG/AMP classification is retrieved from the GeneBe
+knowledgebase, which needs network access and credentials:
 
-> [!WARNING]
-> Do not use `-c <file>` to specify parameters as this will result in errors. Custom config files specified with `-c` must only be used for [tuning process resource specifications](https://nf-co.re/docs/usage/configuration#tuning-workflow-resources), other infrastructural tweaks (such as output directories), or module arguments (args).
+```bash
+--offline false --gb_user <user> --gb_api_key <key>
+```
 
-The above pipeline run specified with a params file in yaml format:
+Behind a proxy, add `--http_proxy` / `--https_proxy`. To keep online mode but skip GeneBe (for
+instance when the API is rate-limited), add `--skip_genebe true`.
+
+> [!NOTE]
+> Online mode sends variant coordinates to an external service. HPO-driven filtering also queries
+> the HPO API. Everything else runs against local databases.
+
+### Filtering
+
+The filtered MAF is produced by three filters, all optional and independently applicable:
+
+| Parameter | Default | Description |
+|---|---|---|
+| `--panel` | `null` | Name of a gene panel CSV under `<data_dir>/panels` (without the `.csv`). Restricts output to those genes. |
+| `--max_freq` | `null` | Drop variants above this population allele frequency, e.g. `0.05`. |
+| `--drop_benign` | `false` | Drop variants ClinVar reports as benign. |
+
+The samplesheet's `hpo` column adds a fourth, per-patient: genes associated with those HPO terms are
+retrieved from the HPO API and used as an additional panel.
+
+### Other parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `--build` | `hg38` | Reference build. Only `hg38` is supported. |
+| `--vcf_format` | `null` | Set to `sarek` for VCFs from nf-core/sarek so its hard-filter conventions are applied. |
+| `--skip_bcftools` | `false` | Skip bcftools normalisation, for input already normalised and left-aligned. |
+| `--n_core` | `8` | Cores given to VEP and other per-sample steps. |
+| `--dbnsfp_max_forks` | `16` | Concurrent dbNSFP per-chromosome shards. Lower it if memory is tight. |
+| `--dbnsfp_transcript_scores` | `mane` | How to resolve dbNSFP's per-transcript score arrays to one value per variant. |
+
+The full list is in [`nextflow_schema.json`](../nextflow_schema.json), or run with `--help`.
+
+#### dbNSFP transcript-specific scores
+
+dbNSFP reports many scores **per transcript**, as `;`-delimited arrays positionally aligned with
+`Ensembl_transcriptid`:
+
+```
+Ensembl_transcriptid   ENST00000538872;ENST00000382841;ENST00000111111
+MANE_dbNSFP            .;Select;.
+SIFT_score             0.622;1.0;0.3
+REVEL_score            0.361;0.361;0.9
+```
+
+Read on its own, `SIFT_score` is ambiguous: nothing in that field says which of the three numbers
+belongs to the isoform you care about. The position of the canonical isoform is encoded **only** in
+`MANE_dbNSFP` — the offset of `Select` is the offset to read in every other array.
+`Ensembl_transcriptid` names the transcript at each position but does not mark which one is
+canonical, and `Feature` (VEP's pick) is the most-severe-consequence transcript, which is not
+necessarily the MANE one.
+
+`Feature`, `Ensembl_transcriptid` and `MANE_dbNSFP` are all preserved in the final MAF, in either
+mode. They answer different questions and none substitutes for another: `Feature` is the single
+transcript VEP/vcf2maf selected, and the row's `HGVSc`/`HGVSp`/`Consequence` are expressed against
+it; `Ensembl_transcriptid` is the transcript mapping of dbNSFP's own annotations — positional under
+`all`, and under `mane` collapsed in lockstep with the scores so it names the one transcript they
+came from; `MANE_dbNSFP` marks which position is canonical. Keeping all three lets a downstream
+consumer resolve transcript-specific scores explicitly while still seeing dbNSFP's original
+annotation.
+
+| Value | Behaviour |
+|-------|-----------|
+| `mane` (default) | Every transcript-aligned column is rewritten to the single element at the MANE position, so each score column holds one value. When a variant has no MANE transcript the pipeline falls back, in order, to MANE Plus Clinical → the transcript VEP picked (`Feature`) → the first element. One index is chosen per row and applied to every column, so columns can never disagree. `MANE_dbNSFP` is collapsed along with the rest and doubles as a provenance flag: `.` means the scores on that row did **not** come from a MANE transcript. |
+| `all` | Arrays are left exactly as dbNSFP produced them. Use this if you would rather resolve transcripts yourself downstream — `Ensembl_transcriptid` and `MANE_dbNSFP` give you everything needed to do so. |
+
+Which columns count as transcript-aligned comes from a fixed, committed list
+(`assets/dbnsfp_transcript_aligned_columns.txt`), not from inspecting each run's output. dbNSFP also
+uses `;` for gene-level fields (`GO_*`, `Pathway(*)`, `HPO_*`, `MIM_*`, `Orphanet_*`, `GenCC_*`) whose
+element count has nothing to do with transcripts, and a per-file guess would collapse a column for
+one patient but not the next. As a second safeguard, a value is rewritten only when its element count
+matches that row's transcript count. Regenerate the list after a dbNSFP upgrade with
+`bin/gen_dbnsfp_aligned_columns.py`.
+
+### Params files
+
+Rather than repeating flags, put them in a params file:
 
 ```bash
 nextflow run MuSA -profile docker -params-file params.yaml
 ```
 
-with:
-
 ```yaml title="params.yaml"
+workflow: 'annotate'
 input: './samplesheet.csv'
-outdir: './results/'
-genome: 'GRCh37'
-<...>
+outdir: './results'
+data_dir: '/path/to/musa_data'
+annovar_software_dir: '/path/to/annovar'
+use_vep_plugins: true
 ```
 
-You can also generate such `YAML`/`JSON` files via [nf-core/launch](https://nf-co.re/launch).
+> [!WARNING]
+> Do not use `-c <file>` to specify parameters — that will error. `-c` is only for tuning process
+> resources, infrastructure settings, or module arguments.
+
+Note that the pipeline creates the following in your working directory:
+
+```bash
+work                # Nextflow working files
+<OUTDIR>            # Results, as given by --outdir
+.nextflow_log       # Nextflow log
+```
 
 ### Updating the pipeline
 
-When you run the above command, Nextflow automatically pulls the pipeline code from GitHub and stores it as a cached version. When running the pipeline after this, it will always use the cached version if available - even if the pipeline has been updated since. To make sure that you're running the latest version of the pipeline, make sure that you regularly update the cached version of the pipeline:
-
 ```bash
-nextflow pull MuSA
+nextflow pull davide-scognamiglio/MuSA
 ```
 
 ### Reproducibility
 
-It is a good idea to specify the pipeline version when running the pipeline on your data. This ensures that a specific version of the pipeline code and software are used when you run your pipeline. If you keep using the same tag, you'll be running the same version of the pipeline, even if there have been changes to the code since.
+Pin the pipeline version so a rerun uses the same code. Find the version on the
+[MuSA releases page](https://github.com/davide-scognamiglio/MuSA/releases) and pass it with `-r`:
 
-First, go to the [MuSA releases page](https://github.com/MuSA/releases) and find the latest pipeline version - numeric only (eg. `1.3.1`). Then specify this when running the pipeline with `-r` (one hyphen) - eg. `-r 1.3.1`. Of course, you can switch to another version by changing the number after the `-r` flag.
+```bash
+nextflow run davide-scognamiglio/MuSA -r 1.0 ...
+```
 
-This version number will be logged in reports when you run the pipeline, so that you'll know what you used when you look back in the future.
-
-To further assist in reproducibility, you can use share and reuse [parameter files](#running-the-pipeline) to repeat pipeline runs with the same settings without having to write out a command with every single parameter.
-
-> [!TIP]
-> If you wish to share such profile (such as upload as supplementary material for academic publications), make sure to NOT include cluster specific paths to files, nor institutional specific profiles.
+Pin the *data* as well as the code: keep the merged manifest written by the setup workflow. It
+records the exact version and checksum of every database an annotation was produced against, which
+the pipeline version alone does not capture.
 
 ## Core Nextflow arguments
 

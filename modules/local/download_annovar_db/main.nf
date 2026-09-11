@@ -12,9 +12,10 @@
 
     input:
         file manifest
+        path changed_entries
 
     output:
-        tuple path('renovo_humandb'),file('annovar_manifest.yaml')
+        file('annovar_manifest.yaml')
 
     script:
     """
@@ -24,6 +25,19 @@
     source download_and_hash.sh
 
     parse_manifest "${manifest}"
+
+    _keys=""
+    for var in \$(compgen -v); do
+        if [[ \$var =~ ^annovar_.*_url\$ ]]; then
+            _keys="\$_keys \${var%_url}"
+        fi
+    done
+
+    if should_skip_module "\$_keys" "${changed_entries}" "/data/renovo_humandb"; then
+        echo "[INFO] No changes for download_annovar_db -- skipping download, reusing existing data."
+        cp "${manifest}" annovar_manifest.yaml
+        exit 0
+    fi
 
     mkdir -p renovo_humandb
     cd renovo_humandb

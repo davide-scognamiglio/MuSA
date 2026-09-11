@@ -3,19 +3,52 @@ repository_type: pipeline
 nf_core_version: 3.5.1
 
 lint:
+  # Every entry below is a DELIBERATE divergence from the nf-core template, not a defect to fix
+  # later. Anything that was actually broken (owner-less github.com/MuSA URLs, a branch-protection
+  # check comparing against a repository name that could never match, a schema that misreported its
+  # own defaults) has been fixed rather than silenced.
   files_unchanged:
     - .github/CONTRIBUTING.md
     - assets/sendmail_template.txt
+    # MuSA is branded "MuSA" throughout, where the template hardcodes "<org>/<name>" in prose.
+    # Purely cosmetic; the URLs inside these files are correct and point at the real repository.
+    - .github/ISSUE_TEMPLATE/bug_report.yml
+    - .github/ISSUE_TEMPLATE/feature_request.yml
+    - .github/PULL_REQUEST_TEMPLATE.md
+    - assets/email_template.html
+    - assets/email_template.txt
+    - docs/README.md
+    - LICENSE
+    # Repository-specific, intentionally not the template version:
+    #   branch.yml  - guards `davide-scognamiglio/MuSA`, not an nf-core repo
+    #   linting.yml - runs release lint for PRs into `main` (this repo has no `master`), and
+    #                 installs pre-commit, which nf-core lint shells out to but does not depend on
+    #   .gitignore  - carries the local benchmark/acceptance data dirs (CLINVAR_20*/ alone is
+    #                 ~210 GB) that must never be committed
+    - .github/workflows/branch.yml
+    - .github/workflows/linting.yml
+    - .gitignore
   multiqc_config: false
   files_exist:
     - assets/multiqc_config.yml
+    # nf-core hardcodes an "nf-core-" filename prefix for pipeline logos
+    # (nf_core/pipelines/lint/files_exist.py). MuSA ships the same three images under its own
+    # name - assets/MuSA_logo_light.png, docs/images/MuSA_logo_{light,dark}.png - because an
+    # "nf-core-" filename would assert branding this pipeline does not carry. Rename on adoption.
+    - assets/nf-core-MuSA_logo_light.png
+    - docs/images/nf-core-MuSA_logo_light.png
+    - docs/images/nf-core-MuSA_logo_dark.png
 
 template:
-  org: nf-core
-  name: variantannotation
+  # `org` is what nf-core lint checks manifest.name / manifest.homePage against
+  # (nf_core/pipelines/lint/nextflow_config.py reads template.org, defaulting to "nf-core").
+  # Setting it to the real owner makes those two checks pass honestly instead of being silenced.
+  # On adoption by nf-core this becomes `org: nf-core` / `name: musa`, alongside manifest.name.
+  org: davide-scognamiglio
+  name: MuSA
   description: Ultra-deep, multi-source variant annotation
   author: D. Scognamiglio, E. Bonetti
-  version: 1.0.0dev
+  version: 1.1.0
   force: true
   outdir: .
   skip_features:
