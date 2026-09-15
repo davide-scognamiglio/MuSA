@@ -36,12 +36,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Changed`
 
+- **RENOVO scores now come from renovo-rebuild (RENOVO 1.5), and ANNOVAR is no longer used.**
+  [renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild) runs RENOVO's published
+  random forest, unchanged, on columns MuSA already annotates (VEP consequence and gnomAD 4.1 AF,
+  dbNSFP 5 scores, MuSA's ClinVar) instead of re-annotating every VCF with ANNOVAR. The new
+  `RENOVO_SCORE` step scores the merged table after `MERGE_ANNOTATIONS`; the parallel
+  `RENOVO_ANNOTATE_VCF` branch is gone. Per exome it takes seconds and under 0.5 GB of memory,
+  against about 3.5 minutes and 21-24 GB before.
+  Scores are not identical to MuSA 1.1: dbNSFP 5 retired FATHMM and fathmm-MKL and replaced MutPred
+  with MutPred2, so those inputs use fathmm-XF, MutPred2 or RENOVO's own per-Type median, and
+  RENOVO's ANNOVAR `Type` is derived from VEP's picked transcript. On 251,297 ClinVar variants
+  absent from RENOVO's training data: AUC 0.995 vs 0.996, sensitivity 0.969 vs 0.975, specificity
+  0.991 vs 0.991; 99.0% of variants stay on the same side of the 0.5 benign/pathogenic threshold
+  and 83.8% keep the exact class. Do not compare `RENOVO_Class` across 1.1 and 1.2 results.
+- The raw MAF loses the columns only ANNOVAR produced (104 in the test profile): gnomAD 2.1.1
+  sub-population frequencies, dbNSFP 3.5c score copies, refGene/ensGene `Func`/`ExonicFunc`/
+  `AAChange`, `avsnp150`, InterVar's 2018 automated ACMG criteria and the `Otherinfo*` columns.
+  VEP and dbNSFP 5 already carry current equivalents; `rs_dbSNP` (dbNSFP) is now kept in place of
+  `avsnp150`. None of the removed columns was read by the report, the filters or the ACMG step.
 - The README's pipeline diagram is now an animated nf-metro map covering both workflows,
   `annotate` (ending in the HTML report and the MAF) and `setup`, with optional steps marked.
 - Refreshed the README logos.
 
 ### `Removed`
 
+- ANNOVAR: the `--annovar_software_dir` parameter and its container bind, the ANNOVAR database
+  download in `setup` (51 GB, `renovo_humandb/`), the `RENOVO_ANNOTATE_VCF` module and the patched
+  RENOVO image source (`containers/renovo`). A basic `setup` is now about 72 GB, extended about
+  173 GB. Existing data directories keep working; `renovo_humandb/` can be deleted.
+- `bin/acmg_classifier.R`, an unused stub and the only other reader of the InterVar columns.
 - nf-core template leftovers MuSA never used: the Slack and Teams notification templates,
   `tower.yml` (a Seqera report for a samplesheet MuSA does not publish) and the example
   `assets/samplesheet.csv`.
