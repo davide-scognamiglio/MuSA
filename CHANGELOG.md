@@ -20,6 +20,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nf-schema plugin MuSA pins has required 25.10 since v1.1.0, and Nextflow 25.04 failed with
   `Plugin nf-schema with version @... does not exist in the repository`. nf-schema moves from
   2.6.1 to 2.7.3, whose `--help` also works on Nextflow 26.04.
+- MuSA no longer depends on the host's tools. `PARSE_VEP_ANNOTATION`, `RENAME_VCF_BY_PATIENT` and
+  `BUILD_SETUP_REPORT` declared no container and ran directly on the host, so they needed host
+  `python3` and gawk: `PARSE_VEP_ANNOTATION`'s awk used gawk-only `match()` capture arrays, which
+  fail with a syntax error under mawk, the awk a stock Ubuntu install ships. All three now run in
+  the MuSA helper images, and the awk is rewritten in POSIX form. On real NA12878 VEP output (up to
+  1.06 million rows) the rewrite under mawk gives byte-identical output to the original under gawk.
+- A default container set for all pipelines in `~/.nextflow/config` (for example
+  `process.container = "ubuntu:22.04"`) stopped MuSA before its first task with
+  `Cannot cast object ... to class 'java.util.Map'`, a crash in nf-schema's parameter summary.
+  MuSA's config now clears that default; every MuSA module declares its own container.
+- `setup` with a `--data_dir` that did not exist yet failed at the end. Docker created the missing
+  folder as root, and Nextflow could not publish `setup_report.html` into it. `setup` now creates
+  `--data_dir` as the launching user before any task starts.
 
 ### `Changed`
 
