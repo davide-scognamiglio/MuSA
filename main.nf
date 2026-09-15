@@ -2,13 +2,6 @@
 nextflow.enable.dsl=2
 
 
-// Load and display ASCII banner
-def bannerFile = file('assets/banner.txt')
-
-if (bannerFile.exists()) {
-    println bannerFile.text
-}
-
 /*
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -17,22 +10,12 @@ if (bannerFile.exists()) {
 */
 include { validateParameters; paramsSummaryLog; samplesheetToList } from 'plugin/nf-schema'
 
-// Validate input parameters
-validateParameters()
-
-// Print summary of supplied parameters
-log.info paramsSummaryLog(workflow)
-
 // Create a new channel of metadata from a sample sheet passed to the pipeline through the --input parameter
 // ch_input = Channel.fromList(samplesheetToList(params.input, "assets/schema_input.json"))
 
-
-// Set alternate build names
-if(params.build == "hg38") {
-    params.build_alt_name = "GRCh38"
-} else {
-    error "Currently, we only support hg38 build. We will likely support T2T build in the future"
-}
+// Set alternate build names. hg38 is the only accepted build (checked at the top of the workflow
+// block), so its alternate name is fixed.
+params.build_alt_name = "GRCh38"
 
 
 /*
@@ -52,17 +35,32 @@ include { SETUP } from './workflows/setup/main.nf'
 
 workflow {
 
-    switch (params.workflow) {
-        case "":
-        case "annotate":
-            ANNOTATE()
-            break
+    // Nextflow's strict syntax (default from 26.04) allows no statements outside a workflow, process
+    // or function, so the start-of-run steps live here rather than at the top of the script.
 
-        case "setup":
-            SETUP()
-            break
+    // Load and display ASCII banner
+    def bannerFile = file('assets/banner.txt')
+    if (bannerFile.exists()) {
+        println bannerFile.text
+    }
 
-        default:
+    // Validate input parameters
+    validateParameters()
+
+    // Print summary of supplied parameters
+    log.info paramsSummaryLog(workflow)
+
+    if (params.build != "hg38") {
+        error "Currently, we only support hg38 build. We will likely support T2T build in the future"
+    }
+
+    if (params.workflow == "" || params.workflow == "annotate") {
+        ANNOTATE()
+    }
+    else if (params.workflow == "setup") {
+        SETUP()
+    }
+    else {
             error """
             ──────────────────── ERROR ────────────────────
             Invalid value for --workflow: '${params.workflow}'.
@@ -72,21 +70,25 @@ workflow {
             • setup
 
             Example:
-            nextflow run main.nf -c config/annotation.config --workflow annotate
+            nextflow run davide-scognamiglio/MuSA --workflow annotate
             ───────────────────────────────────────────────
             """
     }
-}
 
-workflow.onComplete {
-    log.info """
-    ────────────────────────────────────────────────
-    Pipeline completed at : ${workflow.complete}
-    Duration              : ${workflow.duration}
-    Success               : ${workflow.success}
-    Exit status           : ${workflow.exitStatus}
-    Work dir              : ${workflow.workDir}
-    Output dir            : ${params.outdir}
-    ────────────────────────────────────────────────
-    """.stripIndent()
+    // Captured here: once the handler lives in the workflow block rather than at the top of the
+    // script, `workflow` and `params` no longer resolve inside it when it fires.
+    def wf = workflow
+    def outdir = params.outdir
+    wf.onComplete {
+        log.info """
+        ────────────────────────────────────────────────
+        Pipeline completed at : ${wf.complete}
+        Duration              : ${wf.duration}
+        Success               : ${wf.success}
+        Exit status           : ${wf.exitStatus}
+        Work dir              : ${wf.workDir}
+        Output dir            : ${outdir}
+        ────────────────────────────────────────────────
+        """.stripIndent()
+    }
 }

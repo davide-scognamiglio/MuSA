@@ -1,20 +1,17 @@
 // workflows/lib/annot_utils.nf
 
 def extract_csv(csv_file) {
-    file(csv_file).withReader('UTF-8') { reader ->
-        def n = 0
-        while ((line = reader.readLine()) != null) {
-            n++
-            if (n==1) {
-                def requiredColumns = ["patient", "sample_type", "sample_file", "hpo"]
-                if (!requiredColumns.every { line.contains(it) }) {
-                    error "Samplesheet is missing required columns: ${requiredColumns}"
-                }
-            }
+    // A samplesheet is a handful of lines, so reading it whole is fine. (Nextflow's strict syntax,
+    // the default from 26.04, has no `while` loop to stream it line by line.)
+    def lines = file(csv_file).readLines()
+    if (lines.size() >= 1) {
+        def requiredColumns = ["patient", "sample_type", "sample_file", "hpo"]
+        if (!requiredColumns.every { lines[0].contains(it) }) {
+            error "Samplesheet is missing required columns: ${requiredColumns}"
         }
-        if (n==1) {
-            error "Samplesheet contains a header but no samples: provide at least one sample."
-        }
+    }
+    if (lines.size() == 1) {
+        error "Samplesheet contains a header but no samples: provide at least one sample."
     }
 
     return Channel.from(csv_file)

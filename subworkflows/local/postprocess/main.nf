@@ -18,7 +18,7 @@ workflow POSTPROCESS {
     ch2 = ENCODE_CLINVAR(ch1b)
     ch3  = params.offline ? ch2 : RENOVO_ADJUST_ACMG(ch2)
     ch4 = FILTER_VARIANTS(ch3)
-    ch5 = BUILD_ANNOTATE_REPORT(ch4)
+    ch5 = BUILD_ANNOTATE_REPORT(ch4[0], ch4[1], ch4[2])
 
     emit:
         ch5
