@@ -9,6 +9,7 @@ process RENAME_VCF_BY_PATIENT {
     tag "rename-vcf"
         cpus params.n_core
     memory "1 GB"
+    container "dsbioinfo/musa-helper:rebuild"
 
     input:
         tuple val(meta), path(vcf)

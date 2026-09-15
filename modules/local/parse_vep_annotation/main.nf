@@ -11,6 +11,7 @@ process PARSE_VEP_ANNOTATION {
     errorStrategy 'retry'
     maxRetries 3
     memory { 8.GB * task.attempt }
+    container "dsbioinfo/musa-helper:rebuild"
 
     input:
         tuple val(meta), file(vcf)
@@ -23,6 +24,8 @@ process PARSE_VEP_ANNOTATION {
         input="${vcf}"
         output="${meta.patient}.vep_parsed.tsv"
 
+    # POSIX awk only: the helper image ships mawk, and so does a stock Ubuntu host. gawk extensions
+    # such as match() with a capture array fail there with a syntax error.
     awk '
     BEGIN {
         FS="\\t"; OFS="\\t"
@@ -33,8 +36,8 @@ process PARSE_VEP_ANNOTATION {
 
     # Capture CSQ field format
     /^##INFO=<ID=CSQ/ {
-        if (match(\$0, /Format: (.*)">/, arr)) {
-            n_csq = split(arr[1], csq_fields, "|")
+        if (match(\$0, /Format: .*">/)) {
+            n_csq = split(substr(\$0, RSTART + 8, RLENGTH - 10), csq_fields, "|")
             csq_format_found = 1
             after_csq = 1   # From now on, we treat INFO fields as "after CSQ"
         }
@@ -43,8 +46,8 @@ process PARSE_VEP_ANNOTATION {
 
     # Capture INFO fields only AFTER CSQ definition
     /^##INFO=<ID=/ {
-        if (match(\$0, /<ID=([^,]+)/, arr)) {
-            id = arr[1]
+        if (match(\$0, /<ID=[^,]+/)) {
+            id = substr(\$0, RSTART + 4, RLENGTH - 4)
             if (after_csq && id != "CSQ") {
                 n_info++
                 info_fields[n_info] = id
@@ -95,7 +98,7 @@ process PARSE_VEP_ANNOTATION {
         }
 
         # Extract CSQ entry (the first section before any further ;)
-        if (match(annot_info, /^[^;]+/, arr)) csq_part = arr[0]
+        if (match(annot_info, /^[^;]+/)) csq_part = substr(annot_info, RSTART, RLENGTH)
         sub(/^.*CSQ=[^;]+;?/, "", annot_info)
 
         # Parse CSQ entries

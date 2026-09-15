@@ -6,6 +6,7 @@
 
 process BUILD_SETUP_REPORT {
     tag "setup_report"
+    container "dsbioinfo/musa-helper:rebuild-minimal"
     publishDir "${params.data_dir}", mode: 'copy', overwrite: true
 
     input:
