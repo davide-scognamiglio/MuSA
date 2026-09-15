@@ -128,7 +128,7 @@ drop_benign   <- if (!is.null(normalize_arg(args[7]))) as.logical(args[7]) else 
 # Load MAF
 # =========================
 # na.strings covers every missing-value spelling the upstream tools + MERGE_ANNOTATIONS's outer
-# join produce for a whole cell ("NA" from the join's `-e "NA"` fill, "" from VEP/ANNOVAR fields
+# join produce for a whole cell ("NA" from the join's `-e "NA"` fill, "" from VEP fields
 # with no match, "." from dbNSFP's own convention) — R's na.strings is a whole-cell match, so a
 # multi-transcript array like ".;.;.;0.901;.;." is untouched; only a cell that IS exactly one of
 # these three strings becomes NA. Paired with `na = "."` on both write.table calls below, every

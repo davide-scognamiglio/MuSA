@@ -103,6 +103,12 @@
                     "fa_icon": "fas fa-docker",
                     "default": "ensemblorg/ensembl-vep:release_116.2"
                 },
+                "renovo_container": {
+                    "type": "string",
+                    "description": "renovo-rebuild container image, which scores variants with RENOVO's random forest.",
+                    "fa_icon": "fas fa-docker",
+                    "default": "dsbioinfo/renovo-rebuild:1.5.0"
+                },
                 "download_vep_plugins": {
                     "type": "boolean",
                     "description": "Download VEP plugins",
@@ -141,12 +147,6 @@
                     "type": "string",
                     "format": "directory-path",
                     "description": "Directory containing all the data downloaded during the setup step.",
-                    "fa_icon": "fas fa-folder"
-                },
-                "annovar_software_dir": {
-                    "type": "string",
-                    "format": "directory-path",
-                    "description": "Directory containing the annovar software folder (path/to/annovar).",
                     "fa_icon": "fas fa-folder"
                 },
                 "dbs_manifest": {
@@ -420,11 +420,10 @@
                     },
                     "then": {
                         "required": [
-                            "annovar_software_dir",
                             "input",
                             "outdir"
                         ],
-                        "errorMessage": "When workflow='annotate', you must provide annovar_software_dir, input and outdir"
+                        "errorMessage": "When workflow='annotate', you must provide input and outdir"
                     }
                 }
             ]

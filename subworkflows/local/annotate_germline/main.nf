@@ -4,9 +4,9 @@ include {DBNSFP_ANNOTATE_VCF_CHR} from '../../../modules/local/dbnsfp_annotate_v
 include {GATHER_DBNSFP_TSV} from '../../../modules/local/gather_dbnsfp_tsv'
 include {GENEBE_ANNOTATE_VCF} from '../../../modules/local/genebe_annotate_vcf'
 include {VCF_TO_MAF} from '../../../modules/local/vcf_to_maf'
-include {RENOVO_ANNOTATE_VCF} from '../../../modules/local/renovo_annotate_vcf'
 include {PARSE_VEP_ANNOTATION} from '../../../modules/local/parse_vep_annotation'
 include {MERGE_ANNOTATIONS} from '../../../modules/local/merge_annotations'
+include {RENOVO_SCORE} from '../../../modules/local/renovo_score'
 include {ADD_GENOME_CHANGE} from '../../../modules/local/add_genome_change'
 include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
 include {chrom_list} from '../../../lib/annot_utils.nf'
@@ -50,12 +50,7 @@ workflow ANNOTATE_GERMLINE {
         )
 
         /*
-         * Branch 3: Renovo
-         */
-        renovo_tsv = RENOVO_ANNOTATE_VCF(vcf)
-
-        /*
-         * Branch 4: vcf2maf
+         * Branch 3: vcf2maf
          */
         maf = VCF_TO_MAF(vcf)
         maf_g_change = ADD_GENOME_CHANGE(maf)
@@ -67,10 +62,11 @@ workflow ANNOTATE_GERMLINE {
         joined =
             vep_tsv
             .join(dbnsfp_tsv)
-            .join(renovo_tsv)
             .join(maf_context)
 
-        merged = MERGE_ANNOTATIONS(joined)
+        // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
+        // running as a branch of its own.
+        merged = RENOVO_SCORE(MERGE_ANNOTATIONS(joined))
 
     emit:
         merged

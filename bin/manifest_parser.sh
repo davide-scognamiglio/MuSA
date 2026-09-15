@@ -88,7 +88,7 @@ should_skip_module() {
 
 write_computed_sha256() {
     local yaml_file="$1"
-    local entry_key="$2"   # original YAML key, e.g. "ANNOVAR_avsnp150"
+    local entry_key="$2"   # original YAML key, e.g. "vep_cache"
     local sha_value="$3"
 
     # Writes computed_sha256 for the entry. Trust-on-first-use: if the entry's
