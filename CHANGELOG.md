@@ -5,6 +5,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### `Fixed`
+
+- MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
+  MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
+  `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
+  string). Rewritten in forms both the old and the strict parser accept. A test-profile run on
+  26.04.6 produces MAFs and a report byte-identical to the unmodified code on 25.10.2.
+- `annotate` with `-profile docker` and no proxy crashed in VEP. The profile always passed
+  `-e http_proxy=${params.http_proxy}`, which becomes the literal string `null` when no proxy is
+  set, and the official VEP 116 image refuses it ("Proxy must be specified as absolute URI").
+  The proxy variables are now passed only when set.
+- The minimum Nextflow version is now stated correctly as 25.10.0 (manifest, README, CI). The
+  nf-schema plugin MuSA pins has required 25.10 since v1.1.0, and Nextflow 25.04 failed with
+  `Plugin nf-schema with version @... does not exist in the repository`. nf-schema moves from
+  2.6.1 to 2.7.3, whose `--help` also works on Nextflow 26.04.
+
 ### `Changed`
 
 - The README's pipeline diagram is now an animated nf-metro map covering both workflows,
