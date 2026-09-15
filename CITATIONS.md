@@ -24,12 +24,6 @@
 
   > Ensembl Variant Effect Predictor plugins. Ensembl. Available from: https://github.com/Ensembl/VEP_plugins
 
-### ANNOVAR
-
-- [ANNOVAR](https://pubmed.ncbi.nlm.nih.gov/20601685/)
-
-  > Wang K, Li M, Hakonarson H. ANNOVAR: functional annotation of genetic variants from high-throughput sequencing data. Nucleic Acids Res. 2010 Sep;38(16):e164. doi: 10.1093/nar/gkq603. PubMed PMID: 20601685; PubMed Central PMCID: PMC2938201.
-
 ### dbNSFP
 
 - [dbNSFP](https://pubmed.ncbi.nlm.nih.gov/33261662/)
@@ -46,17 +40,15 @@
 
   > Bonetti E, Tini G, Mazzarella L. Accuracy of RENOVO predictions on variants reclassified over time. J Transl Med. 2024;22:713.
 
+- [renovo-rebuild (RENOVO 1.5)](https://github.com/davide-scognamiglio/renovo-rebuild)
+
+  > The RENOVO model as run by MuSA: RENOVO's published random forest on VEP, dbNSFP and ClinVar annotations, without ANNOVAR. Available from: https://github.com/davide-scognamiglio/renovo-rebuild
+
 ### GeneBe
 
 - [GeneBe](https://pubmed.ncbi.nlm.nih.gov/38440907/)
 
   > Stawinski P, Ploski R. Genebe.net: implementation and validation of an automatic ACMG variant pathogenicity criteria assignment. Clin Genet. 2024;106(2):119-126.
-
-### InterVar
-
-- [InterVar](https://pubmed.ncbi.nlm.nih.gov/28132688/)
-
-  > Li Q, Wang K. InterVar: Clinical interpretation of genetic variants by the 2015 ACMG-AMP guidelines. Am J Hum Genet. 2017 Feb 2;100(2):267-280. doi: 10.1016/j.ajhg.2017.01.004. PubMed PMID: 28137787; PubMed Central PMCID: PMC5294755.
 
 ### vcf2maf
 

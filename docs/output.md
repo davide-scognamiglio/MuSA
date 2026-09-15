@@ -29,10 +29,11 @@ results/
 <summary>Output files</summary>
 
 - `<patient>.raw.maf`
-  - Every variant that survived preprocessing, annotated by all four branches and merged into one
-    table. 946 columns per variant in extended mode as of this version (basic mode has fewer,
-    since it skips the VEP plugin columns), one row per variant. This number grows as annotation
-    sources are added -- treat it as approximate rather than a stable interface.
+  - Every variant that survived preprocessing, annotated by the VEP, dbNSFP and vcf2maf branches,
+    merged into one table and scored by RENOVO. 843 columns per variant in extended mode as of this
+    version (basic mode has fewer, since it skips the VEP plugin columns), one row per variant.
+    This number changes as annotation sources change -- treat it as approximate rather than a
+    stable interface.
 - `<patient>.filtered.maf`
   - The same table after the three-tier filter: gene panel (`--panel`), HPO-matched gene panel
     (from the samplesheet's `hpo` column), and allele frequency (`--max_freq`), plus
@@ -60,7 +61,7 @@ same way in every column.
 ## Setup workflow
 
 Reference data is written under `--data_dir` in the layout the annotate workflow expects
-(`vep_data/`, `dbNSFP/`, ANNOVAR databases, reference genome). Alongside it:
+(`vep_data/`, `dbNSFP/`, `clingen/`, reference genome). Alongside it:
 
 <details markdown="1">
 <summary>Output files</summary>

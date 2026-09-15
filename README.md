@@ -12,14 +12,14 @@
 
 **MuSA (Multi-Source variant Annotation)** turns a germline VCF into an interpretation-ready MAF and
 a self-contained HTML report a clinician can triage without opening a spreadsheet. It runs
-**Ensembl VEP, ANNOVAR, dbNSFP and the RENOVO ML pathogenicity reclassifier in parallel**, merges
-them into one row-per-variant table, adds ClinVar/ClinGen/HPO context, and ranks the result so the
-variants worth a second look surface first.
+**Ensembl VEP and dbNSFP in parallel**, merges them into one row-per-variant table, scores every
+variant with the **RENOVO ML pathogenicity classifier**, adds ClinVar/ClinGen/HPO context, and ranks
+the result so the variants worth a second look surface first.
 
 Built with the [nf-core](https://nf-co.re) pipeline template, on [Nextflow](https://nextflow.io).
 Published in *BMC Bioinformatics* — see [Citation](#citation).
 
-![MuSA metro map: the annotate workflow normalizes and filters a VCF, runs VEP (with optional GeneBe), dbNSFP, ReNOVo and vcf2maf in parallel, then merges, adds gene-level context and optional ACMG scoring, and filters into a per-patient HTML report and MAF; the separate setup workflow reads a YAML manifest, downloads the core and optional VEP plugin databases, and writes a setup HTML report](assets/pipeline_schema.svg)
+![MuSA metro map: the annotate workflow normalizes and filters a VCF, runs VEP (with optional GeneBe), dbNSFP and vcf2maf in parallel, then merges, scores with RENOVO, adds gene-level context and optional ACMG scoring, and filters into a per-patient HTML report and MAF; the separate setup workflow reads a YAML manifest, downloads the core and optional VEP plugin databases, and writes a setup HTML report](assets/pipeline_schema.svg)
 
 The report below is real output: MuSA run in extended mode against the paper's own NA12878/HG001
 WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up.
@@ -35,13 +35,12 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | **Genome build** | GRCh38/hg38 only. |
 | **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
-| **Storage, one-time** | ~123 GB for core annotation, ~224 GB if you also want the 22 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
-| **ANNOVAR** | You provide it. RENOVO's scoring depends on it; MuSA does not and cannot bundle it — get a license and download it yourself from the [ANNOVAR site](https://annovar.openbioinformatics.org/en/latest/). |
+| **Storage, one-time** | ~72 GB for core annotation, ~173 GB if you also want the 22 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
 | **dbNSFP** | The bundled distribution is **non-commercial / academic use only**. Check the [dbNSFP license](https://sites.google.com/site/jpopgen/dbNSFP) covers your use case before running `setup`. |
 | **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring and live HPO gene-panel lookup. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) needs neither. |
 | **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) — non-commercial use and redistribution, with attribution. |
 
-If your VCFs are hg38, you can get Docker or Singularity running, and 123 GB of disk is available:
+If your VCFs are hg38, you can get Docker or Singularity running, and 72 GB of disk is available:
 MuSA is feasible for you. If any of those don't hold, see [Requirements](#requirements-and-constraints)
 before going further.
 
@@ -85,14 +84,13 @@ Two workflows:
 | `setup` | Downloads and checksums every annotation database into `--data_dir`. Once per data directory. | before the first `annotate` |
 | `annotate` | Annotates VCFs against that data directory, ranks variants, writes MAF + HTML report. | once per batch of patients |
 
-**Annotation sources**, run in parallel and merged into one table:
+**Annotation sources**, merged into one table:
 
 | Source | Contributes |
 |---|---|
 | [Ensembl VEP](https://www.ensembl.org/info/docs/tools/vep/index.html) | Consequence, transcript annotation, population frequencies (gnomAD/1000G), and — in extended mode — up to 22 plugins (AlphaMissense, CADD, ClinPred, Enformer, EVE, SpliceVault, MaxEntScan and others) |
 | [dbNSFP](https://sites.google.com/site/jpopgen/dbNSFP) | Pathogenicity predictions (REVEL, MetaRNN, BayesDel, SIFT, PolyPhen-2…), gene-level constraint, disease/phenotype cross-references |
-| [ANNOVAR](https://annovar.openbioinformatics.org/) | Backing database annotation consumed by RENOVO's classifier |
-| [RENOVO](https://pubmed.ncbi.nlm.nih.gov/33761318/) | ML reclassification of variants of uncertain significance |
+| [RENOVO 1.5](https://github.com/davide-scognamiglio/renovo-rebuild) | ML pathogenicity score and class for every variant: RENOVO's published model, run on the VEP, dbNSFP and ClinVar columns above ([renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild)) |
 | ClinVar / ClinGen | Clinical significance, review status, gene-disease validity and inheritance mode |
 | [HPO](https://hpo.jax.org/) | Phenotype-matched gene panels, from the samplesheet's `hpo` column |
 | [GeneBe](https://genebe.net/) *(optional, online mode)* | Automated ACMG/AMP criteria and score |
@@ -130,7 +128,7 @@ that was annotated rather than only what was flagged.
 
 ## Try it in 10 minutes
 
-The database directory (below) is a one-time, ~123 GB download — it is the actual gate, not a
+The database directory (below) is a one-time, ~72 GB download — it is the actual gate, not a
 formality, so budget time for it separately. Once it exists, running MuSA against a new VCF, or
 against the bundled single-variant test case, takes minutes.
 
@@ -151,18 +149,17 @@ nextflow run davide-scognamiglio/MuSA \
   -profile docker
 ```
 
-This fetches VEP's cache, dbNSFP, ANNOVAR databases, ClinVar/ClinGen and the reference genome
-(~123 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists
+This fetches VEP's cache, dbNSFP, ClinVar/ClinGen and the reference genome
+(~72 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists
 exactly what landed and its checksum when it's done.
 
 **3. Run the bundled test** — a single-variant VCF, so this finishes in a couple of minutes and
-proves your Docker, ANNOVAR and data directory are wired correctly:
+proves your Docker and data directory are wired correctly:
 
 ```bash
 nextflow run davide-scognamiglio/MuSA \
   -profile test,docker \
   --data_dir /path/to/musa_data \
-  --annovar_software_dir /path/to/annovar \
   --outdir output_test
 ```
 
@@ -182,13 +179,15 @@ build`) rather than silently mis-annotating a GRCh37 VCF — realign or lift ove
 
 | Mode | What it adds | Approx. size | When to use it |
 |---|---|---|---|
-| **Basic** (`setup` default) | VEP cache, ANNOVAR databases, dbNSFP, ClinVar/ClinGen, reference genome | ~123 GB | Routine diagnostic annotation |
-| **Extended** (`--download_vep_plugins true`) | + all 22 VEP plugin data files (AlphaMissense, CADD, Enformer, EVE, GWAS, MaveDB, ...) | ~224 GB total | Deep functional characterization; required before `--use_vep_plugins true` |
+| **Basic** (`setup` default) | VEP cache, dbNSFP, ClinVar/ClinGen, reference genome | ~72 GB | Routine diagnostic annotation |
+| **Extended** (`--download_vep_plugins true`) | + all 22 VEP plugin data files (AlphaMissense, CADD, Enformer, EVE, GWAS, MaveDB, ...) | ~173 GB total | Deep functional characterization; required before `--use_vep_plugins true` |
 
-**ANNOVAR is not redistributed.** MuSA's RENOVO branch depends on ANNOVAR for its own annotation
-step. You need your own license and download from the
-[official source](https://annovar.openbioinformatics.org/en/latest/), then point
-`--annovar_software_dir` at the directory containing `table_annovar.pl`.
+**RENOVO scores come from RENOVO 1.5.** MuSA scores variants with
+[renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild), which runs RENOVO's
+published model on MuSA's own annotations instead of an ANNOVAR re-annotation. Discrimination is
+unchanged within 0.001 AUC on ClinVar variants RENOVO never saw, but individual scores differ from
+the original software, so do not compare `RENOVO_Class` across MuSA 1.1 and 1.2 results. RENOVO is
+non-commercial software; commercial use needs the RENOVO authors' permission.
 
 **dbNSFP is academic-use only.** The setup workflow downloads dbNSFP's academic-branch distribution.
 Confirm your use case is covered by the [dbNSFP license](https://sites.google.com/site/jpopgen/dbNSFP)
@@ -205,8 +204,7 @@ none of it and makes no outbound network calls.
 
 ## Installation / setup
 
-Prerequisites: [Nextflow ≥ 25.10.0](https://nextflow.io), Docker or Singularity/Apptainer, and an
-ANNOVAR install (see above).
+Prerequisites: [Nextflow ≥ 25.10.0](https://nextflow.io) and Docker or Singularity/Apptainer.
 
 > [!NOTE]
 > On an older Nextflow, MuSA stops before running anything with
@@ -221,7 +219,7 @@ nextflow run davide-scognamiglio/MuSA \
   -profile docker            # or -profile singularity
 ```
 
-Add `--download_vep_plugins true` for the extended (~224 GB) tier. Re-running `setup` later only
+Add `--download_vep_plugins true` for the extended (~173 GB) tier. Re-running `setup` later only
 re-downloads entries whose manifest version changed (`--update_db_only true` to force a diff-only
 refresh).
 
@@ -257,7 +255,6 @@ nextflow run davide-scognamiglio/MuSA \
   --input samplesheet.csv \
   --outdir results \
   --data_dir /path/to/musa_data \
-  --annovar_software_dir /path/to/annovar \
   --vcf_format multicaller \
   -profile docker
 ```

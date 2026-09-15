@@ -18,8 +18,8 @@ The pipeline has two workflows, selected with `--workflow`:
 ## Setup workflow
 
 Run this first. It populates `--data_dir` with the VEP cache, the native dbNSFP distribution,
-ANNOVAR databases, ClinVar/ClinGen, and the reference genome, recording a SHA-256 checksum for each
-in a versioned manifest.
+ClinVar/ClinGen, and the reference genome, recording a SHA-256 checksum for each in a versioned
+manifest.
 
 ```bash
 nextflow run MuSA \
@@ -28,10 +28,10 @@ nextflow run MuSA \
    -profile docker
 ```
 
-**Basic setup** (the command above) fetches what routine diagnostics needs: ~123 GB.
+**Basic setup** (the command above) fetches what routine diagnostics needs: ~72 GB.
 
 **Extended setup** additionally fetches the data files for all 22 VEP plugins, bringing the total to
-~224 GB. Required before `--use_vep_plugins true`:
+~173 GB. Required before `--use_vep_plugins true`:
 
 ```bash
 nextflow run MuSA \
@@ -78,7 +78,6 @@ nextflow run MuSA \
    --input ./samplesheet.csv \
    --outdir ./results \
    --data_dir /path/to/musa_data \
-   --annovar_software_dir /path/to/annovar \
    -profile docker
 ```
 
@@ -94,7 +93,6 @@ nextflow run MuSA \
    --input ./samplesheet.csv \
    --outdir ./results \
    --data_dir /path/to/musa_data \
-   --annovar_software_dir /path/to/annovar \
    --use_vep_plugins true \
    -profile docker
 ```
@@ -195,7 +193,6 @@ workflow: 'annotate'
 input: './samplesheet.csv'
 outdir: './results'
 data_dir: '/path/to/musa_data'
-annovar_software_dir: '/path/to/annovar'
 use_vep_plugins: true
 ```
 
