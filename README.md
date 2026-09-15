@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-[![Nextflow](https://img.shields.io/badge/version-%E2%89%A525.04.0-green?style=flat&logo=nextflow&logoColor=white&color=%230DC09D&link=https%3A%2F%2Fnextflow.io)](https://www.nextflow.io/)
+[![Nextflow](https://img.shields.io/badge/version-%E2%89%A525.10.0-green?style=flat&logo=nextflow&logoColor=white&color=%230DC09D&link=https%3A%2F%2Fnextflow.io)](https://www.nextflow.io/)
 [![run with docker or singularity](https://img.shields.io/badge/run%20with-docker%20%7C%20singularity-1d355c?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.1186%2Fs12859--026--06513--0-blue)](https://doi.org/10.1186/s12859-026-06513-0)
@@ -134,11 +134,13 @@ The database directory (below) is a one-time, ~123 GB download — it is the act
 formality, so budget time for it separately. Once it exists, running MuSA against a new VCF, or
 against the bundled single-variant test case, takes minutes.
 
-**1. Install Nextflow** (skip if already installed):
+**1. Install Nextflow** (skip if already installed; MuSA needs version 25.10.0 or later):
 
 ```bash
 curl -s https://get.nextflow.io | bash
 ```
+
+Already have Nextflow? Check `nextflow -version`, and run `nextflow self-update` if it is older than 25.10.0.
 
 **2. Build the database directory** — required once, before any `annotate` run:
 
@@ -203,8 +205,14 @@ none of it and makes no outbound network calls.
 
 ## Installation / setup
 
-Prerequisites: [Nextflow ≥ 25.04.0](https://nextflow.io), Docker or Singularity/Apptainer, and an
+Prerequisites: [Nextflow ≥ 25.10.0](https://nextflow.io), Docker or Singularity/Apptainer, and an
 ANNOVAR install (see above).
+
+> [!NOTE]
+> On an older Nextflow, MuSA stops before running anything with
+> `Plugin nf-schema with version @2.7.3 does not exist in the repository`. Nextflow 25.04 and
+> earlier read an older plugin index that doesn't list the nf-schema versions MuSA needs. Run
+> `nextflow self-update`, or pin a version for one run with `NXF_VER=25.10.2 nextflow run ...`.
 
 ```bash
 nextflow run davide-scognamiglio/MuSA \
