@@ -19,7 +19,7 @@ variants worth a second look surface first.
 Built with the [nf-core](https://nf-co.re) pipeline template, on [Nextflow](https://nextflow.io).
 Published in *BMC Bioinformatics* — see [Citation](#citation).
 
-![MuSA architecture: VEP, dbNSFP and RENOVO run in parallel over a normalized VCF, merge into one MAF, and pass through ClinGen/ClinVar post-processing into a per-patient HTML report](assets/pipeline_schema.svg)
+![MuSA metro map: the annotate workflow normalizes and filters a VCF, runs VEP (with optional GeneBe), dbNSFP, ReNOVo and vcf2maf in parallel, then merges, adds gene-level context and optional ACMG scoring, and filters into a per-patient HTML report and MAF; the separate setup workflow reads a YAML manifest, downloads the core and optional VEP plugin databases, and writes a setup HTML report](assets/pipeline_schema.svg)
 
 The report below is real output: MuSA run in extended mode against the paper's own NA12878/HG001
 WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up.

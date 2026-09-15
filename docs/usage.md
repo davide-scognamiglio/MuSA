@@ -68,7 +68,7 @@ patient,sample_type,sample_file,hpo
 | `sample_file` | yes | Path to the VCF. Must end `.vcf` or `.vcf.gz`. |
 | `hpo` | no | `;`-separated HPO term IDs, e.g. `HP:0002650;HP:0000926`. Drives phenotype-based gene-panel filtering; leave empty to skip it for that patient. |
 
-One row per patient. An example ships at [`assets/samplesheet.csv`](../assets/samplesheet.csv).
+One row per patient.
 
 ## Running the pipeline
 

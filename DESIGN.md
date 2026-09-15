@@ -22,7 +22,7 @@ gaming dashboard rather than diagnostics.
 Neutrals are cool-tinted toward the accent's hue, never warm. Warm near-whites (cream, sand, paper)
 are explicitly excluded.
 
-The accent is MuSA's own mark colour, sampled from `assets/MuSA_logo_light.png` (#362276), not an
+The accent is MuSA's own mark colour, sampled from `docs/images/MuSA_logo_light.png` (#362276), not an
 invented one. It is a deep, sober indigo and should not be confused with the `#6c5fff` neon violet
 of the previous dark theme, which is what the anti-reference rules out.
 
