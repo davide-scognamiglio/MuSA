@@ -58,6 +58,12 @@ workflow {
         ANNOTATE()
     }
     else if (params.workflow == "setup") {
+        // Create --data_dir as the launching user before any container mounts it. Docker creates a
+        // missing mount source as root, and Nextflow, which publishes the setup report as the user,
+        // could then not write into it.
+        if (params.data_dir) {
+            file(params.data_dir).mkdirs()
+        }
         SETUP()
     }
     else {
