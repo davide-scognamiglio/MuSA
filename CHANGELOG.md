@@ -3,6 +3,23 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### `Changed`
+
+- The README's pipeline diagram is now an animated nf-metro map covering both workflows,
+  `annotate` (ending in the HTML report and the MAF) and `setup`, with optional steps marked.
+- Refreshed the README logos.
+
+### `Removed`
+
+- nf-core template leftovers MuSA never used: the Slack and Teams notification templates,
+  `tower.yml` (a Seqera report for a samplesheet MuSA does not publish) and the example
+  `assets/samplesheet.csv`.
+- Stray development files: `assets/clingen_manifest_entries.yaml`, `conf/custom_annotation.config`,
+  an unreferenced `tests/config/test.config`, `docs/images/test.txt`, and the old `v1.0` banner
+  PNGs under `assets/`.
+
 ## v1.1.0 - 2026-09-10
 
 First tagged release since the paper's submitted state. Three threads: the annotation engine
