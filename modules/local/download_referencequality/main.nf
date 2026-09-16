@@ -7,7 +7,6 @@
 
 process DOWNLOAD_REFERENCEQUALITY {
     tag "vep_setup"
-    publishDir "${params.data_dir}/vep_data", mode: 'copy', overwrite: true, pattern: "ReferenceQuality"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -82,6 +81,10 @@ script:
     tabix -p gff sorted_GRCh38_quality_mergedfile.gff3.gz
 
     cd ..
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "ReferenceQuality" "/data/vep_data/ReferenceQuality"
 
     mv ${manifest} referencequality_manifest.yaml
     """

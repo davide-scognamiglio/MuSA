@@ -7,7 +7,6 @@
 
 process DOWNLOAD_PLI {
     tag "vep_setup"
-    publishDir "${params.data_dir}/vep_data", mode: 'copy', overwrite: true, pattern: "pLI"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -56,6 +55,10 @@ process DOWNLOAD_PLI {
     awk '{print \$2, \$20 }' "\${!out_var}" > pli_gene.txt
 
     cd ..
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "pLI" "/data/vep_data/pLI"
 
     mv ${manifest} pli_manifest.yaml
     """
