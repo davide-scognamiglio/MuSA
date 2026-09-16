@@ -7,7 +7,6 @@
 
 process DOWNLOAD_VEP_CACHE {
     tag "vep_setup"
-    publishDir "${params.data_dir}", mode: 'copy', overwrite: true, pattern: "vep_data/vep_cache/homo_sapiens"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -41,6 +40,10 @@ process DOWNLOAD_VEP_CACHE {
     tar xzf \$vep_cache_out   
 
     cd ../../
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "vep_data/vep_cache/homo_sapiens" "/data/vep_data/vep_cache/homo_sapiens"
 
     mv ${manifest} vep_cache_manifest.yaml
 

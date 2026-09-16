@@ -7,7 +7,6 @@
 
 process DOWNLOAD_REFGENOME{
     tag "vep_setup"
-    publishDir "${params.data_dir}/vep_data", mode: 'copy', overwrite: true, pattern: "reference_genome"
     container "dsbioinfo/gatk:latest"
 
     input:
@@ -49,6 +48,10 @@ process DOWNLOAD_REFGENOME{
        -O ${params.build}.dict
 
     cd ..
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "reference_genome" "/data/vep_data/reference_genome"
 
     mv ${manifest} refGenome_manifest.yaml
     

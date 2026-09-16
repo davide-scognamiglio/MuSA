@@ -7,7 +7,6 @@
 
 process DOWNLOAD_DBNSFP {
     tag "dbNSFP_setup"
-    publishDir "${params.data_dir}/dbNSFP", mode: 'copy', overwrite: true, pattern: "dbNSFP"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -40,6 +39,10 @@ process DOWNLOAD_DBNSFP {
     # Rename whatever versioned folder was extracted to a fixed name
     extracted_dir=\$(basename "\$dbnsfp_out" .zip)
     mv "\$extracted_dir" dbNSFP
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "dbNSFP" "/data/dbNSFP/dbNSFP"
 
     mv ${manifest} dbnsfp_manifest.yaml
     """
