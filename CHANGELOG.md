@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Fixed`
 
+- **`setup` installed nothing.** Every download module built its directory in the task work dir and
+  relied on `publishDir` with a `pattern:` to copy it into `--data_dir`, but `publishDir` only
+  publishes files a process declares as outputs, and `8871db4` (2026-07-14) removed those
+  declarations. Since then a fresh `setup` downloaded tens of GB, left them in `work/`, and the
+  first step reading the data directory failed with
+  `No such file or directory: <data_dir>/vep_data/reference_genome/hg38.fa.fai`. Only ClinVar and
+  ClinGen were unaffected, because they already installed into the bind-mounted `/data` themselves.
+  All 19 remaining modules now do the same through a shared `install_into_data` helper, which stages
+  the directory and renames it into place so an interrupted install cannot leave a half-populated
+  folder that the next run's skip check would accept. Existing data directories are unaffected.
+- **A failed download was installed as if it had worked.** `download_and_compute_sha` did not check
+  the exit status of `wget`/`curl`/`gdown`: because it runs inside a command substitution, a failure
+  did not stop the task, so a blocked or refused download left a 0-byte file that was hashed,
+  written into the manifest and installed. The helper now fails the task when the download command
+  reports an error or produces no data.
 - MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
   MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
   `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
