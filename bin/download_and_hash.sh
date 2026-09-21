@@ -20,7 +20,11 @@ download_and_compute_sha() {
     echo "[INFO] Starting download..." >&2
     local status=0
     if [ "$method" == "wget" ]; then
-        wget --no-check-certificate -c --tries=5 --timeout=60 "$url" -O "$out" || status=$?
+        # Large databases (dbNSFP is ~47 GB) come from servers that drop long connections every few
+        # minutes; -c resumes from the byte reached, so allow many resumes. A Nextflow-level retry
+        # would instead restart from zero in a new work directory.
+        wget --no-check-certificate -c --tries=100 --waitretry=30 --retry-connrefused --timeout=60 \
+            "$url" -O "$out" || status=$?
     elif [ "$method" == "curl" ]; then
         curl -L --fail --retry 5 --retry-delay 5 --retry-max-time 300 -o "$out" "$url" || status=$?
     elif [ "$method" == "gdown" ]; then
