@@ -26,7 +26,22 @@ download_and_compute_sha() {
         wget --no-check-certificate -c --tries=100 --waitretry=30 --retry-connrefused --timeout=60 \
             "$url" -O "$out" || status=$?
     elif [ "$method" == "curl" ]; then
-        curl -L --fail --retry 5 --retry-delay 5 --retry-max-time 300 -o "$out" "$url" || status=$?
+        # Retry here, not with curl's --retry: that one discards the bytes an attempt received and
+        # does not retry a transfer cut mid-way. -C - resumes from the bytes already on disk.
+        local attempt http_errors=0
+        for attempt in $(seq 1 100); do
+            status=0
+            curl -L --fail -C - --connect-timeout 60 -o "$out" "$url" || status=$?
+            case "$status" in
+                0) break ;;
+                22)                      # HTTP >= 400: retry a transient 5xx, not a 403/404 forever
+                    http_errors=$((http_errors + 1))
+                    if [ "$http_errors" -ge 3 ]; then break; fi ;;
+                33) rm -f "$out" ;;      # server does not accept ranges: restart from zero
+            esac
+            echo "[WARN] curl exit status $status (attempt $attempt/100); resuming in 30 s" >&2
+            sleep 30
+        done
     elif [ "$method" == "gdown" ]; then
         if ! command -v gdown >/dev/null 2>&1; then
             echo "[ERROR] gdown not found in PATH" >&2
