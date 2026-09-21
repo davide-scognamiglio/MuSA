@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   did not stop the task, so a blocked or refused download left a 0-byte file that was hashed,
   written into the manifest and installed. The helper now fails the task when the download command
   reports an error or produces no data.
+- **Large downloads gave up when the server dropped the connection.** `wget` resumed at most 5
+  times and `curl` never resumed (its `--retry` restarts from zero and does not retry a transfer cut
+  mid-way), so dbNSFP (~47 GB) failed at 27.9 GB after 1h35m on a host that closes long
+  connections. Both now resume from the bytes already on disk, up to 100 times; HTTP errors such
+  as 403/404 still fail after 3 attempts.
 - MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
   MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
   `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
