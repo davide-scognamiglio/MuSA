@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mid-way), so dbNSFP (~47 GB) failed at 27.9 GB after 1h35m on a host that closes long
   connections. Both now resume from the bytes already on disk, up to 100 times; HTTP errors such
   as 403/404 still fail after 3 attempts.
+- **dbNSFP could never finish downloading on a normal link.** Every process inherits `time = 2.h`
+  from `nextflow.config`, and a 45 GB download at a few MB/s outlives it: Nextflow killed the task
+  at 83% ("process hasn't exited"), and a retry would restart from zero. `DOWNLOAD_*` processes now
+  get 72 h.
 - MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
   MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
   `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
