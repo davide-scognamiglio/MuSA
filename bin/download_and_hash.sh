@@ -31,7 +31,10 @@ download_and_compute_sha() {
         local attempt http_errors=0
         for attempt in $(seq 1 100); do
             status=0
-            curl -L --fail -C - --connect-timeout 60 -o "$out" "$url" || status=$?
+            # --speed-limit/--speed-time: a stalled connection (open, no bytes) would otherwise hang
+            # curl forever; abort it after 2 min below 1 kB/s so the loop resumes it.
+            curl -L --fail -C - --connect-timeout 60 --speed-limit 1024 --speed-time 120 \
+                -o "$out" "$url" || status=$?
             case "$status" in
                 0) break ;;
                 22)                      # HTTP >= 400: retry a transient 5xx, not a 403/404 forever
