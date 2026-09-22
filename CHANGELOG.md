@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ClinGen were unaffected, because they already installed into the bind-mounted `/data` themselves.
   All 19 remaining modules now do the same through a shared `install_into_data` helper, which stages
   the directory and renames it into place so an interrupted install cannot leave a half-populated
-  folder that the next run's skip check would accept. Existing data directories are unaffected.
+  folder that the next run's skip check would accept. Installed files are handed to the owner of
+  `--data_dir` (the docker and podman profiles run tasks as root), so they stay editable without
+  sudo and later steps can publish into them. Existing data directories are unaffected.
 - **A failed download was installed as if it had worked.** `download_and_compute_sha` did not check
   the exit status of `wget`/`curl`/`gdown`: because it runs inside a command substitution, a failure
   did not stop the task, so a blocked or refused download left a 0-byte file that was hashed,

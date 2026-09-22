@@ -65,6 +65,7 @@ process DOWNLOAD_CLINVAR {
     mkdir -p "\$target_dir"
     cp -f clinvar.vcf.gz     "\${target_dir}/clinvar.vcf.gz"
     cp -f clinvar.vcf.gz.tbi "\${target_dir}/clinvar.vcf.gz.tbi"
+    match_data_dir_owner "\$target_dir"
 
     mv ${manifest} clinvar_manifest.yaml
     """

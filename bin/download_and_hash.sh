@@ -118,5 +118,32 @@ install_into_data() {
     mv "$source_dir" "$staging"
     rm -rf "$target_dir"
     mv "$staging" "$target_dir"
+    match_data_dir_owner "$target_dir"
     echo "[INFO] installed $target_dir"
+}
+
+# ---------------------------------------------------------------------------------------
+# match_data_dir_owner <path>...
+#
+# Give each path, and any directory created between it and /data, to the owner of the data
+# dir. The docker and podman profiles run tasks as root (--user root), so anything a task
+# installs under /data is otherwise owned by root on the host: the user cannot update or
+# delete it without sudo, and Nextflow, which publishes as the launching user, fails with
+# "Failed to publish file" when a later step (GEN_DBNSFP_ALIGNED_COLUMNS) writes into it.
+# No-op under singularity, where tasks already run as the user.
+# ---------------------------------------------------------------------------------------
+match_data_dir_owner() {
+    local owner path dir
+    owner=$(stat -c '%u:%g' /data)
+    if [[ "$(id -u)" == "${owner%%:*}" ]]; then
+        return 0
+    fi
+    for path in "$@"; do
+        chown -R "$owner" "$path"
+        dir=$(dirname "$path")
+        while [[ "$dir" != "/data" && "$dir" != "/" ]]; do
+            chown "$owner" "$dir"
+            dir=$(dirname "$dir")
+        done
+    done
 }
