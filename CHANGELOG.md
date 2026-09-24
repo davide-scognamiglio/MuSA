@@ -54,3 +54,8 @@ Stability (from 1.2.0):
 - A bad samplesheet stopped the JVM with `System.exit(1)`, orphaning running tasks; it now fails
   through Nextflow's error path. `-profile test` only worked from inside a clone of the repository.
 - Removed an unused `check_max()` helper whose limits were never applied.
+- With nf-schema 2.7.3, `-profile docker` crashed before any task (`Ambiguous method overloading
+  for method ...SummaryCreator#maybeMask`): the schema gave `--max_freq` a default of 0.05 that the
+  config does not have. The schema now matches the config (`max_freq` unset, so no frequency filter;
+  `n_core` 8, not 16), declares `--skip_genebe` and `--help`, and drops `--trace_report_suffix`,
+  which the config never defined.
