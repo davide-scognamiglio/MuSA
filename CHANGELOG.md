@@ -48,6 +48,10 @@ original v1.1.0 (commit `c5d7612`); it does here. If you ran v1.1.0 before 2026-
   file inside its download `gwas-catalog-download-associations-alt-full.tsv` (same columns), while
   VEP is pointed at `...-v1.0-full.tsv`. `DOWNLOAD_GWAS` now installs the downloaded TSV under the
   name VEP reads. Existing data directories are unaffected.
+- A relative `--data_dir` (e.g. `musa_data/`) failed at the first task with Docker's `"musa_data/"
+  includes invalid characters for a local volume name`: the container profiles mount the path as
+  given, and Docker reads a relative path as a volume name. MuSA now stops at startup with
+  `--data_dir must be an absolute path`, and `--help` and the README say so.
 - MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
   MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
   `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`

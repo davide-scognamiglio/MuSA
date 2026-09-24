@@ -140,7 +140,9 @@
                 "data_dir": {
                     "type": "string",
                     "format": "directory-path",
-                    "description": "Directory containing all the data downloaded during the setup step.",
+                    "pattern": "^/",
+                    "errorMessage": "--data_dir must be an absolute path (e.g. --data_dir $PWD/musa_data): the container engine mounts it as given, and Docker rejects a relative path",
+                    "description": "Absolute path of the directory holding the databases: where `setup` downloads them and where `annotate` reads them.",
                     "fa_icon": "fas fa-folder"
                 },
                 "annovar_software_dir": {
