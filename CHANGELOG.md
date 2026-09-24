@@ -3,7 +3,75 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.1.0 - 2026-09-10
+## v1.1.0 - 2026-09-10, fixed 2026-09-24
+
+On 2026-09-24 the `v1.1.0` tag was moved to this fixed code: stability fixes backported from
+1.2.0, no new features and no change to annotation results. A fresh `setup` did not work in the
+original v1.1.0 (commit `c5d7612`); it does here. If you ran v1.1.0 before 2026-09-24, run
+`nextflow drop davide-scognamiglio/MuSA` once so Nextflow fetches the updated tag.
+
+### `Changed`
+
+- The default `--dbs_manifest` now points to the test-datasets commit this release was built for
+  (`2e466ef`) instead of `main`,
+  so later edits of the manifest for newer MuSA releases cannot change what a 1.1 setup downloads.
+
+### Fixed on 2026-09-24
+
+- **`setup` installed nothing.** Every download module built its directory in the task work dir and
+  relied on `publishDir` with a `pattern:` to copy it into `--data_dir`, but `publishDir` only
+  publishes files a process declares as outputs, and `8871db4` (2026-07-14) removed those
+  declarations. Since then a fresh `setup` downloaded tens of GB, left them in `work/`, and the
+  first step reading the data directory failed with
+  `No such file or directory: <data_dir>/vep_data/reference_genome/hg38.fa.fai`. Only ClinVar and
+  ClinGen were unaffected, because they already installed into the bind-mounted `/data` themselves.
+  All 20 remaining modules, the ANNOVAR database download included, now do the same through a shared `install_into_data` helper, which stages
+  the directory and renames it into place so an interrupted install cannot leave a half-populated
+  folder that the next run's skip check would accept. Installed files are handed to the owner of
+  `--data_dir` (the docker and podman profiles run tasks as root), so they stay editable without
+  sudo and later steps can publish into them. Existing data directories are unaffected.
+- **A failed download was installed as if it had worked.** `download_and_compute_sha` did not check
+  the exit status of `wget`/`curl`/`gdown`: because it runs inside a command substitution, a failure
+  did not stop the task, so a blocked or refused download left a 0-byte file that was hashed,
+  written into the manifest and installed. The helper now fails the task when the download command
+  reports an error or produces no data.
+- **Large downloads gave up when the server dropped the connection.** `wget` resumed at most 5
+  times and `curl` never resumed (its `--retry` restarts from zero and does not retry a transfer cut
+  mid-way), so dbNSFP (~47 GB) failed at 27.9 GB after 1h35m on a host that closes long
+  connections. Both now resume from the bytes already on disk, up to 100 times; HTTP errors such
+  as 403/404 still fail after 3 attempts.
+- **dbNSFP could never finish downloading on a normal link.** Every process inherits `time = 2.h`
+  from `nextflow.config`, and a 45 GB download at a few MB/s outlives it: Nextflow killed the task
+  at 83% ("process hasn't exited"), and a retry would restart from zero. `DOWNLOAD_*` processes now
+  get 72 h.
+- MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
+  MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
+  `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
+  string). Rewritten in forms both the old and the strict parser accept. A test-profile run on
+  26.04.6 produces MAFs and a report byte-identical to the unmodified code on 25.10.2.
+- `annotate` with `-profile docker` and no proxy crashed in VEP. The profile always passed
+  `-e http_proxy=${params.http_proxy}`, which becomes the literal string `null` when no proxy is
+  set, and the official VEP 116 image refuses it ("Proxy must be specified as absolute URI").
+  The proxy variables are now passed only when set.
+- The minimum Nextflow version is now stated correctly as 25.10.0 (manifest, README, CI). The
+  nf-schema plugin MuSA pins has required 25.10 since v1.1.0, and Nextflow 25.04 failed with
+  `Plugin nf-schema with version @... does not exist in the repository`. nf-schema moves from
+  2.6.1 to 2.7.3, whose `--help` also works on Nextflow 26.04.
+- MuSA no longer depends on the host's tools. `PARSE_VEP_ANNOTATION`, `RENAME_VCF_BY_PATIENT` and
+  `BUILD_SETUP_REPORT` declared no container and ran directly on the host, so they needed host
+  `python3` and gawk: `PARSE_VEP_ANNOTATION`'s awk used gawk-only `match()` capture arrays, which
+  fail with a syntax error under mawk, the awk a stock Ubuntu install ships. All three now run in
+  the MuSA helper images, and the awk is rewritten in POSIX form. On real NA12878 VEP output (up to
+  1.06 million rows) the rewrite under mawk gives byte-identical output to the original under gawk.
+- A default container set for all pipelines in `~/.nextflow/config` (for example
+  `process.container = "ubuntu:22.04"`) stopped MuSA before its first task with
+  `Cannot cast object ... to class 'java.util.Map'`, a crash in nf-schema's parameter summary.
+  MuSA's config now clears that default; every MuSA module declares its own container.
+- `setup` with a `--data_dir` that did not exist yet failed at the end. Docker created the missing
+  folder as root, and Nextflow could not publish `setup_report.html` into it. `setup` now creates
+  `--data_dir` as the launching user before any task starts.
+
+### Original v1.1.0 release notes (2026-09-10)
 
 First tagged release since the paper's submitted state. Three threads: the annotation engine
 gained ClinGen and gene-level dbNSFP context and fixed two correctness bugs in the merge; the
@@ -11,7 +79,7 @@ per-patient HTML report was rebuilt from a static table into a findings-first cl
 tool; and the pipeline's nf-core compliance, CI and documentation were brought up to a state that
 actually lints and actually reflects what the code does.
 
-### `Added`
+#### `Added`
 
 - ClinGen annotation: dosage sensitivity, gene-disease validity and VCEP curation, joined onto
   the merged MAF.
@@ -48,7 +116,7 @@ actually lints and actually reflects what the code does.
   landing page, with real report screenshots generated from the paper's own NA12878/HG001
   WES-like benchmark VCF.
 
-### `Fixed`
+#### `Fixed`
 
 - **Correctness:** the dbNSFP-to-MAF merge could emit more than one row per variant; collapsed to
   one row, keeping the VEP-picked transcript. RENOVO predictions were aligned back to variants by
@@ -85,11 +153,11 @@ actually lints and actually reflects what the code does.
   findings block. A stray Groovy-style `//` comment inside a bash `script:` block (harmless in
   practice, wrong in principle).
 
-### `Dependencies`
+#### `Dependencies`
 
 - VEP plugin data: added GWAS-catalog and pLI value tables (consumed by the newly-wired plugins
   above).
 
-### `Deprecated`
+#### `Deprecated`
 
 Nothing removed in this release.

@@ -95,7 +95,7 @@ download_and_compute_sha() {
 #
 # Not publishDir: publishDir only publishes files a process DECLARES as outputs, so a folder
 # built by the script and named only in `pattern:` is silently never published -- the bug that
-# left every fresh setup from 2026-07-14 until 1.1.1 and 1.2.0 with its downloads stranded in the work
+# left every fresh setup from 2026-07-14 until the 2026-09-24 fix with its downloads stranded in the work
 # dir. Declaring these trees as outputs instead would also copy tens of GB a second time
 # (26 GB VEP cache, 45 GB dbNSFP), and publishDir could not handle the cache's nested path.
 #
