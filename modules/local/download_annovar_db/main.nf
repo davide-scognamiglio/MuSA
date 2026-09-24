@@ -7,7 +7,6 @@
 
  process DOWNLOAD_ANNOVAR_DB {
     tag "renovo_setup"
-    publishDir "${params.data_dir}", mode: 'copy', overwrite: true, pattern: "renovo_humandb"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -59,6 +58,11 @@
 
     gunzip -f *.gz
     cd ..
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "renovo_humandb" "/data/renovo_humandb"
+
     mv ${manifest} annovar_manifest.yaml
     """
 }
