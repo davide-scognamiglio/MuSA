@@ -44,6 +44,10 @@ original v1.1.0 (commit `c5d7612`); it does here. If you ran v1.1.0 before 2026-
   from `nextflow.config`, and a 45 GB download at a few MB/s outlives it: Nextflow killed the task
   at 83% ("process hasn't exited"), and a retry would restart from zero. `DOWNLOAD_*` processes now
   get 72 h.
+- **The GWAS plugin found no data after a fresh extended setup.** The GWAS Catalog now names the
+  file inside its download `gwas-catalog-download-associations-alt-full.tsv` (same columns), while
+  VEP is pointed at `...-v1.0-full.tsv`. `DOWNLOAD_GWAS` now installs the downloaded TSV under the
+  name VEP reads. Existing data directories are unaffected.
 - MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
   MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
   `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
