@@ -12,7 +12,7 @@ process BUILD_ANNOTATE_REPORT {
     maxRetries 2
     memory { 18.GB * task.attempt }
     container "dsbioinfo/musa-helper:rebuild-minimal"    
-    publishDir "${params.outdir}/${params.date}/${meta.patient}", mode: "copy"
+    publishDir path: { "${params.outdir}/${params.date}/${meta.patient}" }, mode: "copy"
 
     input:
         val(meta) 
