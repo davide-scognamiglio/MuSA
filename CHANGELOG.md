@@ -3,7 +3,10 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v1.2.0 - 2026-09-24
+
+RENOVO scores from renovo-rebuild (RENOVO 1.5) and no more ANNOVAR, plus the setup and
+Nextflow-compatibility fixes, which were also applied retroactively to v1.1.0 and v1.0.0.
 
 ### `Fixed`
 
@@ -99,6 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PNGs under `assets/`.
 
 ## v1.1.0 - 2026-09-10
+
+> Re-released in place on 2026-09-24 with the setup and Nextflow fixes listed under v1.2.0
+> (all except the RENOVO/ANNOVAR changes). The `v1.1.0` tag's own CHANGELOG lists them.
 
 First tagged release since the paper's submitted state. Three threads: the annotation engine
 gained ClinGen and gene-level dbNSFP context and fixed two correctness bugs in the merge; the
