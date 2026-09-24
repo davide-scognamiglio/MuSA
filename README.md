@@ -149,6 +149,10 @@ nextflow run davide-scognamiglio/MuSA \
   -profile docker
 ```
 
+`--data_dir` must be an absolute path (`$PWD/musa_data`, not `musa_data`): the container engine
+mounts it as given, and MuSA stops at startup if it is relative. Use the same path for `setup` and
+`annotate`.
+
 This fetches VEP's cache, dbNSFP, ClinVar/ClinGen and the reference genome
 (~72 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists
 exactly what landed and its checksum when it's done.
@@ -235,6 +239,8 @@ nextflow run davide-scognamiglio/MuSA \
   --data_dir /path/to/musa_data \
   -profile docker            # or -profile singularity
 ```
+
+`--data_dir` must be an absolute path; MuSA stops at startup if it is relative.
 
 Add `--download_vep_plugins true` for the extended (~173 GB) tier. Re-running `setup` later only
 re-downloads entries whose manifest version changed (`--update_db_only true` to force a diff-only
