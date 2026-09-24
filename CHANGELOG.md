@@ -3,10 +3,43 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## v1.2.0 - 2026-09-24
+
+RENOVO scores from renovo-rebuild (RENOVO 1.5) and no more ANNOVAR, plus the setup and
+Nextflow-compatibility fixes, which were also applied retroactively to v1.1.0 and v1.0.0.
 
 ### `Fixed`
 
+- **`setup` installed nothing.** Every download module built its directory in the task work dir and
+  relied on `publishDir` with a `pattern:` to copy it into `--data_dir`, but `publishDir` only
+  publishes files a process declares as outputs, and `8871db4` (2026-07-14) removed those
+  declarations. Since then a fresh `setup` downloaded tens of GB, left them in `work/`, and the
+  first step reading the data directory failed with
+  `No such file or directory: <data_dir>/vep_data/reference_genome/hg38.fa.fai`. Only ClinVar and
+  ClinGen were unaffected, because they already installed into the bind-mounted `/data` themselves.
+  All 19 remaining modules now do the same through a shared `install_into_data` helper, which stages
+  the directory and renames it into place so an interrupted install cannot leave a half-populated
+  folder that the next run's skip check would accept. Installed files are handed to the owner of
+  `--data_dir` (the docker and podman profiles run tasks as root), so they stay editable without
+  sudo and later steps can publish into them. Existing data directories are unaffected.
+- **A failed download was installed as if it had worked.** `download_and_compute_sha` did not check
+  the exit status of `wget`/`curl`/`gdown`: because it runs inside a command substitution, a failure
+  did not stop the task, so a blocked or refused download left a 0-byte file that was hashed,
+  written into the manifest and installed. The helper now fails the task when the download command
+  reports an error or produces no data.
+- **Large downloads gave up when the server dropped the connection.** `wget` resumed at most 5
+  times and `curl` never resumed (its `--retry` restarts from zero and does not retry a transfer cut
+  mid-way), so dbNSFP (~47 GB) failed at 27.9 GB after 1h35m on a host that closes long
+  connections. Both now resume from the bytes already on disk, up to 100 times; HTTP errors such
+  as 403/404 still fail after 3 attempts.
+- **dbNSFP could never finish downloading on a normal link.** Every process inherits `time = 2.h`
+  from `nextflow.config`, and a 45 GB download at a few MB/s outlives it: Nextflow killed the task
+  at 83% ("process hasn't exited"), and a retry would restart from zero. `DOWNLOAD_*` processes now
+  get 72 h.
+- **The GWAS plugin found no data after a fresh extended setup.** The GWAS Catalog now names the
+  file inside its download `gwas-catalog-download-associations-alt-full.tsv` (same columns), while
+  VEP is pointed at `...-v1.0-full.tsv`. `DOWNLOAD_GWAS` now installs the downloaded TSV under the
+  name VEP reads. Existing data directories are unaffected.
 - MuSA runs on current Nextflow again. Nextflow 26.04 turns on its strict syntax by default, and
   MuSA's config and scripts used constructs it rejects (`def` inside profile blocks, `switch`,
   `while`, `++`, statements outside the workflow block, an input variable in a `publishDir`
@@ -36,12 +69,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Changed`
 
+- **RENOVO scores now come from renovo-rebuild (RENOVO 1.5), and ANNOVAR is no longer used.**
+  [renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild) runs RENOVO's published
+  random forest, unchanged, on columns MuSA already annotates (VEP consequence and gnomAD 4.1 AF,
+  dbNSFP 5 scores, MuSA's ClinVar) instead of re-annotating every VCF with ANNOVAR. The new
+  `RENOVO_SCORE` step scores the merged table after `MERGE_ANNOTATIONS`; the parallel
+  `RENOVO_ANNOTATE_VCF` branch is gone. Per exome it takes seconds and under 0.5 GB of memory,
+  against about 3.5 minutes and 21-24 GB before.
+  Scores are not identical to MuSA 1.1: dbNSFP 5 retired FATHMM and fathmm-MKL and replaced MutPred
+  with MutPred2, so those inputs use fathmm-XF, MutPred2 or RENOVO's own per-Type median, and
+  RENOVO's ANNOVAR `Type` is derived from VEP's picked transcript. On 251,297 ClinVar variants
+  absent from RENOVO's training data: AUC 0.995 vs 0.996, sensitivity 0.969 vs 0.975, specificity
+  0.991 vs 0.991; 99.0% of variants stay on the same side of the 0.5 benign/pathogenic threshold
+  and 83.8% keep the exact class. Do not compare `RENOVO_Class` across 1.1 and 1.2 results.
+- The raw MAF loses the columns only ANNOVAR produced (104 in the test profile): gnomAD 2.1.1
+  sub-population frequencies, dbNSFP 3.5c score copies, refGene/ensGene `Func`/`ExonicFunc`/
+  `AAChange`, `avsnp150`, InterVar's 2018 automated ACMG criteria and the `Otherinfo*` columns.
+  VEP and dbNSFP 5 already carry current equivalents; `rs_dbSNP` (dbNSFP) is now kept in place of
+  `avsnp150`. None of the removed columns was read by the report, the filters or the ACMG step.
 - The README's pipeline diagram is now an animated nf-metro map covering both workflows,
   `annotate` (ending in the HTML report and the MAF) and `setup`, with optional steps marked.
 - Refreshed the README logos.
 
 ### `Removed`
 
+- ANNOVAR: the `--annovar_software_dir` parameter and its container bind, the ANNOVAR database
+  download in `setup` (51 GB, `renovo_humandb/`), the `RENOVO_ANNOTATE_VCF` module and the patched
+  RENOVO image source (`containers/renovo`). A basic `setup` is now about 72 GB, extended about
+  173 GB. Existing data directories keep working; `renovo_humandb/` can be deleted.
+- `bin/acmg_classifier.R`, an unused stub and the only other reader of the InterVar columns.
 - nf-core template leftovers MuSA never used: the Slack and Teams notification templates,
   `tower.yml` (a Seqera report for a samplesheet MuSA does not publish) and the example
   `assets/samplesheet.csv`.
@@ -50,6 +106,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PNGs under `assets/`.
 
 ## v1.1.0 - 2026-09-10
+
+> Re-released in place on 2026-09-24 with the setup and Nextflow fixes listed under v1.2.0
+> (all except the RENOVO/ANNOVAR changes). The `v1.1.0` tag's own CHANGELOG lists them.
 
 First tagged release since the paper's submitted state. Three threads: the annotation engine
 gained ClinGen and gene-level dbNSFP context and fixed two correctness bugs in the merge; the

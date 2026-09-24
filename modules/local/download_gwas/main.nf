@@ -7,7 +7,6 @@
 
 process DOWNLOAD_GWAS {
     tag "vep_setup"
-    publishDir "${params.data_dir}/vep_data", mode: 'copy', overwrite: true, pattern: "GWAS"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -56,7 +55,23 @@ process DOWNLOAD_GWAS {
     unzip "\${!out_var}"
     rm -f "\${!out_var}"
 
+    # The GWAS Catalog renames the TSV inside this zip between releases (it has shipped
+    # ...-v1.0-full.tsv and, as of 2026-09, ...-alt-full.tsv, same columns). VEP_ANNOTATE_VCF opens a
+    # fixed name, so install whatever single TSV arrived under that name.
+    extracted=( *.tsv )
+    if [ \${#extracted[@]} -ne 1 ] || [ ! -f "\${extracted[0]}" ]; then
+        echo "[ERROR] expected exactly one .tsv in the GWAS Catalog download, found: \${extracted[*]}" >&2
+        exit 1
+    fi
+    if [ "\${extracted[0]}" != "gwas-catalog-download-associations-v1.0-full.tsv" ]; then
+        mv "\${extracted[0]}" gwas-catalog-download-associations-v1.0-full.tsv
+    fi
+
     cd ..
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "GWAS" "/data/vep_data/GWAS"
 
     mv ${manifest} gwas_manifest.yaml
     """

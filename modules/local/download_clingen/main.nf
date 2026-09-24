@@ -72,6 +72,7 @@ process DOWNLOAD_CLINGEN {
     tabix -p vcf clingen_pathogenicity.vcf.gz
     cp -f clingen_pathogenicity.vcf.gz     "\${vcf_dir}/clingen_pathogenicity.vcf.gz"
     cp -f clingen_pathogenicity.vcf.gz.tbi "\${vcf_dir}/clingen_pathogenicity.vcf.gz.tbi"
+    match_data_dir_owner "\$gene_dir" "\$vcf_dir"
 
     mv ${manifest} clingen_manifest.yaml
     """

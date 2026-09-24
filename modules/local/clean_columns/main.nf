@@ -30,7 +30,7 @@ process CLEAN_COLUMNS {
     # TIER 1 — identical content, very similar name (keep the higher-coverage twin)
     #   CADD_phred      -> keep CADD_PHRED       (VEP plugin has 2.4x more coverage)
     #   CADD_raw        -> keep CADD_RAW
-    #   clinvar_clnsig  -> keep CLNSIG            (ANNOVAR has 2.6x more coverage)
+    #   clinvar_clnsig  -> keep CLNSIG            (dbNSFP's copy; CLNSIG is MuSA's own ClinVar release)
     #   clinvar_review  -> keep CLNREVSTAT
     #   clinvar_trait   -> keep CLNDN
     #   Start           -> keep Start_Position    (MAF standard)
@@ -43,30 +43,25 @@ process CLEAN_COLUMNS {
     #   alt             -> keep vcf_alt           (dbNSFP partial field)
     #   vcf_qual        -> keep QUAL              (exact duplicate)
     #   MIM_id          -> keep OMIM_id           (same database, side-by-side)
-    #   rs_dbSNP        -> keep avsnp150          (ANNOVAR has 2.5x more coverage)
     #   ClinPred        -> keep ClinPred_score    (dbNSFP has more coverage)
     #   HGVSp_snpEff    -> keep HGVSp_VEP        (identical content, keep VEP)
-    #   ExonicFunc.ensGene -> keep ExonicFunc.refGene (99.3% match, keep refGene)
-    T1="CADD_phred,CADD_raw,clinvar_clnsig,clinvar_review,clinvar_trait,Start,pos(1-based),vcf_pos,End,Ref,Alt,ref,alt,vcf_qual,MIM_id,rs_dbSNP,ClinPred,HGVSp_snpEff,ExonicFunc.ensGene"
+    T1="CADD_phred,CADD_raw,clinvar_clnsig,clinvar_review,clinvar_trait,Start,pos(1-based),vcf_pos,End,Ref,Alt,ref,alt,vcf_qual,MIM_id,ClinPred,HGVSp_snpEff"
     #
     # TIER 2 — same underlying data, different tool/format/transcript scope
     #   CLIN_SIG           -> keep CLNSIG            (case-only diff: benign vs Benign)
-    #   Chr                -> keep Chromosome        (ANNOVAR dup of MAF standard)
     #   #CHROM             -> keep Chromosome        (VCF header field, partially filled)
     #   #chr               -> keep Chromosome        (dbNSFP field, no chr-prefix)
     #   HGVSc_VEP          -> keep HGVSc             (dbNSFP bare notation vs VEP canonical)
     #   Ensembl_proteinid  -> keep ENSP              (same)
     #   Uniprot_acc        -> keep SWISSPROT         (dbNSFP multi-isoform vs VEP versioned)
     #   genename           -> keep Hugo_Symbol       (dbNSFP duplicates per transcript)
-    #   Gene.refGene       -> keep Hugo_Symbol       (87.6% match; boundary cases differ)
     #   CCDS_id            -> keep CCDS              (dbNSFP bare id vs VEP versioned)
     #   STRAND_VEP         -> keep STRAND            (completely empty column)
     #   cds_strand         -> keep STRAND            (same info, different encoding +/- vs 1/-1)
     #   am_class           -> keep AlphaMissense_pred (VEP single vs dbNSFP multi-transcript)
     #   am_pathogenicity   -> keep AlphaMissense_score (same)
-    #   Func.ensGene       -> keep Func.refGene      (91.5% match, keep refGene)
     #   Uniprot_id         -> keep Uniprot_entry     (single vs multi-transcript mnemonic)
-    T2="CLIN_SIG,Chr,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,Gene.refGene,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Func.ensGene,Uniprot_id"
+    T2="CLIN_SIG,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Uniprot_id"
     #
     # KEPT ON PURPOSE:
     #   MANE_dbNSFP          — dbNSFP's per-transcript MANE array (renamed in MERGE_ANNOTATIONS to
@@ -91,10 +86,10 @@ process CLEAN_COLUMNS {
 
     DROP="\${ORIG},\${T1},\${T2},\${DEAD}"
 
-    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below):
-    # the ANNOVAR-origin ClinVar columns + the bare custom ClinVar id column. The self-managed
-    # ClinVar VCF (VEP --custom: ClinVar_CLNSIG/CLNREVSTAT/CLNDN) becomes the single ClinVar source.
-    DROP_ORIG="CLNSIG,CLNREVSTAT,CLNDN,CLNDISDB,ClinVar"
+    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below): the
+    # bare custom ClinVar id column. The self-managed ClinVar VCF (VEP --custom: ClinVar_CLNSIG/
+    # CLNREVSTAT/CLNDN) is the single ClinVar source.
+    DROP_ORIG="ClinVar"
 
     awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" -v drop_orig_cols="\$DROP_ORIG" '
     BEGIN {
@@ -108,9 +103,8 @@ process CLEAN_COLUMNS {
             col = \$i
             gsub(/\r/, "", col)
 
-            # Drop by ORIGINAL name first, so the ANNOVAR-origin CLNSIG/CLNREVSTAT/CLNDN (and the bare
-            # ClinVar id col) are removed while the custom ClinVar_* fields are renamed to those
-            # canonical names just below.
+            # Drop by ORIGINAL name first, so the bare ClinVar id column goes before the custom
+            # ClinVar_* fields are renamed to their canonical names just below.
             if (col in drop_orig) {
                 keep[i] = 0
                 \$i = col

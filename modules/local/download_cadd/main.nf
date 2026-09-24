@@ -7,7 +7,6 @@
 
 process DOWNLOAD_CADD {
     tag "vep_setup"
-    publishDir "${params.data_dir}/vep_data", mode: 'copy', overwrite: true, pattern: "CADD"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -64,6 +63,10 @@ process DOWNLOAD_CADD {
     cd ..
 
     # Rename manifest for downstream consistency
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "CADD" "/data/vep_data/CADD"
+
     mv ${manifest} cadd_manifest.yaml
     """
 }

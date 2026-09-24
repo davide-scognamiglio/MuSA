@@ -2,7 +2,7 @@
  * MuSA
  * Module: DOWNLOAD_CLINVAR
  * Purpose: Download a self-managed ClinVar VCF (+ .tbi) for use as a VEP --custom annotation.
- *          This decouples ClinVar from the VEP cache / dbNSFP / ANNOVAR so the exact release is
+ *          This decouples ClinVar from the VEP cache and dbNSFP so the exact release is
  *          curated via the manifest (entries: `clinvar` = vcf.gz, `clinvar_tbi` = index).
  *
  * NOTE ON INSTALL: the data_dir is bind-mounted rw at /data (see nextflow.config docker/podman/
@@ -65,6 +65,7 @@ process DOWNLOAD_CLINVAR {
     mkdir -p "\$target_dir"
     cp -f clinvar.vcf.gz     "\${target_dir}/clinvar.vcf.gz"
     cp -f clinvar.vcf.gz.tbi "\${target_dir}/clinvar.vcf.gz.tbi"
+    match_data_dir_owner "\$target_dir"
 
     mv ${manifest} clinvar_manifest.yaml
     """

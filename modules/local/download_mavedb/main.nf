@@ -7,7 +7,6 @@
 
 process DOWNLOAD_MAVEDB {
     tag "vep_setup"
-    publishDir "${params.data_dir}/vep_data", mode: 'copy', overwrite: true, pattern: "MaveDB"
     container "dsbioinfo/musa-helper:rebuild"
 
     input:
@@ -70,6 +69,10 @@ process DOWNLOAD_MAVEDB {
     done
 
     cd ..
+
+    # Install into the data dir (bind-mounted at /data); see install_into_data in
+    # bin/download_and_hash.sh for why this is not publishDir.
+    install_into_data "MaveDB" "/data/vep_data/MaveDB"
 
     mv ${manifest} mavedb_manifest.yaml
     """

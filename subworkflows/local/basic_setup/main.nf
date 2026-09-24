@@ -1,6 +1,5 @@
 include { DOWNLOAD_MANIFEST } from '../../../modules/local/download_manifest'
 include { DIFF_MANIFEST } from '../../../modules/local/diff_manifest'
-include { DOWNLOAD_ANNOVAR_DB } from '../../../modules/local/download_annovar_db'
 include { DOWNLOAD_VEP_CACHE } from '../../../modules/local/download_vep_cache'
 include { DOWNLOAD_REFGENOME } from '../../../modules/local/download_refgenome'
 include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
@@ -31,14 +30,13 @@ workflow BASIC_SETUP {
         }
 
         // Step 2: download modules in parallel, each consuming the manifest + changed-entries gate
-        annovar_ch = DOWNLOAD_ANNOVAR_DB(manifest_ch, changed_entries_ch)
         vep_ch     = DOWNLOAD_VEP_CACHE(manifest_ch, changed_entries_ch)
         dbnsfp_ch  = DOWNLOAD_DBNSFP(manifest_ch, changed_entries_ch)
         refgen_ch  = DOWNLOAD_REFGENOME(manifest_ch, changed_entries_ch)
         clinvar_ch = DOWNLOAD_CLINVAR(manifest_ch, changed_entries_ch)
         clingen_ch = DOWNLOAD_CLINGEN(manifest_ch, changed_entries_ch)
-        merged_input = annovar_ch
-            .mix(vep_ch, dbnsfp_ch, refgen_ch, clinvar_ch, clingen_ch)
+        merged_input = vep_ch
+            .mix(dbnsfp_ch, refgen_ch, clinvar_ch, clingen_ch)
             .collect()
 
         merged_yaml = MERGE_BASIC_YAML(merged_input)
