@@ -67,7 +67,7 @@ Before running MuSA you need:
 4. **Disk space** — ~123 GB for basic mode, ~224 GB for extended mode (see [The database manifest system](#the-database-manifest-system) for a full breakdown).
 
 > [!IMPORTANT]
-> All annotation data are downloaded by the **setup** workflow into the directory you specify with `--data_dir`. This same directory must be provided to the **annotate** workflow. It is mounted read-only at `/data` inside every container.
+> All annotation data are downloaded by the **setup** workflow into the directory you specify with `--data_dir`. This same directory must be provided to the **annotate** workflow. It is mounted read-only at `/data` inside every container. `--data_dir` must be an absolute path (`$PWD/musa_data`, not `musa_data`); MuSA stops at startup if it is relative.
 
 > [!NOTE]
 > **dbNSFP licensing.** The pipeline downloads the dbNSFP academic distribution. This resource is restricted to non-commercial use. Ensure your use case complies with the [dbNSFP license terms](https://sites.google.com/site/jpopgen/dbNSFP) before running the setup workflow.
@@ -208,7 +208,7 @@ nextflow run main.nf \
 | `--build` | `hg38` | Reference genome build. Only `hg38` is currently supported. |
 | `--input` | — | Path to the samplesheet CSV file. **Required** for `annotate`. |
 | `--outdir` | — | Output directory. **Required** for `annotate`. |
-| `--data_dir` | — | Path to the directory containing annotation databases (created by `setup`). **Required** for both workflows. |
+| `--data_dir` | — | Absolute path to the directory containing annotation databases (created by `setup`). **Required** for both workflows. |
 | `--annovar_software_dir` | — | Path to the ANNOVAR software directory (`table_annovar.pl` must be present). **Required** for `annotate`. |
 | `--vcf_format` | — | Input VCF format. Supported values: `multicaller` (any standard multi-sample VCF), `sarek` (applies GATK hard filtering). |
 
