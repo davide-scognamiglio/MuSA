@@ -38,11 +38,30 @@ The pipeline supports two operating modes:
 
 ---
 
+## Which version?
+
+Three releases are maintained. All three receive stability fixes; only the newest receives new
+features. Pick one with `-r`:
+
+| Release | Use it to | Run with |
+|---|---|---|
+| **1.2.0** (latest) | start new analyses: RENOVO 1.5 scores, no ANNOVAR needed | `-r v1.2.0` |
+| **1.1.0** | reproduce results made with 1.1 (ANNOVAR-based RENOVO) | `-r v1.1.0` |
+| **1.0.0** | run the version described in the [paper](https://doi.org/10.1186/s12859-026-06513-0) | `-r v1.0.0` |
+
+`v1.0.0` and `v1.1.0` were updated in place on 2026-09-24 with stability and correctness fixes (see
+[CHANGELOG](CHANGELOG.md)). If you ran either before that date, refresh Nextflow's copy of the
+pipeline once with `nextflow drop davide-scognamiglio/MuSA`. Each release downloads the databases
+it was built for, from a manifest pinned in
+[test-datasets](https://github.com/davide-scognamiglio/test-datasets).
+
+---
+
 ## Prerequisites
 
 Before running MuSA you need:
 
-1. **Nextflow ≥ 25.04.0** — `curl -s https://get.nextflow.io | bash`
+1. **Nextflow ≥ 25.10.0** — `curl -s https://get.nextflow.io | bash`
 2. **Docker** or **Singularity/Apptainer** — all tools run inside version-pinned containers; no manual software installation is needed.
 3. **ANNOVAR** — MuSA requires ANNOVAR for RENOVO scoring. Users must independently obtain a license and download ANNOVAR from the [official source](https://annovar.openbioinformatics.org/en/latest/). Set `--annovar_software_dir` to the directory containing `table_annovar.pl`.
 4. **Disk space** — ~123 GB for basic mode, ~224 GB for extended mode (see [The database manifest system](#the-database-manifest-system) for a full breakdown).
