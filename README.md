@@ -36,7 +36,7 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
 | **Storage, one-time** | ~72 GB for core annotation, ~173 GB if you also want the 22 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
-| **dbNSFP** | The bundled distribution is **non-commercial / academic use only**. Check the [dbNSFP license](https://sites.google.com/site/jpopgen/dbNSFP) covers your use case before running `setup`. |
+| **dbNSFP** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup`. |
 | **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring and live HPO gene-panel lookup. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) needs neither. |
 | **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) — non-commercial use and redistribution, with attribution. |
 
@@ -89,7 +89,7 @@ Two workflows:
 | Source | Contributes |
 |---|---|
 | [Ensembl VEP](https://www.ensembl.org/info/docs/tools/vep/index.html) | Consequence, transcript annotation, population frequencies (gnomAD/1000G), and — in extended mode — up to 22 plugins (AlphaMissense, CADD, ClinPred, Enformer, EVE, SpliceVault, MaxEntScan and others) |
-| [dbNSFP](https://sites.google.com/site/jpopgen/dbNSFP) | Pathogenicity predictions (REVEL, MetaRNN, BayesDel, SIFT, PolyPhen-2…), gene-level constraint, disease/phenotype cross-references |
+| [dbNSFP](https://www.dbnsfp.org) | Pathogenicity predictions (REVEL, MetaRNN, BayesDel, SIFT, PolyPhen-2…), gene-level constraint, disease/phenotype cross-references |
 | [RENOVO 1.5](https://github.com/davide-scognamiglio/renovo-rebuild) | ML pathogenicity score and class for every variant: RENOVO's published model, run on the VEP, dbNSFP and ClinVar columns above ([renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild)) |
 | ClinVar / ClinGen | Clinical significance, review status, gene-disease validity and inheritance mode |
 | [HPO](https://hpo.jax.org/) | Phenotype-matched gene panels, from the samplesheet's `hpo` column |
@@ -146,12 +146,19 @@ Already have Nextflow? Check `nextflow -version`, and run `nextflow self-update`
 nextflow run davide-scognamiglio/MuSA \
   --workflow setup \
   --data_dir /path/to/musa_data \
+  --dbnsfp_url '<your dbNSFP download link>' \
   -profile docker
 ```
 
 `--data_dir` must be an absolute path (`$PWD/musa_data`, not `musa_data`): the container engine
 mounts it as given, and MuSA stops at startup if it is relative. Use the same path for `setup` and
 `annotate`.
+
+dbNSFP is distributed only to registered users, so MuSA cannot download it for you:
+[register at dbnsfp.org](https://www.dbnsfp.org/download) with your institutional email and pass the
+download link you receive with `--dbnsfp_url` (quote it; it is kept out of the parameter summary).
+If you already downloaded the zip, pass `--dbnsfp_zip /path/to/dbNSFP5.3.1a.zip` instead. Either
+way the file is checked against the manifest's SHA-256.
 
 This fetches VEP's cache, dbNSFP, ClinVar/ClinGen and the reference genome
 (~72 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists
@@ -193,9 +200,11 @@ unchanged within 0.001 AUC on ClinVar variants RENOVO never saw, but individual 
 the original software, so do not compare `RENOVO_Class` across MuSA 1.1 and 1.2 results. RENOVO is
 non-commercial software; commercial use needs the RENOVO authors' permission.
 
-**dbNSFP is academic-use only.** The setup workflow downloads dbNSFP's academic-branch distribution.
-Confirm your use case is covered by the [dbNSFP license](https://sites.google.com/site/jpopgen/dbNSFP)
-before running `setup` — this is a constraint on the data, not something MuSA can relax.
+**dbNSFP is academic-use only, and you download it with your own registration.** dbNSFP's
+academic distribution (CC BY-NC-ND 4.0) is handed out per registered user, so the manifest names
+the version and its SHA-256 but no URL: register at [dbnsfp.org](https://www.dbnsfp.org/download)
+and give `setup` your link (`--dbnsfp_url`) or the zip (`--dbnsfp_zip`). Confirm the license
+covers your use case — this is a constraint on the data, not something MuSA can relax.
 
 **GeneBe is optional and needs credentials.** Only relevant if you run with `--offline false` for
 automated ACMG/AMP scoring or live HPO-based gene-panel lookup. Offline mode — the default — uses
@@ -237,6 +246,7 @@ Prerequisites: [Nextflow ≥ 25.10.0](https://nextflow.io) and Docker or Singula
 nextflow run davide-scognamiglio/MuSA \
   --workflow setup \
   --data_dir /path/to/musa_data \
+  --dbnsfp_url '<your dbNSFP download link>' \
   -profile docker            # or -profile singularity
 ```
 

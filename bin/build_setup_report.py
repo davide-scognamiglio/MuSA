@@ -366,8 +366,15 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
             sha_html = f'<span class="sha">{_esc(computed)}</span>'
 
         url = entry.get("url", "")
-        source = (f'<a class="res-url" href="{html.escape(url)}" rel="noopener noreferrer">'
-                  f'{html.escape(url)}</a>' if url else '<span class="sha-absent">—</span>')
+        if url:
+            source = (f'<a class="res-url" href="{html.escape(url)}" rel="noopener noreferrer">'
+                      f'{html.escape(url)}</a>')
+        elif entry.get("dbname") == "dbnsfp":
+            # Distributed only to registered users; the user's own link is never recorded.
+            source = ('<a class="res-url" href="https://www.dbnsfp.org/download" rel="noopener noreferrer">'
+                      'registered download (dbnsfp.org)</a>')
+        else:
+            source = '<span class="sha-absent">—</span>'
 
         rows_html.append(
             f'<tr data-status="{st}">'

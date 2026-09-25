@@ -73,6 +73,12 @@ Nextflow-compatibility fixes, which were also applied retroactively to v1.1.0 an
 
 ### `Changed`
 
+- **dbNSFP is downloaded with your own registration.** dbNSFP's academic distribution is handed out
+  per registered user (dbnsfp.org: institutional email, then a personal download link), so the
+  public manifest no longer carries a dbNSFP URL, only its version and SHA-256. `setup` takes the
+  download from `--dbnsfp_url` (your link, hidden from the parameter summary and masked in the task
+  log) or `--dbnsfp_zip` (a zip already on disk), stops at startup if neither is given, and now fails
+  when the file's SHA-256 differs from the manifest's. Applied retroactively to v1.1.0 and v1.0.0.
 - **RENOVO scores now come from renovo-rebuild (RENOVO 1.5), and ANNOVAR is no longer used.**
   [renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild) runs RENOVO's published
   random forest, unchanged, on columns MuSA already annotates (VEP consequence and gnomAD 4.1 AF,
