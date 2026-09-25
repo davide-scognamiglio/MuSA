@@ -13,7 +13,7 @@ once so Nextflow fetches the updated tag.
 ### `Changed`
 
 - The default `--dbs_manifest` now points to the test-datasets commit this release was built for
-  (`13b203d`) instead of `main`.
+  (`0d78c60`) instead of `main`.
   `main` follows the newest MuSA and lists the VEP 116 cache, which 1.0's VEP 115.2 cannot use, so
   a fresh 1.0 setup downloaded a cache its annotation step could not read.
 - Minimum Nextflow is 25.10.0 (was stated as 25.04.0, which never worked: the pinned nf-schema
