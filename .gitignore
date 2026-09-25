@@ -13,4 +13,5 @@ OUTPUT/
 VALIDATION_OUTPUT/
 CLINVAR/
 PAPER/
-NA12878*/
+NA12878*/# Local secrets (e.g. our registered dbNSFP download link) -- never commit
+private/

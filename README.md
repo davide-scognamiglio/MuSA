@@ -70,7 +70,7 @@ Before running MuSA you need:
 > All annotation data are downloaded by the **setup** workflow into the directory you specify with `--data_dir`. This same directory must be provided to the **annotate** workflow. It is mounted read-only at `/data` inside every container. `--data_dir` must be an absolute path (`$PWD/musa_data`, not `musa_data`); MuSA stops at startup if it is relative.
 
 > [!NOTE]
-> **dbNSFP licensing.** The pipeline downloads the dbNSFP academic distribution. This resource is restricted to non-commercial use. Ensure your use case complies with the [dbNSFP license terms](https://sites.google.com/site/jpopgen/dbNSFP) before running the setup workflow.
+> **dbNSFP licensing and download.** dbNSFP's academic distribution is restricted to non-commercial use and handed out only to registered users, so MuSA cannot download it for you. [Register at dbnsfp.org](https://www.dbnsfp.org/download) with your institutional email and give the setup workflow the download link you receive (`--dbnsfp_url`, quoted; it is kept out of the parameter summary) or a zip you already downloaded (`--dbnsfp_zip /path/to/dbNSFP5.3.1a.zip`). Either way the file is checked against the manifest's SHA-256. Ensure your use case complies with the license before running the setup workflow.
 
 ---
 
@@ -86,6 +86,7 @@ Downloads VEP cache, dbNSFP, ANNOVAR databases, and the reference genome (~123 G
 nextflow run main.nf \
     -profile docker \
     --workflow setup \
+    --dbnsfp_url '<your dbNSFP download link>' \
     --data_dir /path/to/your/data_dir
 ```
 
@@ -98,6 +99,7 @@ nextflow run main.nf \
     -profile docker \
     --workflow setup \
     --download_vep_plugins true \
+    --dbnsfp_url '<your dbNSFP download link>' \
     --data_dir /path/to/your/data_dir
 ```
 

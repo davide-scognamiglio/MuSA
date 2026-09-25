@@ -64,6 +64,7 @@ workflow {
         if (params.data_dir) {
             file(params.data_dir).mkdirs()
         }
+        checkDbnsfpSource()
         SETUP()
     }
     else {
@@ -79,5 +80,34 @@ workflow {
             nextflow run main.nf -c config/annotation.config --workflow annotate    
             ───────────────────────────────────────────────
             """
+    }
+}
+
+/*
+ * dbNSFP is distributed only to registered users, so the public manifest leaves its url empty and
+ * the user supplies the download (--dbnsfp_url or --dbnsfp_zip). Checked before anything starts:
+ * DOWNLOAD_DBNSFP runs next to the multi-hour VEP cache download, and failing there would waste it.
+ */
+def checkDbnsfpSource() {
+    if (params.dbnsfp_zip || params.dbnsfp_url) {
+        return
+    }
+    // A custom --dbs_manifest may still carry its own dbNSFP url.
+    def entry = (file(params.dbs_manifest).text =~ /(?ms)^  dbnsfp:\s*\n(.*?)(?=^  \S|\z)/)
+    def url = entry.find() ? ((entry.group(1) =~ /(?m)^\s+url:\s*"?([^"\s]*)"?/).with { it.find() ? it.group(1) : "" }) : ""
+    if (!url) {
+        error """
+        ──────────────────── ERROR ────────────────────
+        dbNSFP needs a download source.
+
+        dbNSFP is free for academic, non-commercial use, but it is distributed
+        only to registered users, so MuSA cannot download it for you.
+          1. Register at https://www.dbnsfp.org/download (institutional email).
+          2. Then either
+             --dbnsfp_url '<your dbNSFP download link>'
+             or download the zip yourself and pass
+             --dbnsfp_zip /path/to/dbNSFP5.3.1a.zip
+        ───────────────────────────────────────────────
+        """
     }
 }

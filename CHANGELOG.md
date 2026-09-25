@@ -18,6 +18,12 @@ once so Nextflow fetches the updated tag.
   a fresh 1.0 setup downloaded a cache its annotation step could not read.
 - Minimum Nextflow is 25.10.0 (was stated as 25.04.0, which never worked: the pinned nf-schema
   plugin requires 25.10). nf-schema 2.6.1 -> 2.7.3.
+- **dbNSFP is downloaded with your own registration** (from 1.2.0). dbNSFP's academic distribution
+  is handed out per registered user (dbnsfp.org: institutional email, then a personal download
+  link), so the public manifest no longer carries a dbNSFP URL, only its version and SHA-256.
+  `setup` takes the download from `--dbnsfp_url` (your link, hidden from the parameter summary and
+  masked in the task log) or `--dbnsfp_zip` (a zip already on disk), stops at startup if neither is
+  given, and now fails when the file's SHA-256 differs from the manifest's.
 
 ### `Fixed`
 

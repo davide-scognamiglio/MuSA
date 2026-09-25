@@ -15,7 +15,9 @@ workflow BASIC_SETUP {
         // Step 2: download modules in parallel, each consuming the manifest
         annovar_ch = DOWNLOAD_ANNOVAR_DB(manifest_ch)
         vep_ch     = DOWNLOAD_VEP_CACHE(manifest_ch)
-        dbnsfp_ch  = DOWNLOAD_DBNSFP(manifest_ch)
+        // dbNSFP comes from the user (see checkDbnsfpSource in main.nf): a zip on disk, else a URL.
+        dbnsfp_zip = params.dbnsfp_zip ? file(params.dbnsfp_zip, checkIfExists: true) : file("${projectDir}/assets/NO_FILE")
+        dbnsfp_ch  = DOWNLOAD_DBNSFP(manifest_ch, dbnsfp_zip, params.dbnsfp_url ?: "")
         refgen_ch  = DOWNLOAD_REFGENOME(manifest_ch)
         merged_input = annovar_ch
             .mix(vep_ch, dbnsfp_ch, refgen_ch)
