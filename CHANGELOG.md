@@ -15,6 +15,12 @@ original v1.1.0 (commit `c5d7612`); it does here. If you ran v1.1.0 before 2026-
 - The default `--dbs_manifest` now points to the test-datasets commit this release was built for
   (`2e466ef`) instead of `main`,
   so later edits of the manifest for newer MuSA releases cannot change what a 1.1 setup downloads.
+- **dbNSFP is downloaded with your own registration.** dbNSFP's academic distribution is handed out
+  per registered user (dbnsfp.org: institutional email, then a personal download link), so the
+  public manifest no longer carries a dbNSFP URL, only its version and SHA-256. `setup` takes the
+  download from `--dbnsfp_url` (your link, hidden from the parameter summary and masked in the task
+  log) or `--dbnsfp_zip` (a zip already on disk), stops at startup if neither is given, and now fails
+  when the file's SHA-256 differs from the manifest's. Backported from 1.2.0.
 
 ### Fixed on 2026-09-24
 

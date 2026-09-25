@@ -33,7 +33,9 @@ workflow BASIC_SETUP {
         // Step 2: download modules in parallel, each consuming the manifest + changed-entries gate
         annovar_ch = DOWNLOAD_ANNOVAR_DB(manifest_ch, changed_entries_ch)
         vep_ch     = DOWNLOAD_VEP_CACHE(manifest_ch, changed_entries_ch)
-        dbnsfp_ch  = DOWNLOAD_DBNSFP(manifest_ch, changed_entries_ch)
+        // dbNSFP comes from the user (see checkDbnsfpSource in main.nf): a zip on disk, else a URL.
+        dbnsfp_zip = params.dbnsfp_zip ? file(params.dbnsfp_zip, checkIfExists: true) : file("${projectDir}/assets/NO_FILE")
+        dbnsfp_ch  = DOWNLOAD_DBNSFP(manifest_ch, changed_entries_ch, dbnsfp_zip, params.dbnsfp_url ?: "")
         refgen_ch  = DOWNLOAD_REFGENOME(manifest_ch, changed_entries_ch)
         clinvar_ch = DOWNLOAD_CLINVAR(manifest_ch, changed_entries_ch)
         clingen_ch = DOWNLOAD_CLINGEN(manifest_ch, changed_entries_ch)
