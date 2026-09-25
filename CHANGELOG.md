@@ -13,7 +13,7 @@ original v1.1.0 (commit `c5d7612`); it does here. If you ran v1.1.0 before 2026-
 ### `Changed`
 
 - The default `--dbs_manifest` now points to the test-datasets commit this release was built for
-  (`2e466ef`) instead of `main`,
+  (`97a8128`) instead of `main`,
   so later edits of the manifest for newer MuSA releases cannot change what a 1.1 setup downloads.
 - **dbNSFP is downloaded with your own registration.** dbNSFP's academic distribution is handed out
   per registered user (dbnsfp.org: institutional email, then a personal download link), so the
