@@ -21,3 +21,5 @@ SIGU26_OI_VEP_plugins/
 # Personal working notes — repo-local, not part of the pipeline
 vacation_handsoff.md
 .impeccable/
+# Local secrets (e.g. our registered dbNSFP download link) -- never commit
+private/

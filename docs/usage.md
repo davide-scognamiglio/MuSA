@@ -25,8 +25,16 @@ manifest.
 nextflow run MuSA \
    --workflow setup \
    --data_dir /path/to/musa_data \
+   --dbnsfp_url '<your dbNSFP download link>' \
    -profile docker
 ```
+
+**dbNSFP comes from your own registration.** dbNSFP is free for academic, non-commercial use but
+distributed only to registered users, so the manifest carries its version and SHA-256 and no URL.
+Register at [dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) and pass the link you
+receive with `--dbnsfp_url`, or a zip you already downloaded with `--dbnsfp_zip`. `setup` stops at
+startup if neither is given, and fails if the file's SHA-256 differs from the manifest's. The link is
+kept out of the parameter summary and the task logs, and never written into `--data_dir`.
 
 **Basic setup** (the command above) fetches what routine diagnostics needs: ~72 GB.
 
@@ -37,6 +45,7 @@ nextflow run MuSA \
 nextflow run MuSA \
    --workflow setup \
    --data_dir /path/to/musa_data \
+   --dbnsfp_url '<your dbNSFP download link>' \
    --download_vep_plugins true \
    -profile docker
 ```
@@ -134,6 +143,8 @@ retrieved from the HPO API and used as an additional panel.
 | `--vcf_format` | `null` | Set to `sarek` for VCFs from nf-core/sarek so its hard-filter conventions are applied. |
 | `--skip_bcftools` | `false` | Skip bcftools normalisation, for input already normalised and left-aligned. |
 | `--n_core` | `8` | Cores given to VEP and other per-sample steps. |
+| `--dbnsfp_url` | `null` | `setup`: your dbNSFP download link from [dbnsfp.org](https://www.dbnsfp.org/download). Hidden from the parameter summary. |
+| `--dbnsfp_zip` | `null` | `setup`: a dbNSFP zip already on disk, instead of `--dbnsfp_url`. |
 | `--dbnsfp_max_forks` | `16` | Concurrent dbNSFP per-chromosome shards. Lower it if memory is tight. |
 | `--dbnsfp_transcript_scores` | `mane` | How to resolve dbNSFP's per-transcript score arrays to one value per variant. |
 

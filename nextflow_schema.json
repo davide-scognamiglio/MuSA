@@ -162,6 +162,22 @@
                     "fa_icon": "fas fa-sync",
                     "default": false
                 },
+                "dbnsfp_url": {
+                    "type": "string",
+                    "format": "uri",
+                    "fa_icon": "fas fa-key",
+                    "description": "Your dbNSFP download link, for --workflow setup. dbNSFP is distributed only to registered users: register at https://www.dbnsfp.org/download and use the link you receive. Not shown in the parameter summary.",
+                    "help_text": "The public manifest carries no dbNSFP URL. Give either --dbnsfp_url or --dbnsfp_zip."
+                },
+                "dbnsfp_zip": {
+                    "type": "string",
+                    "format": "file-path",
+                    "exists": true,
+                    "pattern": "^\\S+\\.zip$",
+                    "fa_icon": "fas fa-file-archive",
+                    "description": "Path to a dbNSFP zip you already downloaded (the version named in the manifest), for --workflow setup. Its SHA-256 is checked against the manifest.",
+                    "help_text": "Alternative to --dbnsfp_url; takes precedence when both are given."
+                },
                 "logo": {
                     "type": "string",
                     "description": "path to logo asset",
