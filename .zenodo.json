@@ -1,0 +1,17 @@
+{
+  "title": "MuSA: Multi-Source variant Annotation",
+  "upload_type": "software",
+  "description": "MuSA is a Nextflow pipeline that turns germline VCFs into an interpretation-ready MAF and a self-contained HTML report. It runs Ensembl VEP and dbNSFP in parallel, merges them into one row per variant on the MANE Select transcript, scores every variant with RENOVO 1.5, adds ClinVar, ClinGen and HPO context, and ranks the result for clinical review.",
+  "creators": [
+    {"name": "Scognamiglio, Davide", "affiliation": "Alma Mater Studiorum Università di Bologna; IRCCS Istituto Ortopedico Rizzoli"},
+    {"name": "Bonetti, E.", "affiliation": "IRCCS Istituto Ortopedico Rizzoli"},
+    {"name": "Moroni, A.", "affiliation": "IRCCS Istituto Ortopedico Rizzoli"},
+    {"name": "Sangiorgi, L.", "affiliation": "IRCCS Istituto Ortopedico Rizzoli"},
+    {"name": "Pedrini, E.", "affiliation": "IRCCS Istituto Ortopedico Rizzoli"}
+  ],
+  "license": "cc-by-nc-4.0",
+  "keywords": ["nextflow", "variant annotation", "germline", "clinical genomics", "rare disease", "vep", "dbnsfp"],
+  "related_identifiers": [
+    {"identifier": "10.1186/s12859-026-06513-0", "relation": "isDescribedBy", "scheme": "doi", "resource_type": "publication-article"}
+  ]
+}
