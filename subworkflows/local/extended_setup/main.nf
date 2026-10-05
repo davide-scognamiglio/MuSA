@@ -3,7 +3,6 @@ include { MERGE_YAML as MERGE_EXTENDED_YAML } from '../../../modules/local/merge
 include { DOWNLOAD_ALPHAMISSENSE } from '../../../modules/local/download_alphamissense'
 include { DOWNLOAD_ANCESTRALALLELE } from '../../../modules/local/download_ancestralallele'
 include { DOWNLOAD_CADD } from '../../../modules/local/download_cadd'
-include { DOWNLOAD_CLINPRED } from '../../../modules/local/download_clinpred'
 include { DOWNLOAD_DBSCSNV } from '../../../modules/local/download_dbscsnv'
 include { DOWNLOAD_ENFORMER } from '../../../modules/local/download_enformer'
 include { DOWNLOAD_EVE } from '../../../modules/local/download_eve'
@@ -32,11 +31,14 @@ workflow EXTENDED_SETUP {
          * aligned-columns file), and basic_yaml_ch carries its computed_sha256 into every partial
          * YAML merged below. Outside --update_db_only nothing skips a download, so calling
          * DOWNLOAD_DBNSFP here again fetched and reinstalled the ~47 GB zip a second time.
+         * Nor is ClinPred: dbNSFP carries the same scores (99.97% identical on NA12878), so its VEP
+         * plugin (5.7 GB) added a score for 0.4% of variants. AlphaMissense stays: its plugin fills
+         * the ~6% of missense variants whose MANE transcript has no AlphaMissense value in dbNSFP
+         * (CLEAN_COLUMNS merges the two).
          */
         alphamissense_ch      = DOWNLOAD_ALPHAMISSENSE(basic_yaml_ch, changed_entries_ch)
         ancestralallele_ch    = DOWNLOAD_ANCESTRALALLELE(basic_yaml_ch, changed_entries_ch)
         cadd_ch               = DOWNLOAD_CADD(basic_yaml_ch, changed_entries_ch)
-        clinpred_ch           = DOWNLOAD_CLINPRED(basic_yaml_ch, changed_entries_ch)
         dbscsnv_ch            = DOWNLOAD_DBSCSNV(basic_yaml_ch, changed_entries_ch)
         enformer_ch           = DOWNLOAD_ENFORMER(basic_yaml_ch, changed_entries_ch)
         eve_ch                = DOWNLOAD_EVE(basic_yaml_ch, changed_entries_ch)
@@ -57,7 +59,6 @@ workflow EXTENDED_SETUP {
             alphamissense_ch
             .mix(ancestralallele_ch,
                 cadd_ch,
-                clinpred_ch,
                 dbscsnv_ch,
                 enformer_ch,
                 eve_ch,

@@ -35,7 +35,7 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | **Genome build** | GRCh38/hg38 only. |
 | **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
-| **Storage, one-time** | ~72 GB for core annotation, ~173 GB if you also want the 22 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
+| **Storage, one-time** | ~72 GB for core annotation, ~167 GB if you also want the 21 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
 | **dbNSFP** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup`. |
 | **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring and live HPO gene-panel lookup. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) needs neither. |
 | **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) — non-commercial use and redistribution, with attribution. |
@@ -87,7 +87,7 @@ Two workflows:
 **Annotation sources.** MuSA brings in evidence at two levels and then classifies each variant:
 
 - **Variant level:** Ensembl VEP (with ClinVar and ClinGen expert-panel classifications, and up to
-  22 plugins in extended mode), dbNSFP (pathogenicity predictors, population databases,
+  21 plugins in extended mode), dbNSFP (pathogenicity predictors, population databases,
   conservation) and vcf2maf.
 - **Gene level:** dbNSFP's gene file (OMIM, Orphanet, GenCC, HPO, pathways, expression,
   constraint) and ClinGen (gene–disease validity, dosage sensitivity, actionability).
@@ -213,7 +213,7 @@ build`) rather than silently mis-annotating a GRCh37 VCF — realign or lift ove
 | Mode | What it adds | Approx. size | When to use it |
 |---|---|---|---|
 | **Basic** (`setup` default) | VEP cache, dbNSFP, ClinVar/ClinGen, reference genome | ~72 GB | Routine diagnostic annotation |
-| **Extended** (`--download_vep_plugins true`) | + all 22 VEP plugin data files (AlphaMissense, CADD, Enformer, EVE, GWAS, MaveDB, ...) | ~173 GB total | Deep functional characterization; required before `--use_vep_plugins true` |
+| **Extended** (`--download_vep_plugins true`) | + all 21 VEP plugin data files (AlphaMissense, CADD, Enformer, EVE, GWAS, MaveDB, SpliceVault, ...) | ~167 GB total | Deep functional characterization; required before `--use_vep_plugins true` |
 
 **RENOVO scores come from RENOVO 1.5.** MuSA scores variants with
 [renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild), which runs RENOVO's
@@ -274,7 +274,7 @@ nextflow run davide-scognamiglio/MuSA \
 
 `--data_dir` must be an absolute path; MuSA stops at startup if it is relative.
 
-Add `--download_vep_plugins true` for the extended (~173 GB) tier. Re-running `setup` later only
+Add `--download_vep_plugins true` for the extended (~167 GB) tier. Re-running `setup` later only
 re-downloads entries whose manifest version changed (`--update_db_only true` to force a diff-only
 refresh).
 
@@ -338,7 +338,7 @@ Column-by-column breakdown of what's in the MAF: [`docs/output.md`](docs/output.
 
 Same dataset, same in-house server (Intel Xeon Gold 6444Y, 64 cores, 250 GB RAM), two pipeline
 versions: a downsampled, WES-like NA12878/HG001 (GRCh38) callset, ~22,700 variants, full
-extended-mode annotation (all 22 VEP plugins).
+extended-mode annotation (all 22 VEP plugins MuSA 1.1 used).
 
 | Version | Wall time | CPU time |
 |---|---|---|

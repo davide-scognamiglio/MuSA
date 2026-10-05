@@ -79,7 +79,7 @@ Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins 
 | LIST-S2 | Taxonomy-aware conservation predictor | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `LIST-S2_.*` |
 | VARITY | Rare-variant-focused missense predictor | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `VARITY_.*` |
 | ESM1b | Protein language model | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `ESM1b_.*` |
-| AlphaMissense | Protein structure-aware deep learning (Google DeepMind) *The VEP AlphaMissense plugin also runs in extended mode; its duplicate columns are dropped in favour of dbNSFP's.* | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `AlphaMissense_.*` |
+| AlphaMissense | Protein structure-aware deep learning (Google DeepMind) *From dbNSFP, read on the MANE transcript; in extended mode, rows dbNSFP leaves empty are filled from the VEP AlphaMissense plugin, and AlphaMissense_source says which copy each row holds.* | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `AlphaMissense_.*` |
 | PHACTboost | Phylogeny-aware gradient boosting | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `PHACTboost_.*` |
 | MutFormer | Transformer protein language model | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `MutFormer_.*` |
 | MutScore | Positional clustering of pathogenic variants | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | basic | `MutScore_.*` |

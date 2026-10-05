@@ -38,8 +38,8 @@ kept out of the parameter summary and the task logs, and never written into `--d
 
 **Basic setup** (the command above) fetches what routine diagnostics needs: ~72 GB.
 
-**Extended setup** additionally fetches the data files for all 22 VEP plugins, bringing the total to
-~173 GB. Required before `--use_vep_plugins true`:
+**Extended setup** additionally fetches the data files for all 21 VEP plugins, bringing the total to
+~167 GB. Required before `--use_vep_plugins true`:
 
 ```bash
 nextflow run MuSA \

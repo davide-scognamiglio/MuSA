@@ -43,9 +43,8 @@ process CLEAN_COLUMNS {
     #   alt             -> keep vcf_alt           (dbNSFP partial field)
     #   vcf_qual        -> keep QUAL              (exact duplicate)
     #   MIM_id          -> keep OMIM_id           (same database, side-by-side)
-    #   ClinPred        -> keep ClinPred_score    (dbNSFP has more coverage)
     #   HGVSp_snpEff    -> keep HGVSp_VEP        (identical content, keep VEP)
-    T1="CADD_phred,CADD_raw,clinvar_clnsig,clinvar_review,clinvar_trait,Start,pos(1-based),vcf_pos,End,Ref,Alt,ref,alt,vcf_qual,MIM_id,ClinPred,HGVSp_snpEff"
+    T1="CADD_phred,CADD_raw,clinvar_clnsig,clinvar_review,clinvar_trait,Start,pos(1-based),vcf_pos,End,Ref,Alt,ref,alt,vcf_qual,MIM_id,HGVSp_snpEff"
     #
     # TIER 2 — same underlying data, different tool/format/transcript scope
     #   CLIN_SIG           -> keep CLNSIG            (case-only diff: benign vs Benign)
@@ -58,9 +57,9 @@ process CLEAN_COLUMNS {
     #   CCDS_id            -> keep CCDS              (dbNSFP bare id vs VEP versioned)
     #   STRAND_VEP         -> keep STRAND            (completely empty column)
     #   cds_strand         -> keep STRAND            (same info, different encoding +/- vs 1/-1)
-    #   am_class           -> keep AlphaMissense_pred (VEP single vs dbNSFP multi-transcript)
-    #   am_pathogenicity   -> keep AlphaMissense_score (same)
     #   Uniprot_id         -> keep Uniprot_entry     (single vs multi-transcript mnemonic)
+    #   am_class           -> merged into AlphaMissense_pred, then dropped (see below)
+    #   am_pathogenicity   -> merged into AlphaMissense_score, then dropped (see below)
     T2="CLIN_SIG,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Uniprot_id"
     #
     # KEPT ON PURPOSE:
@@ -91,6 +90,13 @@ process CLEAN_COLUMNS {
     # CLNREVSTAT/CLNDN) is the single ClinVar source.
     DROP_ORIG="ClinVar"
 
+    # AlphaMissense has two copies: dbNSFP's (per transcript, read on the MANE transcript) and the
+    # VEP plugin's (extended mode; DeepMind's canonical-transcript file, matched by position). They
+    # agree where both exist (median difference 0.004 on NA12878), but on ~6% of missense variants
+    # only the plugin has a value, because dbNSFP has none for the MANE transcript. dbNSFP's value
+    # is kept; an empty one is filled from the plugin (am_class mapped to dbNSFP's LB/A/LP codes),
+    # and AlphaMissense_source, written after AlphaMissense_pred, says which copy each row holds.
+
     awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" -v drop_orig_cols="\$DROP_ORIG" '
     BEGIN {
         n = split(drop_cols, arr, ",")
@@ -98,7 +104,18 @@ process CLEAN_COLUMNS {
         m = split(drop_orig_cols, arr2, ",")
         for (i = 1; i <= m; i++) drop_orig[arr2[i]] = 1
     }
+    function empty(v) { return v == "" || v == "." || v == "NA" || v == "nan" }
     NR == 1 {
+        for (i = 1; i <= NF; i++) {
+            name = \$i
+            gsub(/\r/, "", name)
+            if (name == "AlphaMissense_score" && !am_score) am_score = i
+            if (name == "AlphaMissense_pred"  && !am_pred)  am_pred  = i
+            if (name == "am_pathogenicity"    && !am_vep)   am_vep   = i
+            if (name == "am_class"            && !am_cls)   am_cls   = i
+        }
+        am_after = am_pred ? am_pred : am_score
+        am_code["likely_benign"] = "LB"; am_code["ambiguous"] = "A"; am_code["likely_pathogenic"] = "LP"
         for (i = 1; i <= NF; i++) {
             col = \$i
             gsub(/\r/, "", col)
@@ -139,11 +156,28 @@ process CLEAN_COLUMNS {
     }
     {
         gsub(/\r/, "")
+        if (am_after) {
+            if (NR == 1) {
+                am_src = "AlphaMissense_source"
+            } else if (!empty(\$am_score)) {
+                am_src = "dbNSFP"
+            } else if (am_vep && !empty(\$am_vep)) {
+                \$am_score = \$am_vep
+                if (am_pred) \$am_pred = (\$am_cls in am_code) ? am_code[\$am_cls] : "."
+                am_src = "VEP plugin"
+            } else {
+                am_src = "."
+            }
+        }
         out = ""
         sep = ""
         for (i = 1; i <= NF; i++) {
             if (keep[i]) {
                 out = out sep \$i
+                sep = OFS
+            }
+            if (i == am_after) {
+                out = out sep am_src
                 sep = OFS
             }
         }

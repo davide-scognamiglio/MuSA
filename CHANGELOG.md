@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the sources each task adds (`NA12878 | Ensembl VEP + ClinVar + ClinGen + 22 plugins`).
   Steps run in the same order as before, and the MAFs are unchanged.
 - The pipeline map shows the four stages and the sources at each one.
+- **AlphaMissense covers more missense variants.** dbNSFP has no AlphaMissense value for the MANE
+  transcript of about 6% of missense variants (686 of 11,354 on NA12878); the VEP AlphaMissense
+  plugin scores them, but its columns were dropped. In extended mode `AlphaMissense_score` and
+  `AlphaMissense_pred` are now filled from the plugin where dbNSFP is empty, and the new
+  `AlphaMissense_source` column says which copy each row holds. Where both exist they agree
+  (median difference 0.004).
+
+### `Removed`
+
+- The ClinPred VEP plugin and its 5.7 GB download: dbNSFP carries the same scores (99.97%
+  identical on NA12878), so the plugin added a value for 0.4% of variants and its column was
+  dropped anyway. `ClinPred_score` (dbNSFP) is unchanged. An extended `setup` is now about 167 GB;
+  existing data directories keep working and `vep_data/ClinPred/` can be deleted.
 
 ## v1.2.0 - 2026-09-24
 

@@ -6,7 +6,7 @@
 
 
 process VEP_ANNOTATE_VCF {
-    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.use_vep_plugins ? ' + 22 plugins' : ''}"
+    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.use_vep_plugins ? ' + 21 plugins' : ''}"
     cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3
@@ -51,7 +51,6 @@ process VEP_ANNOTATE_VCF {
                 --plugin AlphaMissense,file="/data/vep_data/AlphaMissense/AlphaMissense_${params.build}.tsv.gz" \\
                 --plugin AncestralAllele,"/data/vep_data/AncestralAllele/homo_sapiens_ancestor_GRCh38.fa.gz" \\
                 --plugin CADD,snv="/data/vep_data/CADD/whole_genome_SNVs.tsv.gz" \\
-                --plugin ClinPred,file="/data/vep_data/ClinPred/ClinPred_${params.build}_sorted_tabbed.tsv.gz" \\
                 --plugin dbscSNV,"/data/vep_data/dbscSNV/dbscSNV1.1_GRCh38.txt.gz" \\
                 --plugin Downstream \\
                 --plugin Enformer,file="/data/vep_data/Enformer/enformer_grch38.vcf.gz" \\
