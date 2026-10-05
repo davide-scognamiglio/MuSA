@@ -3,7 +3,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.1.0 - 2026-09-10, fixed 2026-09-24
+## v1.1.0 - 2026-09-10, fixed 2026-09-24 and 2026-10-05
 
 On 2026-09-24 the `v1.1.0` tag was moved to this fixed code: stability fixes backported from
 1.2.0, no new features and no change to annotation results. A fresh `setup` did not work in the
@@ -21,6 +21,16 @@ original v1.1.0 (commit `c5d7612`); it does here. If you ran v1.1.0 before 2026-
   download from `--dbnsfp_url` (your link, hidden from the parameter summary and masked in the task
   log) or `--dbnsfp_zip` (a zip already on disk), stops at startup if neither is given, and now fails
   when the file's SHA-256 differs from the manifest's. Backported from 1.2.0.
+
+### Fixed on 2026-10-05
+
+- **Extended `setup` downloaded dbNSFP twice.** With `--download_vep_plugins true`,
+  `EXTENDED_SETUP` called `DOWNLOAD_DBNSFP` again after `BASIC_SETUP` had already installed it, so
+  the ~47 GB zip was fetched and reinstalled a second time. dbNSFP is now installed only by the
+  basic step. Backported from 1.2.0.
+- The report labelled `renovo_adj_acmg_score` "GeneBe ACMG score", but for missense variants it is
+  GeneBe's score shifted by RENOVO's `PL_score`. It is now labelled "ACMG score, ReNOVo-adjusted
+  (missense)" and shown next to GeneBe's own `acmg_score` (online mode only). Backported from 1.2.0.
 
 ### Fixed on 2026-09-24
 
