@@ -22,19 +22,24 @@ keywords:
 authors:
   - family-names: Scognamiglio
     given-names: Davide
+    orcid: "https://orcid.org/0009-0007-5163-0327"
     affiliation: "Alma Mater Studiorum Università di Bologna; IRCCS Istituto Ortopedico Rizzoli"
     email: davide.scognamiglio@ior.it
   - family-names: Bonetti
     given-names: Emanuele
+    orcid: "https://orcid.org/0000-0001-7462-3874"
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
   - family-names: Moroni
     given-names: Alice
+    orcid: "https://orcid.org/0000-0002-4777-341X"
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
   - family-names: Sangiorgi
     given-names: Luca
+    orcid: "https://orcid.org/0000-0003-3658-1209"
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
   - family-names: Pedrini
     given-names: Elena
+    orcid: "https://orcid.org/0000-0001-9980-7741"
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
 preferred-citation:
   type: article
@@ -49,11 +54,16 @@ preferred-citation:
   authors:
     - family-names: Scognamiglio
       given-names: Davide
+      orcid: "https://orcid.org/0009-0007-5163-0327"
     - family-names: Bonetti
       given-names: Emanuele
+      orcid: "https://orcid.org/0000-0001-7462-3874"
     - family-names: Moroni
       given-names: Alice
+      orcid: "https://orcid.org/0000-0002-4777-341X"
     - family-names: Sangiorgi
       given-names: Luca
+      orcid: "https://orcid.org/0000-0003-3658-1209"
     - family-names: Pedrini
       given-names: Elena
+      orcid: "https://orcid.org/0000-0001-9980-7741"

@@ -5,23 +5,28 @@
   "creators": [
     {
       "name": "Scognamiglio, Davide",
-      "affiliation": "Alma Mater Studiorum Università di Bologna; IRCCS Istituto Ortopedico Rizzoli"
+      "affiliation": "Alma Mater Studiorum Università di Bologna; IRCCS Istituto Ortopedico Rizzoli",
+      "orcid": "0009-0007-5163-0327"
     },
     {
       "name": "Bonetti, Emanuele",
-      "affiliation": "IRCCS Istituto Ortopedico Rizzoli"
+      "affiliation": "IRCCS Istituto Ortopedico Rizzoli",
+      "orcid": "0000-0001-7462-3874"
     },
     {
       "name": "Moroni, Alice",
-      "affiliation": "IRCCS Istituto Ortopedico Rizzoli"
+      "affiliation": "IRCCS Istituto Ortopedico Rizzoli",
+      "orcid": "0000-0002-4777-341X"
     },
     {
       "name": "Sangiorgi, Luca",
-      "affiliation": "IRCCS Istituto Ortopedico Rizzoli"
+      "affiliation": "IRCCS Istituto Ortopedico Rizzoli",
+      "orcid": "0000-0003-3658-1209"
     },
     {
       "name": "Pedrini, Elena",
-      "affiliation": "IRCCS Istituto Ortopedico Rizzoli"
+      "affiliation": "IRCCS Istituto Ortopedico Rizzoli",
+      "orcid": "0000-0001-9980-7741"
     }
   ],
   "license": "cc-by-nc-4.0",
