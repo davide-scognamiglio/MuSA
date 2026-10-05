@@ -20,12 +20,14 @@ include {chrom_list} from '../../../lib/annot_utils.nf'
  *                            classifications (VEP --custom) + VEP plugins in extended mode
  *   GENEBE_ANNOTATE_VCF      GeneBe ACMG/AMP criteria (online mode)
  *   DBNSFP_ANNOTATE_VCF_CHR  dbNSFP: ~35 pathogenicity predictors, 6 population databases,
- *                            conservation (sharded by chromosome)
+ *                            conservation (sharded by chromosome; extended mode)
  *   VCF_TO_MAF               MAF format and coordinates
- *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant
+ *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant (extended mode)
  *
  * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
- * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops.
+ * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops. Eight of its
+ * thirteen inputs are dbNSFP scores, so it runs only when dbNSFP does: in basic mode its scores
+ * would be imputed medians, not predictions.
  * assets/annotation_sources.yaml lists every source and the MAF columns it fills.
  */
 workflow ANNOTATE_VARIANTS {
@@ -42,29 +44,34 @@ workflow ANNOTATE_VARIANTS {
         vep_tsv   = PARSE_VEP_ANNOTATION(vep_gene)
 
         /*
-         * Branch 2: dbNSFP (scattered by chromosome, gathered back to one TSV per patient)
+         * Branch 2: dbNSFP (scattered by chromosome, gathered back to one TSV per patient).
+         * Extended mode only; in basic mode MERGE_ANNOTATIONS gets the NO_FILE placeholder instead.
          */
-        // The wanted chromosomes travel as ONE value, not as a channel to cross with: SPLIT_VCF_BY_CHR
-        // now shards a VCF in a single pass instead of being fanned out one task per chromosome.
-        chr_ch = Channel.value(chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai"))
+        if (params.extended) {
+            // The wanted chromosomes travel as ONE value, not as a channel to cross with: SPLIT_VCF_BY_CHR
+            // now shards a VCF in a single pass instead of being fanned out one task per chromosome.
+            chr_ch = Channel.value(chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai"))
 
-        // transpose() turns (meta, [shard, shard, ...]) into one (meta, shard) per shard; the chr is
-        // recovered from the filename that SPLIT_VCF_BY_CHR wrote it into, rebuilding the exact
-        // (meta, chr, shard) tuple DBNSFP_ANNOTATE_VCF_CHR already expects.
-        dbnsfp_shards = SPLIT_VCF_BY_CHR(vcf, chr_ch)
-            .transpose()
-            .map { meta, shard ->
-                def m = (shard.name =~ /\.([^.]+)\.shard\.vcf$/)
-                if (!m) error "SPLIT_VCF_BY_CHR produced an unparseable shard name: ${shard.name}"
-                tuple(meta, m[0][1], shard)
-            }
-        dbnsfp_shard_tsv = DBNSFP_ANNOTATE_VCF_CHR(dbnsfp_shards)
+            // transpose() turns (meta, [shard, shard, ...]) into one (meta, shard) per shard; the chr is
+            // recovered from the filename that SPLIT_VCF_BY_CHR wrote it into, rebuilding the exact
+            // (meta, chr, shard) tuple DBNSFP_ANNOTATE_VCF_CHR already expects.
+            dbnsfp_shards = SPLIT_VCF_BY_CHR(vcf, chr_ch)
+                .transpose()
+                .map { meta, shard ->
+                    def m = (shard.name =~ /\.([^.]+)\.shard\.vcf$/)
+                    if (!m) error "SPLIT_VCF_BY_CHR produced an unparseable shard name: ${shard.name}"
+                    tuple(meta, m[0][1], shard)
+                }
+            dbnsfp_shard_tsv = DBNSFP_ANNOTATE_VCF_CHR(dbnsfp_shards)
 
-        dbnsfp_tsv = GATHER_DBNSFP_TSV(
-            dbnsfp_shard_tsv
-                .map { meta, chr, tsv -> tuple(meta, tsv) }
-                .groupTuple()
-        )
+            dbnsfp_tsv = GATHER_DBNSFP_TSV(
+                dbnsfp_shard_tsv
+                    .map { meta, chr, tsv -> tuple(meta, tsv) }
+                    .groupTuple()
+            )
+        } else {
+            dbnsfp_tsv = vcf.map { meta, _vcf -> tuple(meta, file("${projectDir}/assets/NO_FILE")) }
+        }
 
         /*
          * Branch 3: vcf2maf
@@ -83,7 +90,8 @@ workflow ANNOTATE_VARIANTS {
 
         // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
         // running as a branch of its own.
-        merged = CLEAN_COLUMNS(RENOVO_SCORE(MERGE_ANNOTATIONS(joined)))
+        merged_tsv = MERGE_ANNOTATIONS(joined)
+        merged = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
 
     emit:
         merged

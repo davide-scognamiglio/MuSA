@@ -9,6 +9,7 @@ include {HPO_MATCH} from '../../../modules/local/hpo_match'
  *                             GO, KEGG/BioCarta/ConsensusPathDB pathways, Human Protein Atlas
  *                             expression, gnomAD/ExAC constraint, RVIS, GDI, LoFtool,
  *                             haploinsufficiency and essentiality, MGI and ZFIN phenotypes
+ *                             (extended mode: the gene file ships with dbNSFP)
  *   CLINGEN_ANNOTATE_MAF      ClinGen gene–disease validity, dosage sensitivity, actionability
  *   HPO_MATCH                 the patient's HPO terms against the gene's, with the native HPO
  *                             release: exact / narrower / broader match, similarity score,
@@ -21,7 +22,8 @@ workflow ANNOTATE_GENES {
     take: maf
 
     main:
-        annotated = HPO_MATCH(CLINGEN_ANNOTATE_MAF(DBNSFP_GENE_ANNOTATE_MAF(maf)))
+        gene_file = params.extended ? DBNSFP_GENE_ANNOTATE_MAF(maf) : maf
+        annotated = HPO_MATCH(CLINGEN_ANNOTATE_MAF(gene_file))
 
     emit:
         annotated

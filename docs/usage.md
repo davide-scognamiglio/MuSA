@@ -17,14 +17,33 @@ The pipeline has two workflows, selected with `--workflow`:
 
 ## Setup workflow
 
-Run this first. It populates `--data_dir` with the VEP cache, the native dbNSFP distribution,
-ClinVar/ClinGen, and the reference genome, recording a SHA-256 checksum for each in a versioned
-manifest.
+Run this first. It populates `--data_dir` with the annotation databases, recording a SHA-256
+checksum for each in a versioned manifest. MuSA has two modes, and the same `--extended` switch
+selects them for `setup` (what to download) and `annotate` (what to use):
+
+| Mode | Databases | Size | Adds to the MAF |
+|---|---|---|---|
+| **Basic** (default) | VEP cache, reference genome, ClinVar, ClinGen, Human Phenotype Ontology | ~30 GB | Consequence, gnomAD/1000 Genomes frequencies, ClinVar and ClinGen classifications, gene–disease validity, HPO match |
+| **Extended** (`--extended true`) | + dbNSFP and the data files of 21 VEP plugins | ~167 GB | + ~35 dbNSFP predictors, dbNSFP gene file (OMIM, Orphanet, constraint, ...), RENOVO 1.5 classes, VEP plugin scores |
+
+Basic setup:
 
 ```bash
 nextflow run MuSA \
    --workflow setup \
    --data_dir /path/to/musa_data \
+   -profile docker
+```
+
+**Extended setup** additionally fetches dbNSFP and the data files for all 21 VEP plugins, bringing
+the total to ~167 GB. Required before `annotate --extended true`; on a basic data directory it only
+adds what is missing:
+
+```bash
+nextflow run MuSA \
+   --workflow setup \
+   --data_dir /path/to/musa_data \
+   --extended true \
    --dbnsfp_url '<your dbNSFP download link>' \
    -profile docker
 ```
@@ -32,26 +51,18 @@ nextflow run MuSA \
 **dbNSFP comes from your own registration.** dbNSFP is free for academic, non-commercial use but
 distributed only to registered users, so the manifest carries its version and SHA-256 and no URL.
 Register at [dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) and pass the link you
-receive with `--dbnsfp_url`, or a zip you already downloaded with `--dbnsfp_zip`. `setup` stops at
-startup if neither is given, and fails if the file's SHA-256 differs from the manifest's. The link is
+receive with `--dbnsfp_url`, or a zip you already downloaded with `--dbnsfp_zip`. An extended
+`setup` stops at startup if neither is given, and fails if the file's SHA-256 differs from the manifest's. The link is
 kept out of the parameter summary and the task logs, and never written into `--data_dir`.
 
-**Basic setup** (the command above) fetches what routine diagnostics needs: ~72 GB.
-
-**Extended setup** additionally fetches the data files for all 21 VEP plugins, bringing the total to
-~167 GB. Required before `--use_vep_plugins true`:
-
-```bash
-nextflow run MuSA \
-   --workflow setup \
-   --data_dir /path/to/musa_data \
-   --dbnsfp_url '<your dbNSFP download link>' \
-   --download_vep_plugins true \
-   -profile docker
-```
+The 1.2 flags `--download_vep_plugins` and `--use_vep_plugins` still work as aliases of
+`--extended true`, with a deprecation warning.
 
 When setup finishes, `<data_dir>/setup_report.html` lists every resource with its version, source
 and checksum, marked `VERIFIED`, `MISMATCH` or `PENDING`.
+
+Behind a proxy, add `--http_proxy` / `--https_proxy`: the download tasks run in containers, which
+do not inherit the host's proxy settings.
 
 To refresh databases later without re-downloading what has not changed, add `--update_db_only true`.
 The manifest is diffed against what is already on disk and only changed entries are fetched.
@@ -94,7 +105,8 @@ Results land in `<outdir>/<date>/<patient>/` — see [output.md](output.md).
 
 ### Basic and extended annotation
 
-Basic annotation is the default. To use the full plugin suite (requires extended setup):
+Basic annotation is the default. Extended annotation adds dbNSFP, RENOVO 1.5 and the VEP plugins
+(requires the extended setup; `annotate` stops at startup if `--data_dir` has no dbNSFP):
 
 ```bash
 nextflow run MuSA \
@@ -102,7 +114,7 @@ nextflow run MuSA \
    --input ./samplesheet.csv \
    --outdir ./results \
    --data_dir /path/to/musa_data \
-   --use_vep_plugins true \
+   --extended true \
    -profile docker
 ```
 
@@ -218,7 +230,7 @@ workflow: 'annotate'
 input: './samplesheet.csv'
 outdir: './results'
 data_dir: '/path/to/musa_data'
-use_vep_plugins: true
+extended: true
 ```
 
 > [!WARNING]

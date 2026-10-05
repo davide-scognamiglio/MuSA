@@ -29,9 +29,10 @@ results/
 <summary>Output files</summary>
 
 - `<patient>.raw.maf`
-  - Every variant that survived preprocessing, annotated by the VEP, dbNSFP and vcf2maf branches,
-    merged into one table and scored by RENOVO. 843 columns per variant in extended mode as of this
-    version (basic mode has fewer, since it skips the VEP plugin columns), one row per variant.
+  - Every variant that survived preprocessing, annotated and merged into one table, one row per
+    variant. Basic mode (VEP with ClinVar and ClinGen, vcf2maf, ClinGen gene curations, HPO match):
+    166 columns. Extended mode adds dbNSFP's variant and gene columns, the VEP plugins and RENOVO's
+    `RENOVO_Class` / `PL_score`: 849 columns as of this version.
     This number changes as annotation sources change -- treat it as approximate rather than a
     stable interface.
 - `<patient>.filtered.maf`
@@ -41,7 +42,7 @@ results/
 - `<patient>_maf_dashboard.html`
   - Self-contained interactive report: a summary panel plus a sortable, searchable table of the
     filtered variants, showing gene, HGVS nomenclature, consequence, ClinVar significance and
-    review status, gnomAD population-maximum frequency, and RENOVO score. Its **Annotation
+    review status, gnomAD population-maximum frequency, and RENOVO score (extended mode). Its **Annotation
     sources** view lists every source the run annotated from, with the installed version (see
     [`sources.md`](sources.md) for the columns each one fills).
 
@@ -63,7 +64,7 @@ same way in every column.
 ## Setup workflow
 
 Reference data is written under `--data_dir` in the layout the annotate workflow expects
-(`vep_data/`, `dbNSFP/`, `clingen/`, reference genome). Alongside it:
+(`vep_data/`, `clingen/`, `hpo/`, reference genome; `dbNSFP/` and the VEP plugin data in extended mode). Alongside it:
 
 <details markdown="1">
 <summary>Output files</summary>

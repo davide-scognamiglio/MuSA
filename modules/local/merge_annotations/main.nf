@@ -43,6 +43,10 @@ process MERGE_ANNOTATIONS {
     }
     ' "\$VEP_IN" | sort -t\$'\\t' -k1,1 > "\$VEP_NORM"
 
+    # dbNSFP is extended mode only: in basic mode ANNOTATE_VARIANTS passes the NO_FILE placeholder,
+    # and the merge is VEP + MAF.
+    if [[ "\$(basename "\$DBS_IN")" != "NO_FILE" ]]; then
+
     # --- 2. Normalize dbNSFP  (key: #CHROM | POS | REF | ALT) ---
     #        Note: header column is literally "#CHROM" (hash included)
     DBS_NORM="dbnsfp.norm.tsv"
@@ -140,6 +144,8 @@ process MERGE_ANNOTATIONS {
             ;;
     esac
 
+    fi
+
     # --- 3. Normalize MAF  (key: Chromosome | vcf_pos | vcf_ref | vcf_alt) ---
     MAF_NORM="maf.norm.tsv"
     awk -F'\t' -v OFS='\t' -v key_cols="Chromosome vcf_pos vcf_ref vcf_alt" '
@@ -158,8 +164,13 @@ process MERGE_ANNOTATIONS {
     ' "\$MAF_IN" | sort -t\$'\\t' -k1,1 > "\$MAF_NORM"
 
     # --- 4. Sequential outer-join on KEY, then drop the KEY column ---
-    join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto "\$VEP_NORM"    "\$DBS_FINAL"  \\
-        | join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto - "\$MAF_NORM"    \\
-        | cut -f2- > "\$OUT"
+    if [[ "\$(basename "\$DBS_IN")" != "NO_FILE" ]]; then
+        join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto "\$VEP_NORM"    "\$DBS_FINAL"  \\
+            | join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto - "\$MAF_NORM"    \\
+            | cut -f2- > "\$OUT"
+    else
+        join -t \$'\\t' -1 1 -2 1 -a 1 -e "NA" -o auto "\$VEP_NORM" "\$MAF_NORM" \\
+            | cut -f2- > "\$OUT"
+    fi
     """
 }

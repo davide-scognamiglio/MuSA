@@ -90,6 +90,12 @@ process CLEAN_COLUMNS {
     # CLNREVSTAT/CLNDN) is the single ClinVar source.
     DROP_ORIG="ClinVar"
 
+    # The protein change: HGVSp_VEP comes from dbNSFP (read on the MANE transcript), and VEP's own
+    # HGVSp is dropped above as its pre-merge twin. Basic mode has no dbNSFP, so there VEP's HGVSp
+    # (for the transcript VEP picked, Feature) becomes HGVSp_VEP, in dbNSFP's form: "p.Tyr414Cys"
+    # rather than "ENSP00000448059.1:p.Tyr414Cys", and "p.Leu385=" rather than VEP's URL-escaped
+    # "p.Leu385%3D".
+
     # AlphaMissense has two copies: dbNSFP's (per transcript, read on the MANE transcript) and the
     # VEP plugin's (extended mode; DeepMind's canonical-transcript file, matched by position). They
     # agree where both exist (median difference 0.004 on NA12878), but on ~6% of missense variants
@@ -113,7 +119,10 @@ process CLEAN_COLUMNS {
             if (name == "AlphaMissense_pred"  && !am_pred)  am_pred  = i
             if (name == "am_pathogenicity"    && !am_vep)   am_vep   = i
             if (name == "am_class"            && !am_cls)   am_cls   = i
+            if (name == "HGVSp"               && !vep_p)    vep_p    = i
+            if (name == "HGVSp_VEP")                        dbnsfp_p = i
         }
+        if (dbnsfp_p) vep_p = 0
         am_after = am_pred ? am_pred : am_score
         am_code["likely_benign"] = "LB"; am_code["ambiguous"] = "A"; am_code["likely_pathogenic"] = "LP"
         for (i = 1; i <= NF; i++) {
@@ -129,7 +138,8 @@ process CLEAN_COLUMNS {
             }
 
             # Rename to canonical MAF names
-            if (col == "SYMBOL")                       col = "Hugo_Symbol"
+            if (i == vep_p)                            col = "HGVSp_VEP"
+            else if (col == "SYMBOL")                  col = "Hugo_Symbol"
             else if (col == "ClinVar_CLNSIG")          col = "CLNSIG"
             else if (col == "ClinVar_CLNREVSTAT")      col = "CLNREVSTAT"
             else if (col == "ClinVar_CLNDN")           col = "CLNDN"
@@ -156,6 +166,12 @@ process CLEAN_COLUMNS {
     }
     {
         gsub(/\r/, "")
+        if (vep_p && NR > 1) {
+            p = \$vep_p
+            sub(/^[^:]*:/, "", p)
+            gsub(/%3D/, "=", p)
+            \$vep_p = p
+        }
         if (am_after) {
             if (NR == 1) {
                 am_src = "AlphaMissense_source"

@@ -2,12 +2,10 @@ include { DOWNLOAD_MANIFEST } from '../../../modules/local/download_manifest'
 include { DIFF_MANIFEST } from '../../../modules/local/diff_manifest'
 include { DOWNLOAD_VEP_CACHE } from '../../../modules/local/download_vep_cache'
 include { DOWNLOAD_REFGENOME } from '../../../modules/local/download_refgenome'
-include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
 include { DOWNLOAD_CLINVAR } from '../../../modules/local/download_clinvar'
 include { DOWNLOAD_CLINGEN } from '../../../modules/local/download_clingen'
 include { DOWNLOAD_HPO } from '../../../modules/local/download_hpo'
 include { MERGE_YAML as MERGE_BASIC_YAML } from '../../../modules/local/merge_yaml'
-include { REFRESH_DBNSFP_ALIGNED_COLUMNS } from '../refresh_dbnsfp_aligned_columns'
 
 workflow BASIC_SETUP {
 
@@ -30,25 +28,19 @@ workflow BASIC_SETUP {
             changed_entries_ch = file("${projectDir}/assets/NO_FILE")
         }
 
-        // Step 2: download modules in parallel, each consuming the manifest + changed-entries gate
+        // Step 2: download modules in parallel, each consuming the manifest + changed-entries gate.
+        // Basic mode is what every annotate run needs, and nothing that requires a registration:
+        // dbNSFP (and RENOVO, which reads its scores) are extended mode (EXTENDED_SETUP).
         vep_ch     = DOWNLOAD_VEP_CACHE(manifest_ch, changed_entries_ch)
-        // dbNSFP comes from the user (see checkDbnsfpSource in main.nf): a zip on disk, else a URL.
-        dbnsfp_zip = params.dbnsfp_zip ? file(params.dbnsfp_zip, checkIfExists: true) : file("${projectDir}/assets/NO_FILE")
-        dbnsfp_ch  = DOWNLOAD_DBNSFP(manifest_ch, changed_entries_ch, dbnsfp_zip, params.dbnsfp_url ?: "")
         refgen_ch  = DOWNLOAD_REFGENOME(manifest_ch, changed_entries_ch)
         clinvar_ch = DOWNLOAD_CLINVAR(manifest_ch, changed_entries_ch)
         clingen_ch = DOWNLOAD_CLINGEN(manifest_ch, changed_entries_ch)
         hpo_ch     = DOWNLOAD_HPO(manifest_ch, changed_entries_ch)
         merged_input = vep_ch
-            .mix(dbnsfp_ch, refgen_ch, clinvar_ch, clingen_ch, hpo_ch)
+            .mix(refgen_ch, clinvar_ch, clingen_ch, hpo_ch)
             .collect()
 
         merged_yaml = MERGE_BASIC_YAML(merged_input)
-
-        // Step 3: rebuild dbnsfp_transcript_aligned_columns.txt when dbNSFP changed (or was never
-        // built for the current install). No-ops instantly otherwise — see the subworkflow's own
-        // doc comment for why it is safe to call unconditionally here.
-        REFRESH_DBNSFP_ALIGNED_COLUMNS(dbnsfp_ch, refgen_ch)
 
     emit:
         merged_yaml

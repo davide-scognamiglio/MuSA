@@ -19,10 +19,12 @@
 #   provider.data      path under --data_dir; when the manifest has no version, the install date of
 #                      this file is reported instead
 #   provider.version   version fixed by the pipeline itself (containers, APIs)
-#   provider.mode      basic (always), extended (--use_vep_plugins true) or online (--offline false)
+#   provider.mode      basic (always), extended (--extended true), online (--offline false), or
+#                      extended+online (both)
 #   source.level       variant | gene | score | filter | format
-#   source.kind        resource (external knowledge) or computed (derived by a tool, no external
-#                      data); only resources are counted as annotation sources
+#   source.kind        resource (external knowledge), computed (derived by a tool, no external
+#                      data) or copy (a resource already listed, reached through a second provider);
+#                      only resources are counted as annotation sources
 #   source.columns     regular expressions, each matching whole MAF column names;
 #                      {sample} stands for the patient's genotype column
 
@@ -55,13 +57,13 @@ providers:
   dbnsfp:
     name: dbNSFP
     step: DBNSFP_ANNOTATE_VCF_CHR
-    mode: basic
+    mode: extended
     manifest: dbnsfp
     url: https://www.dbnsfp.org
   dbnsfp_gene:
     name: dbNSFP gene file
     step: DBNSFP_GENE_ANNOTATE_MAF
-    mode: basic
+    mode: extended
     manifest: dbnsfp
     url: https://www.dbnsfp.org
   clingen_gene:
@@ -85,12 +87,12 @@ providers:
   renovo_acmg:
     name: MuSA
     step: RENOVO_ADJUST_ACMG
-    mode: online
+    mode: extended+online
     url: https://github.com/davide-scognamiglio/MuSA
   renovo:
     name: renovo-rebuild
     step: RENOVO_SCORE
-    mode: basic
+    mode: extended
     version: params.renovo_container
     url: https://github.com/davide-scognamiglio/renovo-rebuild
   genebe:
@@ -181,7 +183,7 @@ sources:
     category: Known variants and literature
     provider: dbnsfp_gene
     columns: ['GWAS_.*', 'Trait_association\(GWAS\)']
-    note: "Gene-level traits from dbNSFP in both modes; variant-level GWAS_* columns from the VEP GWAS plugin in extended mode."
+    note: "Gene-level traits from dbNSFP's gene file, variant-level GWAS_* columns from the VEP GWAS plugin."
 
   # ── Variant level: clinical assertions ──────────────────────────────────────────────────────────
   - id: clinvar
@@ -270,11 +272,19 @@ sources:
   # ── Variant level: pathogenicity predictors ─────────────────────────────────────────────────────
   - id: sift
     name: "SIFT"
-    what: "Sequence-conservation missense predictor"
+    what: "Sequence-conservation missense predictor, for the transcript VEP picked"
     level: variant
     category: "Pathogenicity predictors"
+    provider: vep_cache
+    columns: [SIFT]
+  - id: sift_dbnsfp
+    name: "SIFT (dbNSFP)"
+    what: "SIFT scores and predictions across transcripts"
+    level: variant
+    category: "Pathogenicity predictors"
+    kind: copy
     provider: dbnsfp
-    columns: [SIFT, 'SIFT_.*']
+    columns: ['SIFT_.*']
   - id: sift4g
     name: "SIFT4G"
     what: "Fast SIFT on a newer protein database"
@@ -284,11 +294,19 @@ sources:
     columns: ['SIFT4G_.*']
   - id: polyphen2
     name: "PolyPhen-2"
-    what: "Structure and conservation missense predictor (HumDiv and HumVar models)"
+    what: "Structure and conservation missense predictor, for the transcript VEP picked"
     level: variant
     category: "Pathogenicity predictors"
+    provider: vep_cache
+    columns: [PolyPhen]
+  - id: polyphen2_dbnsfp
+    name: "PolyPhen-2 (dbNSFP)"
+    what: "PolyPhen-2 HumDiv and HumVar scores and predictions across transcripts"
+    level: variant
+    category: "Pathogenicity predictors"
+    kind: copy
     provider: dbnsfp
-    columns: [PolyPhen, 'Polyphen2_.*']
+    columns: ['Polyphen2_.*']
   - id: mutationtaster
     name: "MutationTaster"
     what: "Disease-causing potential of sequence changes"
@@ -443,7 +461,7 @@ sources:
     category: "Pathogenicity predictors"
     provider: dbnsfp
     columns: ['AlphaMissense_.*']
-    note: "From dbNSFP, read on the MANE transcript; in extended mode, rows dbNSFP leaves empty are filled from the VEP AlphaMissense plugin, and AlphaMissense_source says which copy each row holds."
+    note: "From dbNSFP, read on the MANE transcript; rows dbNSFP leaves empty are filled from the VEP AlphaMissense plugin, and AlphaMissense_source says which copy each row holds."
   - id: phactboost
     name: "PHACTboost"
     what: "Phylogeny-aware gradient boosting"
@@ -486,7 +504,7 @@ sources:
     category: "Pathogenicity predictors"
     provider: dbnsfp
     columns: [CADD_PHRED, CADD_RAW, CADD_raw_rankscore]
-    note: "PHRED and raw scores from the VEP plugin in extended mode; the rank score from dbNSFP in both modes."
+    note: "PHRED and raw scores from the VEP plugin; the rank score from dbNSFP."
   - id: dann
     name: "DANN"
     what: "Deep-network deleteriousness"
@@ -606,7 +624,7 @@ sources:
     category: "Regulatory and functional"
     provider: dbnsfp
     columns: [AA, Ancestral_allele]
-    note: "AA from the VEP plugin (extended); Ancestral_allele from dbNSFP (both modes)."
+    note: "AA from the VEP plugin; Ancestral_allele from dbNSFP."
   - id: referencequality
     name: "GRC reference issues"
     what: "Known problems of the reference genome at the variant site"
@@ -763,7 +781,7 @@ sources:
     category: "Constraint and dosage"
     provider: dbnsfp_gene
     columns: ['ExAC_.*', LoF-FDR_ExAC, pLI_gene_value]
-    note: "pLI_gene_value comes from the VEP pLI plugin in extended mode."
+    note: "pLI_gene_value comes from the VEP pLI plugin."
   - id: rvis
     name: "RVIS"
     what: "Residual variation intolerance (EVS and ExAC)"
@@ -861,7 +879,6 @@ sources:
     category: "Classification"
     kind: computed
     provider: renovo_acmg
-    mode: online
     columns: [renovo_adj_acmg_score]
 
   # ── Patient phenotype ───────────────────────────────────────────────────────────────────────────

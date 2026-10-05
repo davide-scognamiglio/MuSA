@@ -28,6 +28,12 @@
 %%metro marker: genebe      | circle, #9e9e9e
 %%metro marker: acmg        | circle, #9e9e9e
 %%metro marker: plugin_dbs  | circle, #9e9e9e
+%%metro marker: dbnsfp      | circle, #9e9e9e
+%%metro marker: renovo      | circle, #9e9e9e
+%%metro marker: omim        | circle, #9e9e9e
+%%metro marker: gencc       | circle, #9e9e9e
+%%metro marker: pathways    | circle, #9e9e9e
+%%metro marker: constraint  | circle, #9e9e9e
 %%metro marker_legend: circle, #9e9e9e | Optional (extended or online mode)
 
 graph LR
@@ -93,8 +99,8 @@ graph LR
     subgraph setup [Setup]
         %%metro number: 0
         yaml_in[ ]
-        core_dbs[Core DBs]
-        plugin_dbs[VEP plugin DBs]
+        core_dbs[Basic DBs]
+        plugin_dbs[Extended DBs]
         report_setup[ ]
 
         yaml_in -->|setup| core_dbs

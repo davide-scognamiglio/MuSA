@@ -18,8 +18,9 @@ workflow SETUP {
         basic_yaml = BASIC_SETUP.out.merged_yaml
         changed_entries = BASIC_SETUP.out.changed_entries
 
-        if (params.download_vep_plugins == true) {
-            // Extended setup takes the basic merged yaml + changed-entries gate as input
+        if (params.extended) {
+            // Extended setup (dbNSFP and the VEP plugin data) takes the basic merged yaml +
+            // changed-entries gate as input
             EXTENDED_SETUP(basic_yaml, changed_entries)
             report_input = EXTENDED_SETUP.out.merged_yaml
         } else {

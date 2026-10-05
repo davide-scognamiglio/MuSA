@@ -50,11 +50,17 @@ workflow {
     // Print summary of supplied parameters
     log.info paramsSummaryLog(workflow)
 
+    if (params.download_vep_plugins || params.use_vep_plugins) {
+        log.warn "--download_vep_plugins and --use_vep_plugins are deprecated since MuSA 1.3: use --extended true, " +
+            "which also covers dbNSFP and RENOVO 1.5. Extended mode is on for this run."
+    }
+
     if (params.build != "hg38") {
         error "Currently, we only support hg38 build. We will likely support T2T build in the future"
     }
 
     if (params.workflow == "" || params.workflow == "annotate") {
+        checkExtendedData()
         ANNOTATE()
     }
     else if (params.workflow == "setup") {
@@ -64,7 +70,9 @@ workflow {
         if (params.data_dir) {
             file(params.data_dir).mkdirs()
         }
-        checkDbnsfpSource()
+        if (params.extended) {
+            checkDbnsfpSource()
+        }
         SETUP()
     }
     else {
@@ -97,6 +105,25 @@ workflow {
         Output dir            : ${outdir}
         ────────────────────────────────────────────────
         """.stripIndent()
+    }
+}
+
+/*
+ * Extended annotation reads dbNSFP and the VEP plugin data, which only `setup --extended true`
+ * installs. Without this check the run would fail an hour in, inside the first dbNSFP shard.
+ */
+def checkExtendedData() {
+    if (params.extended && !file("${params.data_dir}/dbNSFP/dbNSFP").exists()) {
+        error """
+        ──────────────────── ERROR ────────────────────
+        --extended true needs dbNSFP and the VEP plugin data,
+        but ${params.data_dir} has no dbNSFP/ folder.
+
+        Install them once with
+          --workflow setup --extended true --dbnsfp_url '<your link>'
+        or run annotate without --extended (basic mode).
+        ───────────────────────────────────────────────
+        """
     }
 }
 

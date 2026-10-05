@@ -23,7 +23,7 @@ back to <patient>.raw.maf when the filtered file is header-only) and embeds ever
 *view* is the review set, defined in review_flags() below; the full set is one click away and the
 count of both is stated in the header.
 
-Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe>
+Usage: build_annotate_report.py <patient_code> <extended> <offline> <skip_genebe>
                                 [logo] [pipeline_version] [hpo_terms] [vep_image] [data_root]
 """
 
@@ -126,7 +126,7 @@ DETAIL_SECTIONS = [
 def parse_args():
     args = sys.argv[1:]
     if len(args) < 4:
-        sys.exit("Usage: build_annotate_report.py <patient_code> <use_vep_plugins> "
+        sys.exit("Usage: build_annotate_report.py <patient_code> <extended> "
                  "<offline> <skip_genebe> [logo_path]")
 
     def _bool(v):
@@ -134,7 +134,7 @@ def parse_args():
 
     return {
         "patient_code":    args[0],
-        "use_vep_plugins": _bool(args[1]),
+        "extended": _bool(args[1]),
         "offline":         _bool(args[2]),
         "skip_genebe":     _bool(args[3]),
         "logo_path":       args[4] if len(args) > 4 else None,
@@ -1004,6 +1004,8 @@ PAGE_JS = r"""
   "use strict";
 
   var P = window.__MUSA__;
+  // RENOVO runs in extended mode only; without it the table has no ReNOVo column and no chip.
+  var HAS_RNV = P.main.some(function (c) { return c.k === "RENOVO_Class"; });
   var ROW_H = 30;          // must match the CSS row height for the scroller maths
   var OVERSCAN = 8;
 
@@ -1220,7 +1222,7 @@ PAGE_JS = r"""
         '<td class="col-mono">' + esc(absent(prot[i]) ? "—" : prot[i]) + '</td>' +
         '<td class="csq">' + esc(firstConsequence(csq[i])) + '</td>' +
         '<td>' + chipHTML(clinvarChip(cvs[i])) + '</td>' +
-        '<td>' + chipHTML(renovoChip(rnv[i])) + '</td>' +
+        (HAS_RNV ? '<td>' + chipHTML(renovoChip(rnv[i])) + '</td>' : '') +
         '<td class="col-af">' + afCell(maf[i]) + '</td>' +
         '</tr>'
       );
@@ -1507,7 +1509,7 @@ PAGE_JS = r"""
     parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + "</p>");
     parts.push('<div class="panel-chips">' +
       chipHTML(clinvarChip(col("encoded_CLNSIG")[i]), "ClinVar") +
-      chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") + "</div>");
+      (HAS_RNV ? chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") : "") + "</div>");
 
     var a = assessment(i);
     if (a.length) {
@@ -1911,6 +1913,7 @@ def _finding_rows(df, indices, limit=6):
     they need in order to decide whether it is relevant to the case in front of them.
     """
     get = lambda col, i: (str(df[col].iloc[i]) if col in df.columns else ".")
+    has_renovo = "RENOVO_Class" in df.columns
     out = []
     for i in _pick_preview(df, indices, limit):
         gene = get("Hugo_Symbol", i)
@@ -1936,9 +1939,9 @@ def _finding_rows(df, indices, limit=6):
             f'{disease_html}</span>'
             f'<span class="chip {cvc}"><span class="chip-src">ClinVar</span><b>{cvcode}</b>'
             f'<span class="sr-only"> {cvnote}</span></span>'
-            f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
-            f'<span class="sr-only"> {rnnote}</span></span>'
-            f'{_finding_tags(df, i)}'
+            + (f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
+               f'<span class="sr-only"> {rnnote}</span></span>' if has_renovo else "")
+            + f'{_finding_tags(df, i)}'
             f'<span class="finding-change">{html_escape(coords)}</span>'
             "</button>"
         )
@@ -2059,8 +2062,9 @@ def _versions_html(vep, clinvar):
 
 _SOURCE_LEVELS = [("variant", "Variant level"), ("gene", "Gene level"),
                   ("score", "Scores and classification"), ("filter", "Filtering")]
-_MODE_HINT = {"extended": "off &middot; needs --use_vep_plugins true",
-              "online": "off &middot; needs --offline false"}
+_MODE_HINT = {"extended": "off &middot; needs --extended true",
+              "online": "off &middot; needs --offline false",
+              "extended+online": "off &middot; needs --extended true and --offline false"}
 
 
 def load_sources(path):
@@ -2130,10 +2134,11 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
     n_conf = stats["conflicting"]
+    has_renovo = "RENOVO_Class" in df.columns
     scales = (
         _scale_html("ClinVar", stats["clinvar"],
                     f"{n_conf} conflicting" if n_conf else "")
-        + _scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier")
+        + (_scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier") if has_renovo else "")
     )
 
     # ── findings blocks, grouped by why a variant is here ────────────────────
@@ -2168,8 +2173,9 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             f'<span class="index-title">{html_escape(title)}</span></button>'
         )
     priority_html = "".join(blocks) or (
-        '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
-        'pathogenic by ReNOVo. The full variant table is still one click away.</p>')
+        '<p class="priority-none">Nothing in the review set is flagged by ClinVar'
+        + (' or called pathogenic by ReNOVo' if has_renovo else '')
+        + '. The full variant table is still one click away.</p>')
     index_html = (
         '<span class="band-index-label">Findings</span>' + "".join(index) if index
         else '<span class="band-index-none">No findings blocks on this case.</span>')
@@ -2217,7 +2223,7 @@ def main():
     print("MuSA: annotation report", file=sys.stderr)
     print(f"  patient        : {patient}", file=sys.stderr)
     print(f"  offline        : {offline}", file=sys.stderr)
-    print(f"  use_vep_plugins: {params['use_vep_plugins']}", file=sys.stderr)
+    print(f"  extended: {params['extended']}", file=sys.stderr)
     hpo = parse_hpo(params["hpo"])
     print(f"  HPO terms      : {len(hpo)}"
           + (f" ({', '.join(hpo)})" if hpo else " (none in samplesheet)"), file=sys.stderr)

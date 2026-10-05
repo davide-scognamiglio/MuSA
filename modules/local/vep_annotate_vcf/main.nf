@@ -6,7 +6,7 @@
 
 
 process VEP_ANNOTATE_VCF {
-    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.use_vep_plugins ? ' + 21 plugins' : ''}"
+    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.extended ? ' + 21 plugins' : ''}"
     cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3
@@ -29,7 +29,7 @@ process VEP_ANNOTATE_VCF {
         // --dir_cache and --dir_plugins stay explicit, so they keep overriding --dir for their own
         // lookups; --dir only supplies the base the plugin reads.
         """
-        if [[ "${params.use_vep_plugins}" == "true" ]]; then
+        if [[ "${params.extended}" == "true" ]]; then
             echo "Running VEP with plugins..."
             vep \\
                 -i $vcf \\

@@ -37,6 +37,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Changed`
 
+- **Basic and extended mode are split by what needs a registration.** Basic mode (the default)
+  is now the VEP cache, the reference genome, ClinVar, ClinGen and the HPO release: ~30 GB, no
+  dbNSFP registration, ready to run. Extended mode adds dbNSFP (variant predictors and the gene
+  file with OMIM, Orphanet, GenCC, constraint, …), RENOVO 1.5 and the 21 VEP plugins (~167 GB in
+  total). One switch, `--extended true`, selects it for both `setup` (download) and `annotate`
+  (use); `setup` asks for `--dbnsfp_url` / `--dbnsfp_zip` only in extended mode, and an extended
+  `annotate` stops at start-up if `--data_dir` has no dbNSFP.
+  - **Breaking for basic runs:** a 1.2 basic MAF had dbNSFP's columns and RENOVO's
+    `RENOVO_Class` / `PL_score`; a 1.3 basic MAF has neither (166 columns instead of 792). Add
+    `--extended true` to keep them; the data directory needs the extended `setup` once.
+  - RENOVO 1.5 runs in extended mode only: eight of its thirteen inputs are dbNSFP scores. So
+    does the RENOVO-adjusted ACMG score (`--extended true --offline false`). The report hides the
+    ReNOVo column, chips and scale when RENOVO did not run.
+  - SIFT and PolyPhen-2 predictions stay in basic mode, from the VEP cache; dbNSFP's
+    per-transcript copies come with extended mode.
+  - In basic mode `HGVSp_VEP` (the protein change) is VEP's `HGVSp` for the transcript VEP picked,
+    in dbNSFP's notation; in extended mode it is still dbNSFP's, on the MANE transcript.
+  - `--download_vep_plugins` and `--use_vep_plugins` still work, as deprecated aliases of
+    `--extended true` (with a warning).
+
 - The `annotate` workflow is organised in four stages whose names say what each adds:
   `ANNOTATE_VARIANTS` (VEP with ClinVar, ClinGen and plugins, dbNSFP, vcf2maf, merge, RENOVO 1.5),
   `ANNOTATE_GENES` (dbNSFP gene file, ClinGen gene curations), `CLASSIFY` (ClinVar tiers, ACMG) and

@@ -32,7 +32,7 @@ process BUILD_ANNOTATE_REPORT {
         # report reads the ClinVar VCF's own ##fileDate from there rather than trusting the
         # manifest, which can name a release a later setup run has already replaced.
         logo="${projectDir}/assets/MuSA_logo.png"
-        build_annotate_report.py "${meta.patient}" "${params.use_vep_plugins}" \
+        build_annotate_report.py "${meta.patient}" "${params.extended}" \
         "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}" \
         "${meta.hpo ?: ''}" "${params.vep_container}" "/data" "${sources_json}"
         """

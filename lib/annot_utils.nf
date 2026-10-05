@@ -88,13 +88,24 @@ def source_version(installed, key, dataPath, fixed) {
 }
 
 def source_active(mode, providerId) {
+    def extended = params.extended as boolean
+    def online = !params.offline && !(providerId == 'genebe' && params.skip_genebe)
     if (mode == 'extended') {
-        return params.use_vep_plugins as boolean
+        return extended
     }
     if (mode == 'online') {
-        return !params.offline && !(providerId == 'genebe' && params.skip_genebe)
+        return online
+    }
+    if (mode == 'extended+online') {
+        return extended && online
     }
     return true
+}
+
+// What turns a source of the given mode on, for the "[off: ...]" hint.
+def mode_switch(mode) {
+    return [extended: '--extended true', online: '--offline false',
+            'extended+online': '--extended true --offline false'][mode]
 }
 
 // The start-of-run block that says, step by step, which sources this run annotates from.
@@ -110,7 +121,7 @@ def log_annotation_sources(sources) {
         lines << ""
         lines << "  ${step}"
         group.groupBy { s -> [s.provider, s.version, s.active, s.mode] }.each { key, items ->
-            def status = key[2] ? '' : "  [off: ${key[3] == 'extended' ? '--use_vep_plugins true' : '--offline false'}]"
+            def status = key[2] ? '' : "  [off: ${mode_switch(key[3])}]"
             lines << "    ${key[0]}${key[1] ? ' ' + key[1] : ''}${status}"
             lines.addAll(wrap_names(items.collect { s -> s.name }, '      ', 92))
         }

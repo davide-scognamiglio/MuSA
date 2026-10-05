@@ -32,8 +32,9 @@ LEVELS = OrderedDict([
     ("score", "Scores and classification"),
     ("filter", "Filtering"),
 ])
-MODE_LABEL = {"basic": "basic", "extended": "extended (`--use_vep_plugins true`)",
-              "online": "online (`--offline false`)"}
+MODE_LABEL = {"basic": "basic", "extended": "extended (`--extended true`)",
+              "online": "online (`--offline false`)",
+              "extended+online": "extended and online"}
 
 
 def load(path=CATALOGUE):
@@ -53,7 +54,8 @@ def is_counted(source):
 
 
 def active(source, extended, online):
-    return {"basic": True, "extended": extended, "online": online}[source["mode"]]
+    return {"basic": True, "extended": extended, "online": online,
+            "extended+online": extended and online}[source["mode"]]
 
 
 # ── check ─────────────────────────────────────────────────────────────────────────────────────────
@@ -119,9 +121,9 @@ def render_docs(providers, sources):
         "When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, "
         "and the report's **Annotation sources** view records what that run actually used.",
         "",
-        "Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins true` and "
-        "`annotate --use_vep_plugins true`; **online** needs `--offline false` (GeneBe credentials "
-        "for ACMG).",
+        "Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plugins) needs "
+        "`setup --extended true` and `annotate --extended true`; **online** needs `--offline false` "
+        "(GeneBe credentials for ACMG); **extended+online** needs both.",
         "",
     ]
     for level, title in LEVELS.items():
@@ -139,7 +141,7 @@ def render_docs(providers, sources):
             for s in items:
                 cols = ", ".join(f"`{c}`" for c in s["columns"]) or "none (filters rows)"
                 what = s["what"] + (f" *{s['note']}*" if s.get("note") else "")
-                name = s["name"] + (" ⁽ᶜ⁾" if s["kind"] == "computed" else "")
+                name = s["name"] + {"computed": " ⁽ᶜ⁾", "copy": " ⁽ʳ⁾"}.get(s["kind"], "")
                 out.append(f"| {name} | {what} | {provider_cell(s, providers)} | "
                            f"{s['mode']} | {cols} |")
             out.append("")
@@ -151,7 +153,9 @@ def render_docs(providers, sources):
         out.append(f"| {s['name']} | {s['what']} | "
                    + ", ".join(f"`{c}`" for c in s["columns"]) + " |")
     out += ["", "⁽ᶜ⁾ derived by a tool rather than taken from an external resource; not counted "
-            "among the sources above.", ""]
+            "among the sources above.",
+            "",
+            "⁽ʳ⁾ a resource already listed, reached through a second provider; counted once.", ""]
     return "\n".join(out)
 
 
@@ -173,7 +177,7 @@ def render_readme_block(sources):
         names = ", ".join(s["name"] + ("*" if s["mode"] != "basic" else "") for s in items)
         out.append(f"| {LEVELS[level].split()[0]} | {cat} | {names} |")
     out += ["",
-            "\\* extended mode (VEP plugins) or online mode (GeneBe) only.",
+            "\\* extended mode (dbNSFP, RENOVO 1.5, VEP plugins) or online mode (GeneBe) only.",
             "<!-- sources:end -->"]
     return "\n".join(out)
 
