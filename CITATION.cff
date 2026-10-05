@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+message: "If you use MuSA, please cite the paper below (preferred-citation)."
+title: "MuSA: Multi-Source variant Annotation"
+type: software
+version: 1.2.0
+date-released: "2026-09-24"
+license: CC-BY-NC-4.0
+repository-code: "https://github.com/davide-scognamiglio/MuSA"
+abstract: >-
+  MuSA is a Nextflow pipeline that turns germline VCFs into an interpretation-ready MAF and a
+  self-contained HTML report. It runs Ensembl VEP and dbNSFP in parallel, merges them into one
+  row per variant on the MANE Select transcript, scores every variant with RENOVO 1.5, adds
+  ClinVar, ClinGen and HPO context, and ranks the result for clinical review.
+keywords:
+  - nextflow
+  - variant annotation
+  - germline
+  - clinical genomics
+  - rare disease
+  - vep
+  - dbnsfp
+authors:
+  - family-names: Scognamiglio
+    given-names: Davide
+    affiliation: "Alma Mater Studiorum Università di Bologna; IRCCS Istituto Ortopedico Rizzoli"
+    email: davide.scognamiglio@ior.it
+  - family-names: Bonetti
+    given-names: E.
+    affiliation: "IRCCS Istituto Ortopedico Rizzoli"
+  - family-names: Moroni
+    given-names: A.
+    affiliation: "IRCCS Istituto Ortopedico Rizzoli"
+  - family-names: Sangiorgi
+    given-names: L.
+    affiliation: "IRCCS Istituto Ortopedico Rizzoli"
+  - family-names: Pedrini
+    given-names: E.
+    affiliation: "IRCCS Istituto Ortopedico Rizzoli"
+preferred-citation:
+  type: article
+  title: "MuSA: a Nextflow pipeline for deep, reproducible annotation and clinical ranking of genomic variants"
+  journal: "BMC Bioinformatics"
+  year: 2026
+  month: 6
+  volume: 27
+  issue: 1
+  start: 199
+  doi: "10.1186/s12859-026-06513-0"
+  authors:
+    - family-names: Scognamiglio
+      given-names: Davide
+    - family-names: Bonetti
+      given-names: E.
+    - family-names: Moroni
+      given-names: A.
+    - family-names: Sangiorgi
+      given-names: L.
+    - family-names: Pedrini
+      given-names: E.

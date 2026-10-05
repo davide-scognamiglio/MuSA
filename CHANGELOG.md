@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 RENOVO scores from renovo-rebuild (RENOVO 1.5) and no more ANNOVAR, plus the setup and
 Nextflow-compatibility fixes, which were also applied retroactively to v1.1.0 and v1.0.0.
 
+### `Added`
+
+- `CITATION.cff` (GitHub's "Cite this repository", pointing to the paper as the preferred citation)
+  and `.zenodo.json`, so each GitHub release is archived on Zenodo with its own DOI.
+
 ### `Fixed`
 
 - **`setup` installed nothing.** Every download module built its directory in the task work dir and
@@ -70,6 +75,15 @@ Nextflow-compatibility fixes, which were also applied retroactively to v1.1.0 an
 - `setup` with a `--data_dir` that did not exist yet failed at the end. Docker created the missing
   folder as root, and Nextflow could not publish `setup_report.html` into it. `setup` now creates
   `--data_dir` as the launching user before any task starts.
+- **Extended `setup` downloaded dbNSFP twice.** With `--download_vep_plugins true`,
+  `EXTENDED_SETUP` called `DOWNLOAD_DBNSFP` again after `BASIC_SETUP` had already installed it, and
+  outside `--update_db_only` nothing skips a download, so the ~47 GB zip was fetched, checked and
+  reinstalled a second time (and the dbNSFP aligned-columns file rebuilt). dbNSFP is now installed
+  only by the basic step. Applied retroactively to v1.1.0 and v1.0.0.
+- The report's evidence panel labelled `renovo_adj_acmg_score` "GeneBe ACMG score", but for
+  missense variants that column is GeneBe's score shifted by RENOVO's `PL_score`
+  (`RENOVO_ADJUST_ACMG`). It is now labelled "ACMG score, ReNOVo-adjusted (missense)" and shown
+  next to GeneBe's own `acmg_score`. Online mode only; applied retroactively to v1.1.0.
 
 ### `Changed`
 
