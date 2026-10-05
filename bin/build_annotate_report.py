@@ -87,9 +87,12 @@ DETAIL_COLUMNS = [
     ("bioinfo_params",       "Call quality"),
     ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
     ("PhenotypeOrthologous_Rat_phenotype",   "Rat orthologue phenotype"),
-    # Present only when GeneBe ran (online mode).
+    # Present only when GeneBe ran (online mode). renovo_adj_acmg_score is not GeneBe's:
+    # RENOVO_ADJUST_ACMG pushes GeneBe's score past 5 or below 0 for missense variants
+    # by PL_score, so it is labelled as MuSA's and shown next to the original.
     ("acmg_criteria",          "GeneBe ACMG criteria"),
-    ("renovo_adj_acmg_score",  "GeneBe ACMG score"),
+    ("acmg_score",             "GeneBe ACMG score"),
+    ("renovo_adj_acmg_score",  "ACMG score, ReNOVo-adjusted (missense)"),
 ]
 
 # The panel is read top to bottom while deciding whether a variant matters, so it is
@@ -103,7 +106,7 @@ DETAIL_SECTIONS = [
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
                         "MIM_disease", "Orphanet_disorder"]),
     ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
-    ("Prediction",     ["PL_score", "acmg_criteria", "renovo_adj_acmg_score"]),
+    ("Prediction",     ["PL_score", "acmg_criteria", "acmg_score", "renovo_adj_acmg_score"]),
     # No "References" section: every accession in the MAF is rendered as a link at the
     # top of the panel instead, so listing the raw strings again would be noise.
     ("Call parameters", ["bioinfo_params", "ref_context"]),
