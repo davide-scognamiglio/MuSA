@@ -25,16 +25,16 @@ authors:
     affiliation: "Alma Mater Studiorum Università di Bologna; IRCCS Istituto Ortopedico Rizzoli"
     email: davide.scognamiglio@ior.it
   - family-names: Bonetti
-    given-names: E.
+    given-names: Emanuele
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
   - family-names: Moroni
-    given-names: A.
+    given-names: Alice
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
   - family-names: Sangiorgi
-    given-names: L.
+    given-names: Luca
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
   - family-names: Pedrini
-    given-names: E.
+    given-names: Elena
     affiliation: "IRCCS Istituto Ortopedico Rizzoli"
 preferred-citation:
   type: article
@@ -50,10 +50,10 @@ preferred-citation:
     - family-names: Scognamiglio
       given-names: Davide
     - family-names: Bonetti
-      given-names: E.
+      given-names: Emanuele
     - family-names: Moroni
-      given-names: A.
+      given-names: Alice
     - family-names: Sangiorgi
-      given-names: L.
+      given-names: Luca
     - family-names: Pedrini
-      given-names: E.
+      given-names: Elena
