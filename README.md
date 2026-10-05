@@ -37,7 +37,7 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
 | **Storage, one-time** | ~72 GB for core annotation, ~167 GB if you also want the 21 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
 | **dbNSFP** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup`. |
-| **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring and live HPO gene-panel lookup. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) needs neither. |
+| **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) does not need it; HPO matching runs offline. |
 | **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) — non-commercial use and redistribution, with attribution. |
 
 If your VCFs are hg38, you can get Docker or Singularity running, and 72 GB of disk is available:
@@ -106,15 +106,15 @@ Two workflows:
 | Variant | Splicing | SpliceVault*, MaxEntScan*, dbscSNV* |
 | Variant | Regulatory and functional | Ensembl Regulatory Build, Enformer*, UTRannotator*, MaveDB*, mutfunc*, Ensembl ancestral alleles, GRC reference issues* |
 | Variant | Conservation | GERP++ / GERP (92 mammals), phyloP, phastCons, B statistic |
-| Gene | Gene–disease | ClinGen gene–disease validity, ClinGen dosage sensitivity, ClinGen actionability, OMIM, Orphanet, GenCC, Human Phenotype Ontology |
+| Gene | Gene–disease | ClinGen gene–disease validity, ClinGen dosage sensitivity, ClinGen actionability, OMIM, Orphanet, GenCC, HPO gene terms (dbNSFP) |
 | Gene | Function and pathways | UniProt (function), Gene Ontology, KEGG, BioCarta, ConsensusPathDB, Gene identifiers (HGNC, NCBI Gene, RefSeq, UCSC) |
 | Gene | Expression | Human Protein Atlas |
 | Gene | Constraint and dosage | gnomAD gene constraint, ExAC gene constraint, RVIS, Gene Damage Index, LoFtool, Haploinsufficiency predictions, Recessive disease genes, Essential genes |
 | Gene | Model organisms | MGI (mouse), ZFIN (zebrafish), Ensembl orthologue phenotypes* |
 | Scores | Classification | RENOVO 1.5, GeneBe ACMG/AMP* |
-| Filtering | Filtering | HPO gene panel (JAX)* |
+| Gene | Patient phenotype | Human Phenotype Ontology (ontology and annotations) |
 
-\* extended mode (VEP plugins) or online mode (GeneBe, HPO panel) only.
+\* extended mode (VEP plugins) or online mode (GeneBe) only.
 <!-- sources:end -->
 
 **Output**, per patient:
@@ -229,8 +229,8 @@ and give `setup` your link (`--dbnsfp_url`) or the zip (`--dbnsfp_zip`). Confirm
 covers your use case — this is a constraint on the data, not something MuSA can relax.
 
 **GeneBe is optional and needs credentials.** Only relevant if you run with `--offline false` for
-automated ACMG/AMP scoring or live HPO-based gene-panel lookup. Offline mode — the default — uses
-none of it and makes no outbound network calls.
+automated ACMG/AMP scoring. Offline mode — the default — makes no outbound network calls; HPO
+matching uses the HPO release `setup` installs.
 
 **MuSA's own license is CC BY-NC 4.0** — non-commercial use and redistribution with attribution. See
 [LICENSE](LICENSE).
@@ -300,7 +300,7 @@ PATIENT_02,saliva,/path/to/PATIENT_02.vcf.gz,
 | `patient` | yes | Identifier. Names the output directory and every output file. |
 | `sample_type` | yes | Free-text sample source (`blood`, `saliva`, ...). Informational. |
 | `sample_file` | yes | Path to the VCF, `.vcf` or `.vcf.gz`. |
-| `hpo` | no | `;`-separated HPO term IDs. Drives phenotype-based gene-panel filtering; leave empty to skip. |
+| `hpo` | no | `;`-separated HPO term IDs. Each gene is matched against them (exact, narrower or broader, with a similarity score and the best-matching disease), and genes that match a specific term make up a phenotype panel for the filtered MAF; leave empty to skip. |
 
 **2. Run** — offline mode (default; no network calls, local databases only):
 
@@ -315,8 +315,7 @@ nextflow run davide-scognamiglio/MuSA \
 ```
 
 Add `--use_vep_plugins true` for extended annotation (needs the extended `setup`), or
-`--offline false --gb_user <user> --gb_api_key <key>` for GeneBe ACMG/AMP scoring and live HPO
-lookups. Full walkthrough, including proxy configuration and params files:
+`--offline false --gb_user <user> --gb_api_key <key>` for GeneBe ACMG/AMP scoring. Full walkthrough, including proxy configuration and params files:
 [`docs/usage.md`](docs/usage.md).
 
 **3. Output** — `results/<date>/<patient>/`, one directory per patient:

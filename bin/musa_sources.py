@@ -173,7 +173,7 @@ def render_readme_block(sources):
         names = ", ".join(s["name"] + ("*" if s["mode"] != "basic" else "") for s in items)
         out.append(f"| {LEVELS[level].split()[0]} | {cat} | {names} |")
     out += ["",
-            "\\* extended mode (VEP plugins) or online mode (GeneBe, HPO panel) only.",
+            "\\* extended mode (VEP plugins) or online mode (GeneBe) only.",
             "<!-- sources:end -->"]
     return "\n".join(out)
 

@@ -99,11 +99,13 @@ providers:
     mode: online
     version: container genebe/pygenebe
     url: https://genebe.net
-  jax_hpo:
-    name: JAX HPO API
-    step: FILTER_VARIANTS
-    mode: online
-    url: https://ontology.jax.org
+  hpo:
+    name: Human Phenotype Ontology
+    step: HPO_MATCH
+    mode: basic
+    manifest: hpo
+    data: hpo/hp.obo
+    url: https://hpo.jax.org
 
 sources:
 
@@ -699,8 +701,8 @@ sources:
     provider: dbnsfp_gene
     columns: ['GenCC_.*']
   - id: hpo
-    name: "Human Phenotype Ontology"
-    what: "Phenotype terms annotated to the gene"
+    name: "HPO gene terms (dbNSFP)"
+    what: "Phenotype terms annotated to the gene, as dbNSFP carries them"
     level: gene
     category: "Gene–disease"
     provider: dbnsfp_gene
@@ -862,15 +864,15 @@ sources:
     mode: online
     columns: [renovo_adj_acmg_score]
 
-  # ── Filtering (no columns: these decide which rows reach the filtered MAF and the report) ───────
-  - id: hpo_panel
-    name: "HPO gene panel (JAX)"
-    what: "Genes annotated to the patient's HPO terms, used to filter the variants"
-    level: filter
-    category: "Filtering"
-    provider: jax_hpo
-    mode: online
-    columns: []
+  # ── Patient phenotype ───────────────────────────────────────────────────────────────────────────
+  - id: hpo_match
+    name: "Human Phenotype Ontology (ontology and annotations)"
+    what: "The patient's HPO terms against the gene's: exact, narrower or broader match, similarity score, best-matching OMIM/Orphanet disease, and the phenotype gene panel the filtered MAF uses"
+    level: gene
+    category: "Patient phenotype"
+    provider: hpo
+    columns: [HPO_match, HPO_match_score, HPO_matched_terms, HPO_best_disease, HPO_panel]
+    note: "Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms."
 
   # ── MAF format and call information ─────────────────────────────────────────────────────────────
   - id: input_vcf

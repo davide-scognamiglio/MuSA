@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Added`
 
+- **Phenotype matching with the native HPO release, offline.** `setup` now installs the Human
+  Phenotype Ontology (`hp.obo`) with the gene and disease annotations of the same release
+  (`genes_to_phenotype.txt`, `phenotype.hpoa`; 2026-09-01, ~67 MB, pinned by versioned PURL and
+  SHA-256). A new `HPO_MATCH` step compares the samplesheet's HPO terms with each gene's and adds
+  `HPO_match` (exact / narrower / broader / none / unannotated), `HPO_match_score` (0–1,
+  information-content similarity), `HPO_matched_terms`, `HPO_best_disease` (the gene's OMIM or
+  Orphanet disease that fits the patient best) and `HPO_panel`. The report gains a **Patient
+  phenotype** section in the evidence panel and a **Fits the patient's phenotype** findings group.
+- The phenotype gene panel no longer needs the network or online mode. It used to come from the
+  JAX HPO API, and only with `--offline false`; offline (the default) the samplesheet's `hpo`
+  column was ignored. It now comes from `HPO_panel`, with the same semantics (genes annotated to a
+  patient term or a more specific one; terms with 1,000 or more genes are too general to filter on).
+  On NA12878 with "Multiple exostoses" the panel keeps EXT1, ALX4 and MSX2.
+  A data directory set up before 1.3 needs `setup --update_db_only true` once for the HPO files.
+
 - **Every annotation source is now listed, checked and shown.** `assets/annotation_sources.yaml`
   names each of the 95 resources MuSA annotates from (ClinVar, ClinGen, gnomAD, OMIM, Orphanet,
   GenCC, HPO, 35 pathogenicity predictors, …), the step that brings it in, when it is active and

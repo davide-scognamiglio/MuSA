@@ -5,6 +5,7 @@ include { DOWNLOAD_REFGENOME } from '../../../modules/local/download_refgenome'
 include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
 include { DOWNLOAD_CLINVAR } from '../../../modules/local/download_clinvar'
 include { DOWNLOAD_CLINGEN } from '../../../modules/local/download_clingen'
+include { DOWNLOAD_HPO } from '../../../modules/local/download_hpo'
 include { MERGE_YAML as MERGE_BASIC_YAML } from '../../../modules/local/merge_yaml'
 include { REFRESH_DBNSFP_ALIGNED_COLUMNS } from '../refresh_dbnsfp_aligned_columns'
 
@@ -37,8 +38,9 @@ workflow BASIC_SETUP {
         refgen_ch  = DOWNLOAD_REFGENOME(manifest_ch, changed_entries_ch)
         clinvar_ch = DOWNLOAD_CLINVAR(manifest_ch, changed_entries_ch)
         clingen_ch = DOWNLOAD_CLINGEN(manifest_ch, changed_entries_ch)
+        hpo_ch     = DOWNLOAD_HPO(manifest_ch, changed_entries_ch)
         merged_input = vep_ch
-            .mix(dbnsfp_ch, refgen_ch, clinvar_ch, clingen_ch)
+            .mix(dbnsfp_ch, refgen_ch, clinvar_ch, clingen_ch, hpo_ch)
             .collect()
 
         merged_yaml = MERGE_BASIC_YAML(merged_input)

@@ -90,6 +90,11 @@ DETAIL_COLUMNS = [
     # Present only when GeneBe ran (online mode). renovo_adj_acmg_score is not GeneBe's:
     # RENOVO_ADJUST_ACMG pushes GeneBe's score past 5 or below 0 for missense variants
     # by PL_score, so it is labelled as MuSA's and shown next to the original.
+    # Present when the samplesheet gave HPO terms (HPO_MATCH, bin/hpo_match.py).
+    ("HPO_match",              "Match with the patient's phenotype"),
+    ("HPO_match_score",        "Phenotype similarity (0-1)"),
+    ("HPO_matched_terms",      "Matched HPO terms"),
+    ("HPO_best_disease",       "Best-matching disease"),
     ("acmg_criteria",          "GeneBe ACMG criteria"),
     ("acmg_score",             "GeneBe ACMG score"),
     ("renovo_adj_acmg_score",  "ACMG score, ReNOVo-adjusted (missense)"),
@@ -105,6 +110,8 @@ DETAIL_SECTIONS = [
     ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinGen_GeneDisease_Disease",
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
                         "MIM_disease", "Orphanet_disorder"]),
+    ("Patient phenotype", ["HPO_match", "HPO_match_score", "HPO_matched_terms",
+                           "HPO_best_disease"]),
     ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
     ("Prediction",     ["PL_score", "acmg_criteria", "acmg_score", "renovo_adj_acmg_score"]),
     # No "References" section: every accession in the MAF is rendered as a link at the
@@ -296,6 +303,8 @@ def review_flags(df):
 GROUPS = [
     ("flagged",    "ClinVar pathogenic",
      "pathogenic or likely pathogenic in ClinVar"),
+    ("phenotype",  "Fits the patient's phenotype",
+     "the gene is annotated to one of the patient's HPO terms, or to a more specific one"),
     ("lof",        "Loss of function in an established disease gene",
      "a high-impact change in a gene ClinGen ties to a disease with definitive or "
      "strong evidence"),
@@ -443,6 +452,16 @@ def overview(df, flags):
     biallelic = [i for i in idx
                  if zygosity(info.iloc[i]) in ("homozygous", "hemizygous")]
 
+    # The patient's phenotype: genes HPO_MATCH put in the phenotype panel (an exact or narrower
+    # match on a specific term). When every term was too general to make a panel, HPO_panel is
+    # "." and an exact or narrower match on any term is used instead.
+    hpo_match = df["HPO_match"].fillna("") if "HPO_match" in df.columns else pd.Series([""] * len(df))
+    hpo_panel = df["HPO_panel"].fillna("") if "HPO_panel" in df.columns else pd.Series([""] * len(df))
+    panel_on = hpo_panel.isin(["yes", "no"]).any()
+    phenotype = [i for i in idx
+                 if (hpo_panel.iloc[i] == "yes" if panel_on
+                     else hpo_match.iloc[i] in ("exact", "narrower"))]
+
     bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
     unobserved = []
     for i in idx:
@@ -461,6 +480,7 @@ def overview(df, flags):
         "unobserved": unobserved,
         "lof": lof,
         "biallelic": biallelic,
+        "phenotype": phenotype,
         "novel": novel,
         "contested": contested,
         "flagged": flagged,
@@ -2120,7 +2140,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
     # Each block header is the control that opens the table filtered to that block,
     # so the number a reader sees and the rows they get are the same set by
     # construction rather than by two definitions that could drift.
-    tones = {"flagged": "p", "lof": "p", "biallelic": "lp", "escalated": "lp",
+    tones = {"flagged": "p", "phenotype": "acc", "lof": "p", "biallelic": "lp", "escalated": "lp",
              "novel": "acc", "contested": "p"}
     blocks, index = [], []
     for key, title, why in GROUPS:

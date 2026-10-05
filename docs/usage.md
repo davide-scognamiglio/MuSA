@@ -119,8 +119,8 @@ Behind a proxy, add `--http_proxy` / `--https_proxy`. To keep online mode but sk
 instance when the API is rate-limited), add `--skip_genebe true`.
 
 > [!NOTE]
-> Online mode sends variant coordinates to an external service. HPO-driven filtering also queries
-> the HPO API. Everything else runs against local databases.
+> Online mode sends variant coordinates to GeneBe. Everything else, HPO matching included, runs
+> against local databases.
 
 ### Filtering
 
@@ -132,8 +132,22 @@ The filtered MAF is produced by three filters, all optional and independently ap
 | `--max_freq` | `null` | Drop variants above this population allele frequency, e.g. `0.05`. |
 | `--drop_benign` | `false` | Drop variants ClinVar reports as benign. |
 
-The samplesheet's `hpo` column adds a fourth, per-patient: genes associated with those HPO terms are
-retrieved from the HPO API and used as an additional panel.
+The samplesheet's `hpo` column adds a fourth, per-patient, phenotype panel. `HPO_MATCH` compares the
+patient's terms with every gene's annotations in the HPO release `setup` installed (`hp.obo`,
+`genes_to_phenotype.txt` and `phenotype.hpoa`, all from the same release) and writes five columns:
+
+| Column | Meaning |
+|---|---|
+| `HPO_match` | `exact` (gene annotated to the patient's term), `narrower` (to a more specific term under it), `broader` (only to a more general one), `none`, or `unannotated` (no HPO phenotype annotation for the gene) |
+| `HPO_match_score` | 0–1: for each patient term, the information content of the most specific term it shares with the gene, relative to its own; averaged. 1 = every term matched exactly or narrower |
+| `HPO_matched_terms` | how each related patient term matched, and through which gene term |
+| `HPO_best_disease` | the gene's OMIM/Orphanet disease whose phenotype best matches the patient, with its score |
+| `HPO_panel` | `yes` if the gene matches, exactly or narrower, a term specific enough to filter on (annotated to fewer than 1,000 genes), else `no`; `.` when no term is that specific, and then no phenotype filter is applied |
+
+A gene stays in the filtered MAF if it is in the static `--panel` or `HPO_panel` is `yes`. Only
+terms under *Phenotypic abnormality* are compared; obsolete and alternative IDs are mapped to the
+current term, and unknown ones are reported in the task log and ignored. A data directory set up
+before MuSA 1.3 has no HPO files: run `setup --update_db_only true` once to add them (about 67 MB).
 
 ### Other parameters
 

@@ -27,7 +27,6 @@
 %%metro marker: plugins     | circle, #9e9e9e
 %%metro marker: genebe      | circle, #9e9e9e
 %%metro marker: acmg        | circle, #9e9e9e
-%%metro marker: hpo         | circle, #9e9e9e
 %%metro marker: plugin_dbs  | circle, #9e9e9e
 %%metro marker_legend: circle, #9e9e9e | Optional (extended or online mode)
 
@@ -69,24 +68,24 @@ graph LR
         pathways[Pathways · HPA]
         constraint[Constraint]
         clingen_genes[ClinGen]
+        hpo[HPO match]
 
         omim -->|annotate| gencc
         gencc -->|annotate| pathways
         pathways -->|annotate| constraint
         constraint -->|annotate| clingen_genes
+        clingen_genes -->|annotate| hpo
     end
 
     subgraph classify [Classification & report]
         clinvar_tiers[ClinVar tiers]
         acmg[ACMG]
-        hpo[HPO panel]
         filter[Filter]
         report_patient[ ]
         maf_out[ ]
 
         clinvar_tiers -->|annotate| acmg
-        acmg -->|annotate| hpo
-        hpo -->|annotate| filter
+        acmg -->|annotate| filter
         filter -->|annotate| report_patient
         filter -->|annotate| maf_out
     end
@@ -107,4 +106,4 @@ graph LR
     rename -->|annotate| dbnsfp
     rename -->|annotate| vcf2maf
     renovo -->|annotate| omim
-    clingen_genes -->|annotate| clinvar_tiers
+    hpo -->|annotate| clinvar_tiers

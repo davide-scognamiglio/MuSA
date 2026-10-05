@@ -35,8 +35,8 @@ results/
     This number changes as annotation sources change -- treat it as approximate rather than a
     stable interface.
 - `<patient>.filtered.maf`
-  - The same table after the three-tier filter: gene panel (`--panel`), HPO-matched gene panel
-    (from the samplesheet's `hpo` column), and allele frequency (`--max_freq`), plus
+  - The same table after the three-tier filter: gene panel (`--panel`), HPO phenotype panel
+    (from the samplesheet's `hpo` column, see the `HPO_*` columns in [usage](usage.md#filtering)), and allele frequency (`--max_freq`), plus
     `--drop_benign` if set. This is the file to hand to a reviewer.
 - `<patient>_maf_dashboard.html`
   - Self-contained interactive report: a summary panel plus a sortable, searchable table of the

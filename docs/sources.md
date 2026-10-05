@@ -2,7 +2,7 @@
 
 <!-- Generated from assets/annotation_sources.yaml by bin/musa_sources.py render. Edit the catalogue, not this file. -->
 
-MuSA annotates every variant from **95 sources**: 67 at variant level, 25 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
+MuSA annotates every variant from **95 sources**: 67 at variant level, 26 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
 
 When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, and the report's **Annotation sources** view records what that run actually used.
 
@@ -132,7 +132,7 @@ Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins 
 | OMIM | Mendelian disorders linked to the gene | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | basic | `OMIM_id`, `MIM_phenotype_id`, `MIM_disease` |
 | Orphanet | Rare diseases linked to the gene and the type of association | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | basic | `Orphanet_.*` |
 | GenCC | Harmonised gene–disease validity from multiple curators | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | basic | `GenCC_.*` |
-| Human Phenotype Ontology | Phenotype terms annotated to the gene | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | basic | `HPO_id`, `HPO_name` |
+| HPO gene terms (dbNSFP) | Phenotype terms annotated to the gene, as dbNSFP carries them | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | basic | `HPO_id`, `HPO_name` |
 
 ### Function and pathways
 
@@ -172,6 +172,12 @@ Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins 
 | ZFIN (zebrafish) | Zebrafish orthologue and its phenotypes | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | basic | `ZFIN_.*` |
 | Ensembl orthologue phenotypes | Phenotypes of the mouse and rat orthologues | VEP plugin PhenotypeOrthologous (`VEP_ANNOTATE_VCF`) | extended | `PhenotypeOrthologous_.*` |
 
+### Patient phenotype
+
+| Source | What it adds | Brought in by | Mode | Columns |
+|---|---|---|---|---|
+| Human Phenotype Ontology (ontology and annotations) | The patient's HPO terms against the gene's: exact, narrower or broader match, similarity score, best-matching OMIM/Orphanet disease, and the phenotype gene panel the filtered MAF uses *Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms.* | Human Phenotype Ontology (`HPO_MATCH`) | basic | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` |
+
 ## Scores and classification
 
 ### Classification
@@ -181,14 +187,6 @@ Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins 
 | RENOVO 1.5 | Machine-learning pathogenicity probability and six-class call for every variant | renovo-rebuild (`RENOVO_SCORE`) | basic | `RENOVO_Class`, `PL_score` |
 | GeneBe ACMG/AMP | Automated ACMG/AMP criteria and points-based score | GeneBe API (`GENEBE_ANNOTATE_VCF`) | online | `acmg_.*` |
 | RENOVO-adjusted ACMG score ⁽ᶜ⁾ | GeneBe's ACMG score moved toward pathogenic or benign by RENOVO for missense variants | MuSA (`RENOVO_ADJUST_ACMG`) | online | `renovo_adj_acmg_score` |
-
-## Filtering
-
-### Filtering
-
-| Source | What it adds | Brought in by | Mode | Columns |
-|---|---|---|---|---|
-| HPO gene panel (JAX) | Genes annotated to the patient's HPO terms, used to filter the variants | JAX HPO API (`FILTER_VARIANTS`) | online | none (filters rows) |
 
 ## Call information and MAF format
 
