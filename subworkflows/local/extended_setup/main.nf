@@ -4,7 +4,6 @@ include { DOWNLOAD_ALPHAMISSENSE } from '../../../modules/local/download_alphami
 include { DOWNLOAD_ANCESTRALALLELE } from '../../../modules/local/download_ancestralallele'
 include { DOWNLOAD_CADD } from '../../../modules/local/download_cadd'
 include { DOWNLOAD_CLINPRED } from '../../../modules/local/download_clinpred'
-include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
 include { DOWNLOAD_DBSCSNV } from '../../../modules/local/download_dbscsnv'
 include { DOWNLOAD_ENFORMER } from '../../../modules/local/download_enformer'
 include { DOWNLOAD_EVE } from '../../../modules/local/download_eve'
@@ -17,7 +16,6 @@ include { DOWNLOAD_PLI } from '../../../modules/local/download_pli'
 include { DOWNLOAD_REFERENCEQUALITY } from '../../../modules/local/download_referencequality'
 include { DOWNLOAD_SPLICEVAULT } from '../../../modules/local/download_splicevault'
 include { DOWNLOAD_UTRANNOTATOR } from '../../../modules/local/download_utrannotator'
-include { REFRESH_DBNSFP_ALIGNED_COLUMNS } from '../refresh_dbnsfp_aligned_columns'
 
 
 workflow EXTENDED_SETUP {
@@ -29,14 +27,16 @@ workflow EXTENDED_SETUP {
     main:
 
         /*
-         * FAN-OUT: every module consumes SAME merged YAML + changed-entries gate
+         * FAN-OUT: every module consumes SAME merged YAML + changed-entries gate.
+         * dbNSFP is not here: BASIC_SETUP always runs first and already installs it (and its
+         * aligned-columns file), and basic_yaml_ch carries its computed_sha256 into every partial
+         * YAML merged below. Outside --update_db_only nothing skips a download, so calling
+         * DOWNLOAD_DBNSFP here again fetched and reinstalled the ~47 GB zip a second time.
          */
         alphamissense_ch      = DOWNLOAD_ALPHAMISSENSE(basic_yaml_ch, changed_entries_ch)
         ancestralallele_ch    = DOWNLOAD_ANCESTRALALLELE(basic_yaml_ch, changed_entries_ch)
         cadd_ch               = DOWNLOAD_CADD(basic_yaml_ch, changed_entries_ch)
         clinpred_ch           = DOWNLOAD_CLINPRED(basic_yaml_ch, changed_entries_ch)
-        dbnsfp_zip            = params.dbnsfp_zip ? file(params.dbnsfp_zip, checkIfExists: true) : file("${projectDir}/assets/NO_FILE")
-        dbnsfp_ch             = DOWNLOAD_DBNSFP(basic_yaml_ch, changed_entries_ch, dbnsfp_zip, params.dbnsfp_url ?: "")
         dbscsnv_ch            = DOWNLOAD_DBSCSNV(basic_yaml_ch, changed_entries_ch)
         enformer_ch           = DOWNLOAD_ENFORMER(basic_yaml_ch, changed_entries_ch)
         eve_ch                = DOWNLOAD_EVE(basic_yaml_ch, changed_entries_ch)
@@ -58,7 +58,6 @@ workflow EXTENDED_SETUP {
             .mix(ancestralallele_ch,
                 cadd_ch,
                 clinpred_ch,
-                dbnsfp_ch,
                 dbscsnv_ch,
                 enformer_ch,
                 eve_ch,
@@ -74,16 +73,6 @@ workflow EXTENDED_SETUP {
             .collect()
 
         merged_yaml = MERGE_EXTENDED_YAML(merged_input)
-
-        // BASIC_SETUP already ran this off its own dbnsfp_ch/refgen_ch; wired here too so a run of
-        // extended_setup alone (dbNSFP re-downloaded here on line 37) still produces the file. The
-        // two calls cannot race or duplicate work: extended_setup structurally runs after
-        // basic_setup completes (it takes basic_yaml_ch as an input), so by the time this fires the
-        // file basic_setup's own call wrote (if any) is already on disk, and the existence gate in
-        // REFRESH_DBNSFP_ALIGNED_COLUMNS skips accordingly. basic_yaml_ch doubles as the
-        // "reference genome is ready" token: MERGE_BASIC_YAML only emits after every basic_setup
-        // download — refgenome included — has completed.
-        REFRESH_DBNSFP_ALIGNED_COLUMNS(dbnsfp_ch, basic_yaml_ch)
 
     emit:
         merged_yaml
