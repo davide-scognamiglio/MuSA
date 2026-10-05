@@ -117,7 +117,7 @@ def render_docs(providers, sources):
         "active, and the MAF columns it fills (regular expressions).",
         "",
         "When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, "
-        "and the report's **Sources** tab records what that run actually used.",
+        "and the report's **Annotation sources** view records what that run actually used.",
         "",
         "Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins true` and "
         "`annotate --use_vep_plugins true`; **online** needs `--offline false` (GeneBe credentials "

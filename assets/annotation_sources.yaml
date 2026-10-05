@@ -3,7 +3,7 @@
 # Everything that tells a user where MuSA's evidence comes from is generated from this file, so it
 # cannot drift from the pipeline:
 #   - the "Annotation sources" block printed when `annotate` starts (lib/annot_utils.nf)
-#   - the Sources tab of the HTML report (bin/build_annotate_report.py, via a JSON Nextflow writes)
+#   - the Annotation sources view of the HTML report (bin/build_annotate_report.py, via a JSON Nextflow writes)
 #   - docs/sources.md and the sources table in README.md (bin/musa_sources.py render)
 # bin/musa_sources.py check verifies it against a real MAF: every column must belong to exactly one
 # source, and every source active in that run's mode must have columns in it.
@@ -81,6 +81,11 @@ providers:
     name: MuSA
     step: MERGE_ANNOTATIONS, ADD_GENOME_CHANGE, ADD_REF_CONTEXT, ENCODE_CLINVAR
     mode: basic
+    url: https://github.com/davide-scognamiglio/MuSA
+  renovo_acmg:
+    name: MuSA
+    step: RENOVO_ADJUST_ACMG
+    mode: online
     url: https://github.com/davide-scognamiglio/MuSA
   renovo:
     name: renovo-rebuild
@@ -853,7 +858,7 @@ sources:
     level: score
     category: "Classification"
     kind: computed
-    provider: musa
+    provider: renovo_acmg
     mode: online
     columns: [renovo_adj_acmg_score]
 

@@ -4,7 +4,7 @@
 
 MuSA annotates every variant from **95 sources**: 67 at variant level, 25 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
 
-When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, and the report's **Sources** tab records what that run actually used.
+When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, and the report's **Annotation sources** view records what that run actually used.
 
 Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins true` and `annotate --use_vep_plugins true`; **online** needs `--offline false` (GeneBe credentials for ACMG).
 
@@ -180,7 +180,7 @@ Modes: **basic** is always on; **extended** needs `setup --download_vep_plugins 
 |---|---|---|---|---|
 | RENOVO 1.5 | Machine-learning pathogenicity probability and six-class call for every variant | renovo-rebuild (`RENOVO_SCORE`) | basic | `RENOVO_Class`, `PL_score` |
 | GeneBe ACMG/AMP | Automated ACMG/AMP criteria and points-based score | GeneBe API (`GENEBE_ANNOTATE_VCF`) | online | `acmg_.*` |
-| RENOVO-adjusted ACMG score ⁽ᶜ⁾ | GeneBe's ACMG score moved toward pathogenic or benign by RENOVO for missense variants | MuSA (`MERGE_ANNOTATIONS, ADD_GENOME_CHANGE, ADD_REF_CONTEXT, ENCODE_CLINVAR`) | online | `renovo_adj_acmg_score` |
+| RENOVO-adjusted ACMG score ⁽ᶜ⁾ | GeneBe's ACMG score moved toward pathogenic or benign by RENOVO for missense variants | MuSA (`RENOVO_ADJUST_ACMG`) | online | `renovo_adj_acmg_score` |
 
 ## Filtering
 
