@@ -41,7 +41,9 @@ results/
 - `<patient>_maf_dashboard.html`
   - Self-contained interactive report: a summary panel plus a sortable, searchable table of the
     filtered variants, showing gene, HGVS nomenclature, consequence, ClinVar significance and
-    review status, gnomAD population-maximum frequency, and RENOVO score.
+    review status, gnomAD population-maximum frequency, and RENOVO score. Its **Annotation
+    sources** view lists every source the run annotated from, with the installed version (see
+    [`sources.md`](sources.md) for the columns each one fills).
 
 </details>
 
