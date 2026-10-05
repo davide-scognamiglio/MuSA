@@ -6,7 +6,7 @@
 
 
 process BUILD_ANNOTATE_REPORT {
-    tag "report"
+    tag "${meta.patient}"
         cpus params.n_core
     errorStrategy 'retry'
     maxRetries 2
@@ -18,6 +18,7 @@ process BUILD_ANNOTATE_REPORT {
         val(meta) 
         file("${meta.patient}.filtered.maf") 
         file("${meta.patient}.raw.maf") 
+        path(sources_json)
     
     output:       
         tuple val(meta), 
@@ -33,6 +34,6 @@ process BUILD_ANNOTATE_REPORT {
         logo="${projectDir}/assets/MuSA_logo.png"
         build_annotate_report.py "${meta.patient}" "${params.use_vep_plugins}" \
         "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}" \
-        "${meta.hpo ?: ''}" "${params.vep_container}" "/data"
+        "${meta.hpo ?: ''}" "${params.vep_container}" "/data" "${sources_json}"
         """
 }

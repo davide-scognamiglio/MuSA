@@ -138,6 +138,9 @@ def parse_args():
         # and the band simply carries no provenance row.
         "vep_image":       args[7] if len(args) > 7 else "",
         "data_root":       args[8] if len(args) > 8 else "",
+        # JSON list of this run's annotation sources, written by the ANNOTATE workflow from
+        # assets/annotation_sources.yaml (lib/annot_utils.nf annotation_sources).
+        "sources_json":    args[9] if len(args) > 9 else "",
     }
 
 
@@ -735,7 +738,23 @@ PAGE_CSS = """
   border-top: 1px solid var(--border);
 }
 .priority-none { font-size: var(--step-0); color: var(--ink-muted); margin-top: 1rem; }
-.ov-actions { margin-top: 1.75rem; }
+.ov-actions { margin-top: 1.75rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* ── sources view ─────────────────────────────────────────────────────────── */
+.sources { max-width: 1180px; padding: 1.5rem; }
+.sources-lead { color: var(--ink-muted); margin: 0 0 1.25rem; max-width: 78ch; }
+.sources h2 { font-family: var(--font-display); font-size: var(--step-1); margin: 1.75rem 0 0.5rem; }
+.sources table { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+.sources th, .sources td {
+  text-align: left; vertical-align: top; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.sources th { color: var(--ink-muted); font-weight: 600; }
+.sources td.src-cat { color: var(--ink-muted); white-space: nowrap; }
+.sources td.src-name { font-weight: 600; white-space: nowrap; }
+.sources tr.src-off td { color: var(--ink-muted); }
+.sources tr.src-off td.src-name { font-weight: 400; }
+.src-status { white-space: nowrap; }
 
 /* ── control bar ──────────────────────────────────────────────────────────── */
 .controls {
@@ -1536,12 +1555,14 @@ PAGE_JS = r"""
   // away, and it does not exist in the layout until it is asked for.
   var overviewView = document.getElementById("view-overview");
   var tableView = document.getElementById("view-table");
+  var sourcesView = document.getElementById("view-sources");
   var chip = document.getElementById("filterChip");
 
   function showView(which) {
     var toTable = which === "table";
-    overviewView.hidden = toTable;
+    overviewView.hidden = which !== "overview";
     tableView.hidden = !toTable;
+    sourcesView.hidden = which !== "sources";
     window.scrollTo(0, 0);
     if (toTable) render();          // the scroller has no height while hidden
   }
@@ -1623,6 +1644,14 @@ __BAND_MEASURE_JS__
   });
 
   document.getElementById("backToOverview").addEventListener("click", function () {
+    showView("overview");
+  });
+
+  document.getElementById("openSources").addEventListener("click", function () {
+    showView("sources");
+  });
+
+  document.getElementById("sourcesBack").addEventListener("click", function () {
     showView("overview");
   });
 
@@ -1730,6 +1759,7 @@ __PAGE_CSS__
       <div class="priority">__PRIORITY__</div>
       <div class="ov-actions no-print">
         <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
+        <button class="btn" type="button" id="openSources">Annotation sources &rarr;</button>
       </div>
     </div>
     <aside class="ov-detail" id="ovPanel" aria-live="polite" aria-label="Variant evidence"></aside>
@@ -1767,6 +1797,13 @@ __PAGE_CSS__
     </div>
     <aside class="panel" id="panel" aria-live="polite" aria-label="Variant detail"></aside>
   </div>
+</main>
+
+<main class="view" id="view-sources" hidden>
+  <div class="controls no-print">
+    <button class="btn" type="button" id="sourcesBack">&larr; Findings</button>
+  </div>
+  <section class="sources">__SOURCES__</section>
 </main>
 
 
@@ -2000,6 +2037,60 @@ def _versions_html(vep, clinvar):
             f'{rows}</dl>')
 
 
+_SOURCE_LEVELS = [("variant", "Variant level"), ("gene", "Gene level"),
+                  ("score", "Scores and classification"), ("filter", "Filtering")]
+_MODE_HINT = {"extended": "off &middot; needs --use_vep_plugins true",
+              "online": "off &middot; needs --offline false"}
+
+
+def load_sources(path):
+    """This run's annotation sources, or [] when the report is built by hand without them."""
+    if not path or not os.path.isfile(path):
+        return []
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def _sources_html(sources):
+    """The Sources view: every resource this run could annotate from, and whether it did.
+
+    Built from the same catalogue (assets/annotation_sources.yaml) that generates the README table
+    and docs/sources.md; fields MuSA derives itself (kind "computed") and MAF-format columns are
+    left out, since they are not evidence from an outside source.
+    """
+    counted = [s for s in sources if s.get("kind") == "resource" and s.get("level") != "format"]
+    if not counted:
+        return ('<p class="sources-lead">The list of annotation sources was not passed to this '
+                'report.</p>')
+    used = sum(1 for s in counted if s.get("active"))
+    out = [f'<p class="sources-lead">This report was built from <strong>{used}</strong> of the '
+           f'{len(counted)} annotation sources MuSA can use. Each one is listed with the pipeline '
+           'step that brought it in and the version installed for this run; sources this run did '
+           'not use are greyed out with the option that turns them on.</p>']
+    for level, title in _SOURCE_LEVELS:
+        group = [s for s in counted if s.get("level") == level]
+        if not group:
+            continue
+        out.append(f"<h2>{title}</h2>")
+        out.append('<table><thead><tr><th>Evidence</th><th>Source</th><th>What it adds</th>'
+                   '<th>Brought in by</th><th>Version</th><th>In this run</th></tr></thead><tbody>')
+        last_cat = None
+        for s in group:
+            cat = s.get("category", "")
+            status = "used" if s.get("active") else _MODE_HINT.get(s.get("mode"), "off")
+            out.append(
+                f'<tr class="{"" if s.get("active") else "src-off"}">'
+                f'<td class="src-cat">{html_escape(cat) if cat != last_cat else ""}</td>'
+                f'<td class="src-name">{html_escape(s.get("name", ""))}</td>'
+                f'<td>{html_escape(s.get("what", ""))}</td>'
+                f'<td>{html_escape(s.get("provider", ""))} <code>{html_escape(s.get("step", ""))}</code></td>'
+                f'<td>{html_escape(s.get("version") or "")}</td>'
+                f'<td class="src-status">{status}</td></tr>')
+            last_cat = cat
+        out.append("</tbody></table>")
+    return "".join(out)
+
+
 def _hpo_html(terms):
     if not terms:
         return ('<div class="case-hpo"><span class="case-hpo-none">'
@@ -2014,7 +2105,7 @@ def _hpo_html(terms):
 
 
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
-                    version="", hpo=(), assets_dir=None, vep="", clinvar=""):
+                    version="", hpo=(), assets_dir=None, vep="", clinvar="", sources=()):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
@@ -2081,6 +2172,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__INDEX__", index_html)
             .replace("__SCALES__", scales)
             .replace("__VERSIONS__", _versions_html(vep, clinvar))
+            .replace("__SOURCES__", _sources_html(sources))
             .replace("__HPO__", _hpo_html(hpo))
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
@@ -2156,6 +2248,7 @@ def main():
         # already passes in, so no new argument has to be threaded through Nextflow.
         assets_dir=(os.path.dirname(params["logo_path"]) if params["logo_path"] else None),
         vep=vep,
+        sources=load_sources(params["sources_json"]),
         clinvar=clinvar,
     )
 

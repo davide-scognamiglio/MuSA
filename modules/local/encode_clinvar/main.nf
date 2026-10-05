@@ -6,7 +6,7 @@
 
 
 process ENCODE_CLINVAR {
-    tag "encode-clinvar"
+    tag "${meta.patient} | ClinVar"
         cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'

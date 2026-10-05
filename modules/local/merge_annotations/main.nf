@@ -5,7 +5,7 @@
  */
 
 process MERGE_ANNOTATIONS {
-    tag "merge-annotations"
+    tag "${meta.patient}"
     cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'

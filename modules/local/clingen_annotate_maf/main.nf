@@ -10,7 +10,7 @@
 
 
 process CLINGEN_ANNOTATE_MAF {
-    tag "clingen-annotate"
+    tag "${meta.patient} | ClinGen validity, dosage, actionability"
     cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'

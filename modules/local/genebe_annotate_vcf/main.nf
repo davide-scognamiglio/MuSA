@@ -6,7 +6,7 @@
 
 
 process GENEBE_ANNOTATE_VCF {
-    tag "genebe-annotation"
+    tag "${meta.patient} | GeneBe ACMG/AMP"
         cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3

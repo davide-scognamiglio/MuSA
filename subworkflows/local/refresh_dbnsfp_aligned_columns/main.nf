@@ -50,8 +50,8 @@ workflow REFRESH_DBNSFP_ALIGNED_COLUMNS {
             tuple([patient: 'dbnsfp_probe'], file("${projectDir}/assets/dbnsfp_probe_variants.vcf"))
         }
 
-        // Same shard -> annotate -> gather composition as ANNOTATE_GERMLINE's dbNSFP branch
-        // (subworkflows/local/annotate_germline/main.nf) — kept in lock-step deliberately, so a
+        // Same shard -> annotate -> gather composition as ANNOTATE_VARIANTS's dbNSFP branch
+        // (subworkflows/local/annotate_variants/main.nf) — kept in lock-step deliberately, so a
         // future change to that chain's shape is a change here too, not a silent divergence.
         chr_ch = refgenome_ready.map {
             chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai")

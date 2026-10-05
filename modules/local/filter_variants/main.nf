@@ -6,7 +6,7 @@
 
 
 process FILTER_VARIANTS {
-    tag "filter-maf"
+    tag "${meta.patient}"
         cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'

@@ -9,9 +9,26 @@ include {MERGE_ANNOTATIONS} from '../../../modules/local/merge_annotations'
 include {RENOVO_SCORE} from '../../../modules/local/renovo_score'
 include {ADD_GENOME_CHANGE} from '../../../modules/local/add_genome_change'
 include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
+include {CLEAN_COLUMNS} from '../../../modules/local/clean_columns'
 include {chrom_list} from '../../../lib/annot_utils.nf'
 
-workflow ANNOTATE_GERMLINE {
+/*
+ * Stage 1 of ANNOTATE: everything known about each variant, merged into one row per variant.
+ *
+ *   VEP_ANNOTATE_VCF         Ensembl VEP cache (gene models, MANE, dbSNP, gnomAD v4.1, 1000 Genomes,
+ *                            regulation, phenotypes) + ClinVar and ClinGen expert-panel
+ *                            classifications (VEP --custom) + VEP plugins in extended mode
+ *   GENEBE_ANNOTATE_VCF      GeneBe ACMG/AMP criteria (online mode)
+ *   DBNSFP_ANNOTATE_VCF_CHR  dbNSFP: ~35 pathogenicity predictors, 6 population databases,
+ *                            conservation (sharded by chromosome)
+ *   VCF_TO_MAF               MAF format and coordinates
+ *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant
+ *
+ * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
+ * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops.
+ * assets/annotation_sources.yaml lists every source and the MAF columns it fills.
+ */
+workflow ANNOTATE_VARIANTS {
 
     take: vcf
 
@@ -66,7 +83,7 @@ workflow ANNOTATE_GERMLINE {
 
         // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
         // running as a branch of its own.
-        merged = RENOVO_SCORE(MERGE_ANNOTATIONS(joined))
+        merged = CLEAN_COLUMNS(RENOVO_SCORE(MERGE_ANNOTATIONS(joined)))
 
     emit:
         merged
