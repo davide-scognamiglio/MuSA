@@ -3,7 +3,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.0.0 - 2026-05-27, fixed 2026-09-24
+## v1.0.0 - 2026-05-27, fixed 2026-09-24 and 2026-10-05
 
 The version described in the paper. On 2026-09-24 the `v1.0.0` tag was moved to this fixed code:
 bug fixes from 1.1.0 and 1.2.0 backported, no new features. The code exactly as published is
@@ -69,3 +69,7 @@ Stability (from 1.2.0):
   config does not have. The schema now matches the config (`max_freq` unset, so no frequency filter;
   `n_core` 8, not 16), declares `--skip_genebe` and `--help`, and drops `--trace_report_suffix`,
   which the config never defined.
+- **Extended `setup` downloaded dbNSFP twice** (fixed 2026-10-05). With
+  `--download_vep_plugins true`, `EXTENDED_SETUP` called `DOWNLOAD_DBNSFP` again after
+  `BASIC_SETUP` had already installed it, so the ~47 GB zip was fetched and reinstalled a second
+  time. dbNSFP is now installed only by the basic step. Backported from 1.2.0.

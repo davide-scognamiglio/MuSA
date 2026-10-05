@@ -4,7 +4,6 @@ include { DOWNLOAD_ALPHAMISSENSE } from '../../../modules/local/download_alphami
 include { DOWNLOAD_ANCESTRALALLELE } from '../../../modules/local/download_ancestralallele'
 include { DOWNLOAD_CADD } from '../../../modules/local/download_cadd'
 include { DOWNLOAD_CLINPRED } from '../../../modules/local/download_clinpred'
-include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
 include { DOWNLOAD_DBSCSNV } from '../../../modules/local/download_dbscsnv'
 include { DOWNLOAD_ENFORMER } from '../../../modules/local/download_enformer'
 include { DOWNLOAD_EVE } from '../../../modules/local/download_eve'
@@ -27,14 +26,15 @@ workflow EXTENDED_SETUP {
     main:
 
         /*
-         * FAN-OUT: every module consumes SAME merged YAML
+         * FAN-OUT: every module consumes SAME merged YAML.
+         * dbNSFP is not here: BASIC_SETUP always runs first and already installs it, and
+         * basic_yaml_ch carries its computed_sha256 into every partial YAML merged below.
+         * Calling DOWNLOAD_DBNSFP here again fetched and reinstalled the ~47 GB zip a second time.
          */
         alphamissense_ch      = DOWNLOAD_ALPHAMISSENSE(basic_yaml_ch)
         ancestralallele_ch    = DOWNLOAD_ANCESTRALALLELE(basic_yaml_ch)
         cadd_ch               = DOWNLOAD_CADD(basic_yaml_ch)
         clinpred_ch           = DOWNLOAD_CLINPRED(basic_yaml_ch)
-        dbnsfp_zip = params.dbnsfp_zip ? file(params.dbnsfp_zip, checkIfExists: true) : file("${projectDir}/assets/NO_FILE")
-        dbnsfp_ch             = DOWNLOAD_DBNSFP(basic_yaml_ch, dbnsfp_zip, params.dbnsfp_url ?: "")
         dbscsnv_ch            = DOWNLOAD_DBSCSNV(basic_yaml_ch)
         enformer_ch           = DOWNLOAD_ENFORMER(basic_yaml_ch)
         eve_ch                = DOWNLOAD_EVE(basic_yaml_ch)
@@ -56,7 +56,6 @@ workflow EXTENDED_SETUP {
             .mix(ancestralallele_ch,
                 cadd_ch,
                 clinpred_ch,
-                dbnsfp_ch,
                 dbscsnv_ch,
                 enformer_ch,
                 eve_ch,
