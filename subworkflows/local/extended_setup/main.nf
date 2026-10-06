@@ -17,6 +17,15 @@ include { DOWNLOAD_PLI } from '../../../modules/local/download_pli'
 include { DOWNLOAD_REFERENCEQUALITY } from '../../../modules/local/download_referencequality'
 include { DOWNLOAD_SPLICEVAULT } from '../../../modules/local/download_splicevault'
 include { DOWNLOAD_UTRANNOTATOR } from '../../../modules/local/download_utrannotator'
+include { DOWNLOAD_SPLICEAI } from '../../../modules/local/download_spliceai'
+include { DOWNLOAD_PROTVAR } from '../../../modules/local/download_protvar'
+include { DOWNLOAD_INTACT } from '../../../modules/local/download_intact'
+include { DOWNLOAD_G2P } from '../../../modules/local/download_g2p'
+include { DOWNLOAD_RIBOSEQORFS } from '../../../modules/local/download_riboseqorfs'
+include { DOWNLOAD_MECHPREDICT } from '../../../modules/local/download_mechpredict'
+include { DOWNLOAD_DOSAGESENSITIVITY } from '../../../modules/local/download_dosagesensitivity'
+include { DOWNLOAD_FLAGLRG } from '../../../modules/local/download_flaglrg'
+include { DOWNLOAD_GENE_GFF3 } from '../../../modules/local/download_gene_gff3'
 
 
 workflow EXTENDED_SETUP {
@@ -62,6 +71,17 @@ workflow EXTENDED_SETUP {
         splicevault_ch        = DOWNLOAD_SPLICEVAULT(basic_yaml_ch, changed_entries_ch)
         utrannotator_ch       = DOWNLOAD_UTRANNOTATOR(basic_yaml_ch, changed_entries_ch)
 
+        // Added in 1.4 (SpliceAI ... gene GFF3): see each module's header for what it brings.
+        spliceai_ch           = DOWNLOAD_SPLICEAI(basic_yaml_ch, changed_entries_ch)
+        protvar_ch            = DOWNLOAD_PROTVAR(basic_yaml_ch, changed_entries_ch)
+        intact_ch             = DOWNLOAD_INTACT(basic_yaml_ch, changed_entries_ch)
+        g2p_ch                = DOWNLOAD_G2P(basic_yaml_ch, changed_entries_ch)
+        riboseqorfs_ch        = DOWNLOAD_RIBOSEQORFS(basic_yaml_ch, changed_entries_ch)
+        mechpredict_ch        = DOWNLOAD_MECHPREDICT(basic_yaml_ch, changed_entries_ch)
+        dosagesensitivity_ch  = DOWNLOAD_DOSAGESENSITIVITY(basic_yaml_ch, changed_entries_ch)
+        flaglrg_ch            = DOWNLOAD_FLAGLRG(basic_yaml_ch, changed_entries_ch)
+        gene_gff3_ch          = DOWNLOAD_GENE_GFF3(basic_yaml_ch, changed_entries_ch)
+
         /*
          * FAN-IN: merge all updated YAMLs
          */
@@ -81,7 +101,16 @@ workflow EXTENDED_SETUP {
                 pli_ch,
                 referencequality_ch,
                 splicevault_ch,
-                utrannotator_ch)
+                utrannotator_ch,
+                spliceai_ch,
+                protvar_ch,
+                intact_ch,
+                g2p_ch,
+                riboseqorfs_ch,
+                mechpredict_ch,
+                dosagesensitivity_ch,
+                flaglrg_ch,
+                gene_gff3_ch)
             .collect()
 
         merged_yaml = MERGE_EXTENDED_YAML(merged_input)
