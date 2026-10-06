@@ -89,6 +89,12 @@ providers:
     step: RENOVO_ADJUST_ACMG
     mode: extended+online
     url: https://github.com/davide-scognamiglio/MuSA
+  clinvar_residues:
+    name: ClinVar variant summary
+    step: CLINVAR_RESIDUES
+    mode: basic
+    manifest: clinvar_variant_summary
+    url: https://www.ncbi.nlm.nih.gov/clinvar/
   renovo:
     name: renovo-rebuild
     step: RENOVO_SCORE
@@ -880,6 +886,14 @@ sources:
     kind: computed
     provider: renovo_acmg
     columns: [renovo_adj_acmg_score]
+  - id: clinvar_residues
+    name: "ClinVar residue evidence (PS1, PM5)"
+    what: "Pathogenic ClinVar variants at the same amino-acid residue: the same change from another nucleotide change (PS1), or another change (PM5)"
+    level: score
+    category: "Classification"
+    kind: computed
+    provider: clinvar_residues
+    columns: [ClinVar_PS1, ClinVar_PM5]
 
   # ── Patient phenotype ───────────────────────────────────────────────────────────────────────────
   - id: hpo_match
