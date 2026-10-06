@@ -189,6 +189,7 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 | RENOVO 1.5 | Machine-learning pathogenicity probability and six-class call for every variant | renovo-rebuild (`RENOVO_SCORE`) | extended | `RENOVO_Class`, `PL_score` |
 | GeneBe ACMG/AMP | Automated ACMG/AMP criteria and points-based score | GeneBe API (`GENEBE_ANNOTATE_VCF`) | online | `acmg_.*` |
 | RENOVO-adjusted ACMG score ⁽ᶜ⁾ | GeneBe's ACMG score moved toward pathogenic or benign by RENOVO for missense variants | MuSA (`RENOVO_ADJUST_ACMG`) | extended+online | `renovo_adj_acmg_score` |
+| ClinVar residue evidence (PS1, PM5) ⁽ᶜ⁾ | Pathogenic ClinVar variants at the same amino-acid residue: the same change from another nucleotide change (PS1), or another change (PM5) | ClinVar variant summary (`CLINVAR_RESIDUES`) | basic | `ClinVar_PS1`, `ClinVar_PM5` |
 
 ## Call information and MAF format
 
