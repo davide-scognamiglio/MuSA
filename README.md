@@ -11,15 +11,16 @@
 [![DOI](https://img.shields.io/badge/DOI-10.1186%2Fs12859--026--06513--0-blue)](https://doi.org/10.1186/s12859-026-06513-0)
 
 **MuSA (Multi-Source variant Annotation)** turns a germline VCF into an interpretation-ready MAF and
-a self-contained HTML report a clinician can triage without opening a spreadsheet. It runs
-**Ensembl VEP and dbNSFP in parallel**, merges them into one row-per-variant table, scores every
-variant with the **RENOVO ML pathogenicity classifier**, adds ClinVar/ClinGen/HPO context, and ranks
-the result so the variants worth a second look surface first.
+a self-contained HTML report a clinician can triage without opening a spreadsheet. It annotates
+every variant with **Ensembl VEP, ClinVar, ClinGen and the Human Phenotype Ontology**, and in
+extended mode with **dbNSFP, 21 VEP plugins and the RENOVO ML pathogenicity classifier**, merges
+everything into one row-per-variant table, and ranks the result so the variants worth a second look
+surface first.
 
 Built with the [nf-core](https://nf-co.re) pipeline template, on [Nextflow](https://nextflow.io).
 Published in *BMC Bioinformatics* — see [Citation](#citation).
 
-![MuSA metro map: the annotate workflow normalizes and filters a VCF, runs VEP (with optional GeneBe), dbNSFP and vcf2maf in parallel, then merges, scores with RENOVO, adds gene-level context and optional ACMG scoring, and filters into a per-patient HTML report and MAF; the separate setup workflow reads a YAML manifest, downloads the core and optional VEP plugin databases, and writes a setup HTML report](assets/pipeline_schema.svg)
+![MuSA metro map: the annotate workflow preprocesses a VCF; annotates each variant with Ensembl VEP (plus ClinVar, ClinGen expert-panel classifications, optional VEP plugins and optional GeneBe), dbNSFP and vcf2maf in parallel, merges them and scores RENOVO 1.5; adds gene-level evidence (OMIM, Orphanet, GenCC, HPO, pathways, expression, constraint, ClinGen); then classifies (ClinVar tiers, optional ACMG), filters (optional HPO panel) and writes a per-patient HTML report and MAF; the setup workflow downloads the core and optional VEP plugin databases from a YAML manifest](assets/pipeline_schema.svg)
 
 The report below is real output: MuSA run in extended mode against the paper's own NA12878/HG001
 WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up.
@@ -35,12 +36,12 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | **Genome build** | GRCh38/hg38 only. |
 | **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
-| **Storage, one-time** | ~72 GB for core annotation, ~173 GB if you also want the 22 VEP plugins. Downloaded once by the `setup` workflow, reused by every `annotate` run. |
-| **dbNSFP** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup`. |
-| **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring and live HPO gene-panel lookup. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) needs neither. |
+| **Storage, one-time** | ~30 GB for basic annotation, ~170 GB for extended (dbNSFP, RENOVO 1.5 and 21 VEP plugins). Downloaded once by the `setup` workflow, reused by every `annotate` run. |
+| **dbNSFP (extended mode)** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup --extended true`. Basic mode does not need it. |
+| **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) does not need it; HPO matching runs offline. |
 | **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) — non-commercial use and redistribution, with attribution. |
 
-If your VCFs are hg38, you can get Docker or Singularity running, and 72 GB of disk is available:
+If your VCFs are hg38, you can get Docker or Singularity running, and 30 GB of disk is available:
 MuSA is feasible for you. If any of those don't hold, see [Requirements](#requirements-and-constraints)
 before going further.
 
@@ -84,16 +85,40 @@ Two workflows:
 | `setup` | Downloads and checksums every annotation database into `--data_dir`. Once per data directory. | before the first `annotate` |
 | `annotate` | Annotates VCFs against that data directory, ranks variants, writes MAF + HTML report. | once per batch of patients |
 
-**Annotation sources**, merged into one table:
+**Annotation sources.** MuSA brings in evidence at two levels and then classifies each variant:
 
-| Source | Contributes |
-|---|---|
-| [Ensembl VEP](https://www.ensembl.org/info/docs/tools/vep/index.html) | Consequence, transcript annotation, population frequencies (gnomAD/1000G), and — in extended mode — up to 22 plugins (AlphaMissense, CADD, ClinPred, Enformer, EVE, SpliceVault, MaxEntScan and others) |
-| [dbNSFP](https://www.dbnsfp.org) | Pathogenicity predictions (REVEL, MetaRNN, BayesDel, SIFT, PolyPhen-2…), gene-level constraint, disease/phenotype cross-references |
-| [RENOVO 1.5](https://github.com/davide-scognamiglio/renovo-rebuild) | ML pathogenicity score and class for every variant: RENOVO's published model, run on the VEP, dbNSFP and ClinVar columns above ([renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild)) |
-| ClinVar / ClinGen | Clinical significance, review status, gene-disease validity and inheritance mode |
-| [HPO](https://hpo.jax.org/) | Phenotype-matched gene panels, from the samplesheet's `hpo` column |
-| [GeneBe](https://genebe.net/) *(optional, online mode)* | Automated ACMG/AMP criteria and score |
+- **Variant level:** Ensembl VEP (with ClinVar and ClinGen expert-panel classifications) and
+  vcf2maf; in extended mode also 21 VEP plugins and dbNSFP (pathogenicity predictors, population
+  databases, conservation).
+- **Gene level:** ClinGen (gene–disease validity, dosage sensitivity, actionability) and the
+  patient's HPO terms matched against each gene's; in extended mode also dbNSFP's gene file (OMIM,
+  Orphanet, GenCC, pathways, expression, constraint).
+- **Classification:** ClinVar tiers and ClinVar evidence at the variant's residue (ACMG PS1/PM5);
+  RENOVO 1.5 in extended mode; GeneBe ACMG/AMP criteria in online mode.
+
+<!-- sources:start (generated by bin/musa_sources.py render; edit assets/annotation_sources.yaml) -->
+**95 annotation sources**, merged into one row per variant (full list with columns and versions: [`docs/sources.md`](docs/sources.md)):
+
+| Level | Evidence | Sources |
+|---|---|---|
+| Variant | Consequence and transcript | Ensembl / GENCODE gene models, MANE (NCBI / EMBL-EBI), UniProt (protein identifiers), Protein domains (Pfam, PROSITE, SMART, …), InterPro* |
+| Variant | Known variants and literature | dbSNP, Ensembl variation phenotypes and literature, GWAS Catalog* |
+| Variant | Clinical assertions | ClinVar, ClinGen expert-panel classifications |
+| Variant | Population frequency | gnomAD v4.1, gnomAD v2.1.1*, 1000 Genomes phase 3, TOPMed (freeze 8)*, ALFA (NCBI)*, All of Us*, Regeneron Genetics Center Million Exomes*, Archaic hominin genomes* |
+| Variant | Pathogenicity predictors | SIFT, SIFT4G*, PolyPhen-2, MutationTaster*, MutationAssessor*, PROVEAN*, VEST4*, MetaSVM*, MetaLR*, MetaRNN*, M-CAP*, REVEL*, MutPred2*, MVP*, gMVP*, MisFit*, MPC*, PrimateAI*, DEOGEN2*, BayesDel*, ClinPred*, LIST-S2*, VARITY*, ESM1b*, AlphaMissense*, PHACTboost*, MutFormer*, MutScore*, popEVE*, ALoFT*, CADD*, DANN*, fathmm-XF*, Eigen*, EVE* |
+| Variant | Splicing | SpliceVault*, MaxEntScan*, dbscSNV* |
+| Variant | Regulatory and functional | Ensembl Regulatory Build, Enformer*, UTRannotator*, MaveDB*, mutfunc*, Ensembl ancestral alleles*, GRC reference issues* |
+| Variant | Conservation | GERP++ / GERP (92 mammals)*, phyloP*, phastCons*, B statistic* |
+| Gene | Gene–disease | ClinGen gene–disease validity, ClinGen dosage sensitivity, ClinGen actionability, OMIM*, Orphanet*, GenCC*, HPO gene terms (dbNSFP)* |
+| Gene | Function and pathways | UniProt (function)*, Gene Ontology*, KEGG*, BioCarta*, ConsensusPathDB*, Gene identifiers (HGNC, NCBI Gene, RefSeq, UCSC)* |
+| Gene | Expression | Human Protein Atlas* |
+| Gene | Constraint and dosage | gnomAD gene constraint*, ExAC gene constraint*, RVIS*, Gene Damage Index*, LoFtool*, Haploinsufficiency predictions*, Recessive disease genes*, Essential genes* |
+| Gene | Model organisms | MGI (mouse)*, ZFIN (zebrafish)*, Ensembl orthologue phenotypes* |
+| Scores | Classification | RENOVO 1.5*, GeneBe ACMG/AMP* |
+| Gene | Patient phenotype | Human Phenotype Ontology (ontology and annotations) |
+
+\* extended mode (dbNSFP, RENOVO 1.5, VEP plugins) or online mode (GeneBe) only.
+<!-- sources:end -->
 
 **Output**, per patient:
 
@@ -128,7 +153,7 @@ that was annotated rather than only what was flagged.
 
 ## Try it in 10 minutes
 
-The database directory (below) is a one-time, ~72 GB download — it is the actual gate, not a
+The database directory (below) is a one-time, ~30 GB download — it is the actual gate, not a
 formality, so budget time for it separately. Once it exists, running MuSA against a new VCF, or
 against the bundled single-variant test case, takes minutes.
 
@@ -146,7 +171,6 @@ Already have Nextflow? Check `nextflow -version`, and run `nextflow self-update`
 nextflow run davide-scognamiglio/MuSA \
   --workflow setup \
   --data_dir /path/to/musa_data \
-  --dbnsfp_url '<your dbNSFP download link>' \
   -profile docker
 ```
 
@@ -154,14 +178,8 @@ nextflow run davide-scognamiglio/MuSA \
 mounts it as given, and MuSA stops at startup if it is relative. Use the same path for `setup` and
 `annotate`.
 
-dbNSFP is distributed only to registered users, so MuSA cannot download it for you:
-[register at dbnsfp.org](https://www.dbnsfp.org/download) with your institutional email and pass the
-download link you receive with `--dbnsfp_url` (quote it; it is kept out of the parameter summary).
-If you already downloaded the zip, pass `--dbnsfp_zip /path/to/dbNSFP5.3.1a.zip` instead. Either
-way the file is checked against the manifest's SHA-256.
-
-This fetches VEP's cache, dbNSFP, ClinVar/ClinGen and the reference genome
-(~72 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists
+This fetches basic mode: VEP's cache, the reference genome, ClinVar, ClinGen and the Human
+Phenotype Ontology (~30 GB). Get a coffee; it does not need supervision, and `<data_dir>/setup_report.html` lists
 exactly what landed and its checksum when it's done.
 
 **3. Run the bundled test** — a single-variant VCF, so this finishes in a couple of minutes and
@@ -190,25 +208,31 @@ build`) rather than silently mis-annotating a GRCh37 VCF — realign or lift ove
 
 | Mode | What it adds | Approx. size | When to use it |
 |---|---|---|---|
-| **Basic** (`setup` default) | VEP cache, dbNSFP, ClinVar/ClinGen, reference genome | ~72 GB | Routine diagnostic annotation |
-| **Extended** (`--download_vep_plugins true`) | + all 22 VEP plugin data files (AlphaMissense, CADD, Enformer, EVE, GWAS, MaveDB, ...) | ~173 GB total | Deep functional characterization; required before `--use_vep_plugins true` |
+| **Basic** (default) | VEP cache (consequences, gnomAD, 1000 Genomes, dbSNP), reference genome, ClinVar, ClinGen, Human Phenotype Ontology | ~30 GB | Consequence, frequency, clinical significance, gene-disease validity, phenotype match. No registration needed |
+| **Extended** (`--extended true`) | + dbNSFP (~35 predictors, gene file with OMIM/Orphanet/constraint), RENOVO 1.5, all 21 VEP plugins and their data (AlphaMissense, CADD, Enformer, EVE, SpliceVault, MaveDB, mutfunc, ...) | ~170 GB total | Deep annotation: in-silico predictions and RENOVO classes. dbNSFP needs a registration |
 
-**RENOVO scores come from RENOVO 1.5.** MuSA scores variants with
+The same `--extended true` switches `setup` (download) and `annotate` (use). An extended `annotate`
+stops at startup if the data directory has no dbNSFP.
+
+**RENOVO scores come from RENOVO 1.5, in extended mode.** MuSA scores variants with
 [renovo-rebuild](https://github.com/davide-scognamiglio/renovo-rebuild), which runs RENOVO's
 published model on MuSA's own annotations instead of an ANNOVAR re-annotation. Discrimination is
 unchanged within 0.001 AUC on ClinVar variants RENOVO never saw, but individual scores differ from
 the original software, so do not compare `RENOVO_Class` across MuSA 1.1 and 1.2 results. RENOVO is
-non-commercial software; commercial use needs the RENOVO authors' permission.
+non-commercial software; commercial use needs the RENOVO authors' permission. Eight of its thirteen
+inputs are dbNSFP scores, so it runs only with `--extended true`.
 
-**dbNSFP is academic-use only, and you download it with your own registration.** dbNSFP's
-academic distribution (CC BY-NC-ND 4.0) is handed out per registered user, so the manifest names
-the version and its SHA-256 but no URL: register at [dbnsfp.org](https://www.dbnsfp.org/download)
-and give `setup` your link (`--dbnsfp_url`) or the zip (`--dbnsfp_zip`). Confirm the license
+**dbNSFP (extended mode) is academic-use only, and you download it with your own registration.**
+dbNSFP's academic distribution (CC BY-NC-ND 4.0) is handed out per registered user, so the manifest
+names the version and its SHA-256 but no URL: register at [dbnsfp.org](https://www.dbnsfp.org/download)
+with your institutional email and give `setup --extended true` your link (`--dbnsfp_url`, quoted; it
+is kept out of the parameter summary) or the zip (`--dbnsfp_zip /path/to/dbNSFP5.3.1a.zip`). Either
+way the file is checked against the manifest's SHA-256. Confirm the license
 covers your use case — this is a constraint on the data, not something MuSA can relax.
 
 **GeneBe is optional and needs credentials.** Only relevant if you run with `--offline false` for
-automated ACMG/AMP scoring or live HPO-based gene-panel lookup. Offline mode — the default — uses
-none of it and makes no outbound network calls.
+automated ACMG/AMP scoring. Offline mode — the default — makes no outbound network calls; HPO
+matching uses the HPO release `setup` installs.
 
 **MuSA's own license is CC BY-NC 4.0** — non-commercial use and redistribution with attribution. See
 [LICENSE](LICENSE).
@@ -219,17 +243,18 @@ none of it and makes no outbound network calls.
 
 ### Which version?
 
-Three releases are maintained. All three receive stability fixes; only the newest receives new
+Every release below is maintained: all receive stability fixes, only the newest receives new
 features. Pick one with `-r`:
 
 | Release | Use it to | Run with |
 |---|---|---|
-| **1.2.0** (latest) | start new analyses: RENOVO 1.5 scores, no ANNOVAR needed | `-r v1.2.0` |
+| **1.3.0** (latest) | start new analyses: basic mode with no registration, offline HPO matching, ClinVar PS1/PM5 | `-r v1.3.0` |
+| **1.2.0** | reproduce results made with 1.2 (dbNSFP and RENOVO 1.5 in every run) | `-r v1.2.0` |
 | **1.1.0** | reproduce results made with 1.1 (ANNOVAR-based RENOVO) | `-r v1.1.0` |
 | **1.0.0** | run the version described in the [paper](https://doi.org/10.1186/s12859-026-06513-0) | `-r v1.0.0` |
 
-`v1.0.0` and `v1.1.0` were updated in place on 2026-09-24 with stability and correctness fixes (see
-[CHANGELOG](CHANGELOG.md)). If you ran either before that date, refresh Nextflow's copy of the
+`v1.0.0` and `v1.1.0` were updated in place on 2026-09-24, and `v1.2.0` on 2026-10-06, with stability and correctness fixes (see
+[CHANGELOG](CHANGELOG.md)). If you ran one of them before its update, refresh Nextflow's copy of the
 pipeline once with `nextflow drop davide-scognamiglio/MuSA`. Each release downloads the databases
 it was built for, from a manifest pinned in
 [test-datasets](https://github.com/davide-scognamiglio/test-datasets).
@@ -246,13 +271,13 @@ Prerequisites: [Nextflow ≥ 25.10.0](https://nextflow.io) and Docker or Singula
 nextflow run davide-scognamiglio/MuSA \
   --workflow setup \
   --data_dir /path/to/musa_data \
-  --dbnsfp_url '<your dbNSFP download link>' \
   -profile docker            # or -profile singularity
 ```
 
 `--data_dir` must be an absolute path; MuSA stops at startup if it is relative.
 
-Add `--download_vep_plugins true` for the extended (~173 GB) tier. Re-running `setup` later only
+Add `--extended true --dbnsfp_url '<your dbNSFP download link>'` for the extended (~170 GB) tier;
+on a basic data directory it downloads only what extended mode adds. Re-running `setup` later only
 re-downloads entries whose manifest version changed (`--update_db_only true` to force a diff-only
 refresh).
 
@@ -278,7 +303,7 @@ PATIENT_02,saliva,/path/to/PATIENT_02.vcf.gz,
 | `patient` | yes | Identifier. Names the output directory and every output file. |
 | `sample_type` | yes | Free-text sample source (`blood`, `saliva`, ...). Informational. |
 | `sample_file` | yes | Path to the VCF, `.vcf` or `.vcf.gz`. |
-| `hpo` | no | `;`-separated HPO term IDs. Drives phenotype-based gene-panel filtering; leave empty to skip. |
+| `hpo` | no | `;`-separated HPO term IDs. Each gene is matched against them (exact, narrower or broader, with a similarity score and the best-matching disease), and genes that match a specific term make up a phenotype panel for the filtered MAF; leave empty to skip. |
 
 **2. Run** — offline mode (default; no network calls, local databases only):
 
@@ -292,9 +317,8 @@ nextflow run davide-scognamiglio/MuSA \
   -profile docker
 ```
 
-Add `--use_vep_plugins true` for extended annotation (needs the extended `setup`), or
-`--offline false --gb_user <user> --gb_api_key <key>` for GeneBe ACMG/AMP scoring and live HPO
-lookups. Full walkthrough, including proxy configuration and params files:
+Add `--extended true` for extended annotation (needs the extended `setup`), or
+`--offline false --gb_user <user> --gb_api_key <key>` for GeneBe ACMG/AMP scoring. Full walkthrough, including proxy configuration and params files:
 [`docs/usage.md`](docs/usage.md).
 
 **3. Output** — `results/<date>/<patient>/`, one directory per patient:
@@ -316,7 +340,7 @@ Column-by-column breakdown of what's in the MAF: [`docs/output.md`](docs/output.
 
 Same dataset, same in-house server (Intel Xeon Gold 6444Y, 64 cores, 250 GB RAM), two pipeline
 versions: a downsampled, WES-like NA12878/HG001 (GRCh38) callset, ~22,700 variants, full
-extended-mode annotation (all 22 VEP plugins).
+extended-mode annotation (all 22 VEP plugins MuSA 1.1 used).
 
 | Version | Wall time | CPU time |
 |---|---|---|

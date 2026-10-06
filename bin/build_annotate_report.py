@@ -23,7 +23,7 @@ back to <patient>.raw.maf when the filtered file is header-only) and embeds ever
 *view* is the review set, defined in review_flags() below; the full set is one click away and the
 count of both is stated in the header.
 
-Usage: build_annotate_report.py <patient_code> <use_vep_plugins> <offline> <skip_genebe>
+Usage: build_annotate_report.py <patient_code> <extended> <offline> <skip_genebe>
                                 [logo] [pipeline_version] [hpo_terms] [vep_image] [data_root]
 """
 
@@ -76,6 +76,8 @@ DETAIL_COLUMNS = [
     ("MIM_disease",          "OMIM phenotypes"),
     ("Orphanet_disorder",    "Orphanet"),
     ("encoded_CLNREVSTAT",   "ClinVar review status"),
+    ("ClinVar_PS1",          "Same amino-acid change pathogenic in ClinVar (PS1)"),
+    ("ClinVar_PM5",          "Other pathogenic change at this residue (PM5)"),
     ("ClinGen_GeneDisease_Disease",        "ClinGen gene-disease"),
     ("ClinGen_GeneDisease_MOI",            "Inheritance (ClinGen)"),
     ("ClinGen_GeneDisease_Classification", "Gene-disease validity"),
@@ -90,6 +92,11 @@ DETAIL_COLUMNS = [
     # Present only when GeneBe ran (online mode). renovo_adj_acmg_score is not GeneBe's:
     # RENOVO_ADJUST_ACMG pushes GeneBe's score past 5 or below 0 for missense variants
     # by PL_score, so it is labelled as MuSA's and shown next to the original.
+    # Present when the samplesheet gave HPO terms (HPO_MATCH, bin/hpo_match.py).
+    ("HPO_match",              "Match with the patient's phenotype"),
+    ("HPO_match_score",        "Phenotype similarity (0-1)"),
+    ("HPO_matched_terms",      "Matched HPO terms"),
+    ("HPO_best_disease",       "Best-matching disease"),
     ("acmg_criteria",          "GeneBe ACMG criteria"),
     ("acmg_score",             "GeneBe ACMG score"),
     ("renovo_adj_acmg_score",  "ACMG score, ReNOVo-adjusted (missense)"),
@@ -102,9 +109,12 @@ DETAIL_COLUMNS = [
 DETAIL_SECTIONS = [
     ("Variant details", ["HGVSc", "HGVSp_VEP", "Consequence", "IMPACT", "VARIANT_CLASS"]),
     ("Population",     ["MAX_AF", "MAX_AF_POPS"]),
-    ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinGen_GeneDisease_Disease",
+    ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinVar_PS1", "ClinVar_PM5",
+                        "ClinGen_GeneDisease_Disease",
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
                         "MIM_disease", "Orphanet_disorder"]),
+    ("Patient phenotype", ["HPO_match", "HPO_match_score", "HPO_matched_terms",
+                           "HPO_best_disease"]),
     ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
     ("Prediction",     ["PL_score", "acmg_criteria", "acmg_score", "renovo_adj_acmg_score"]),
     # No "References" section: every accession in the MAF is rendered as a link at the
@@ -119,7 +129,7 @@ DETAIL_SECTIONS = [
 def parse_args():
     args = sys.argv[1:]
     if len(args) < 4:
-        sys.exit("Usage: build_annotate_report.py <patient_code> <use_vep_plugins> "
+        sys.exit("Usage: build_annotate_report.py <patient_code> <extended> "
                  "<offline> <skip_genebe> [logo_path]")
 
     def _bool(v):
@@ -127,7 +137,7 @@ def parse_args():
 
     return {
         "patient_code":    args[0],
-        "use_vep_plugins": _bool(args[1]),
+        "extended": _bool(args[1]),
         "offline":         _bool(args[2]),
         "skip_genebe":     _bool(args[3]),
         "logo_path":       args[4] if len(args) > 4 else None,
@@ -138,6 +148,11 @@ def parse_args():
         # and the band simply carries no provenance row.
         "vep_image":       args[7] if len(args) > 7 else "",
         "data_root":       args[8] if len(args) > 8 else "",
+        # JSON list of this run's annotation sources, written by the ANNOTATE workflow from
+        # assets/annotation_sources.yaml (lib/annot_utils.nf annotation_sources).
+        "sources_json":    args[9] if len(args) > 9 else "",
+        # Tool versions of this run, written by SOFTWARE_VERSIONS (one probe per container image).
+        "versions_yml":    args[10] if len(args) > 10 else "",
     }
 
 
@@ -293,6 +308,8 @@ def review_flags(df):
 GROUPS = [
     ("flagged",    "ClinVar pathogenic",
      "pathogenic or likely pathogenic in ClinVar"),
+    ("phenotype",  "Fits the patient's phenotype",
+     "the gene is annotated to one of the patient's HPO terms, or to a more specific one"),
     ("lof",        "Loss of function in an established disease gene",
      "a high-impact change in a gene ClinGen ties to a disease with definitive or "
      "strong evidence"),
@@ -440,6 +457,16 @@ def overview(df, flags):
     biallelic = [i for i in idx
                  if zygosity(info.iloc[i]) in ("homozygous", "hemizygous")]
 
+    # The patient's phenotype: genes HPO_MATCH put in the phenotype panel (an exact or narrower
+    # match on a specific term). When every term was too general to make a panel, HPO_panel is
+    # "." and an exact or narrower match on any term is used instead.
+    hpo_match = df["HPO_match"].fillna("") if "HPO_match" in df.columns else pd.Series([""] * len(df))
+    hpo_panel = df["HPO_panel"].fillna("") if "HPO_panel" in df.columns else pd.Series([""] * len(df))
+    panel_on = hpo_panel.isin(["yes", "no"]).any()
+    phenotype = [i for i in idx
+                 if (hpo_panel.iloc[i] == "yes" if panel_on
+                     else hpo_match.iloc[i] in ("exact", "narrower"))]
+
     bands = {"not observed": 0, "under 0.01%": 0, "0.01% to 0.1%": 0, "0.1% to 1%": 0}
     unobserved = []
     for i in idx:
@@ -458,6 +485,7 @@ def overview(df, flags):
         "unobserved": unobserved,
         "lof": lof,
         "biallelic": biallelic,
+        "phenotype": phenotype,
         "novel": novel,
         "contested": contested,
         "flagged": flagged,
@@ -735,7 +763,23 @@ PAGE_CSS = """
   border-top: 1px solid var(--border);
 }
 .priority-none { font-size: var(--step-0); color: var(--ink-muted); margin-top: 1rem; }
-.ov-actions { margin-top: 1.75rem; }
+.ov-actions { margin-top: 1.75rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* ── sources view ─────────────────────────────────────────────────────────── */
+.sources { max-width: 1180px; padding: 1.5rem; }
+.sources-lead { color: var(--ink-muted); margin: 0 0 1.25rem; max-width: 78ch; }
+.sources h2 { font-family: var(--font-display); font-size: var(--step-1); margin: 1.75rem 0 0.5rem; }
+.sources table { width: 100%; border-collapse: collapse; font-size: var(--step--1); }
+.sources th, .sources td {
+  text-align: left; vertical-align: top; padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.sources th { color: var(--ink-muted); font-weight: 600; }
+.sources td.src-cat { color: var(--ink-muted); white-space: nowrap; }
+.sources td.src-name { font-weight: 600; white-space: nowrap; }
+.sources tr.src-off td { color: var(--ink-muted); }
+.sources tr.src-off td.src-name { font-weight: 400; }
+.src-status { white-space: nowrap; }
 
 /* ── control bar ──────────────────────────────────────────────────────────── */
 .controls {
@@ -965,6 +1009,8 @@ PAGE_JS = r"""
   "use strict";
 
   var P = window.__MUSA__;
+  // RENOVO runs in extended mode only; without it the table has no ReNOVo column and no chip.
+  var HAS_RNV = P.main.some(function (c) { return c.k === "RENOVO_Class"; });
   var ROW_H = 30;          // must match the CSS row height for the scroller maths
   var OVERSCAN = 8;
 
@@ -1181,7 +1227,7 @@ PAGE_JS = r"""
         '<td class="col-mono">' + esc(absent(prot[i]) ? "—" : prot[i]) + '</td>' +
         '<td class="csq">' + esc(firstConsequence(csq[i])) + '</td>' +
         '<td>' + chipHTML(clinvarChip(cvs[i])) + '</td>' +
-        '<td>' + chipHTML(renovoChip(rnv[i])) + '</td>' +
+        (HAS_RNV ? '<td>' + chipHTML(renovoChip(rnv[i])) + '</td>' : '') +
         '<td class="col-af">' + afCell(maf[i]) + '</td>' +
         '</tr>'
       );
@@ -1468,7 +1514,7 @@ PAGE_JS = r"""
     parts.push('<p class="panel-gdna">' + esc(absent(gdna) ? "—" : gdna) + "</p>");
     parts.push('<div class="panel-chips">' +
       chipHTML(clinvarChip(col("encoded_CLNSIG")[i]), "ClinVar") +
-      chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") + "</div>");
+      (HAS_RNV ? chipHTML(renovoChip(col("RENOVO_Class")[i]), "ReNOVo") : "") + "</div>");
 
     var a = assessment(i);
     if (a.length) {
@@ -1536,12 +1582,14 @@ PAGE_JS = r"""
   // away, and it does not exist in the layout until it is asked for.
   var overviewView = document.getElementById("view-overview");
   var tableView = document.getElementById("view-table");
+  var sourcesView = document.getElementById("view-sources");
   var chip = document.getElementById("filterChip");
 
   function showView(which) {
     var toTable = which === "table";
-    overviewView.hidden = toTable;
+    overviewView.hidden = which !== "overview";
     tableView.hidden = !toTable;
+    sourcesView.hidden = which !== "sources";
     window.scrollTo(0, 0);
     if (toTable) render();          // the scroller has no height while hidden
   }
@@ -1623,6 +1671,14 @@ __BAND_MEASURE_JS__
   });
 
   document.getElementById("backToOverview").addEventListener("click", function () {
+    showView("overview");
+  });
+
+  document.getElementById("openSources").addEventListener("click", function () {
+    showView("sources");
+  });
+
+  document.getElementById("sourcesBack").addEventListener("click", function () {
     showView("overview");
   });
 
@@ -1730,6 +1786,7 @@ __PAGE_CSS__
       <div class="priority">__PRIORITY__</div>
       <div class="ov-actions no-print">
         <button class="btn" type="button" id="openTable">Open the variant table &rarr;</button>
+        <button class="btn" type="button" id="openSources">Annotation sources &rarr;</button>
       </div>
     </div>
     <aside class="ov-detail" id="ovPanel" aria-live="polite" aria-label="Variant evidence"></aside>
@@ -1767,6 +1824,13 @@ __PAGE_CSS__
     </div>
     <aside class="panel" id="panel" aria-live="polite" aria-label="Variant detail"></aside>
   </div>
+</main>
+
+<main class="view" id="view-sources" hidden>
+  <div class="controls no-print">
+    <button class="btn" type="button" id="sourcesBack">&larr; Findings</button>
+  </div>
+  <section class="sources">__SOURCES__</section>
 </main>
 
 
@@ -1854,6 +1918,7 @@ def _finding_rows(df, indices, limit=6):
     they need in order to decide whether it is relevant to the case in front of them.
     """
     get = lambda col, i: (str(df[col].iloc[i]) if col in df.columns else ".")
+    has_renovo = "RENOVO_Class" in df.columns
     out = []
     for i in _pick_preview(df, indices, limit):
         gene = get("Hugo_Symbol", i)
@@ -1879,9 +1944,9 @@ def _finding_rows(df, indices, limit=6):
             f'{disease_html}</span>'
             f'<span class="chip {cvc}"><span class="chip-src">ClinVar</span><b>{cvcode}</b>'
             f'<span class="sr-only"> {cvnote}</span></span>'
-            f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
-            f'<span class="sr-only"> {rnnote}</span></span>'
-            f'{_finding_tags(df, i)}'
+            + (f'<span class="chip {rnc}"><span class="chip-src">ReNOVo</span><b>{rncode}</b>'
+               f'<span class="sr-only"> {rnnote}</span></span>' if has_renovo else "")
+            + f'{_finding_tags(df, i)}'
             f'<span class="finding-change">{html_escape(coords)}</span>'
             "</button>"
         )
@@ -2000,6 +2065,94 @@ def _versions_html(vep, clinvar):
             f'{rows}</dl>')
 
 
+_SOURCE_LEVELS = [("variant", "Variant level"), ("gene", "Gene level"),
+                  ("score", "Scores and classification"), ("filter", "Filtering")]
+_MODE_HINT = {"extended": "off &middot; needs --extended true",
+              "online": "off &middot; needs --offline false",
+              "extended+online": "off &middot; needs --extended true and --offline false"}
+
+
+def load_sources(path):
+    """This run's annotation sources, or [] when the report is built by hand without them."""
+    if not path or not os.path.isfile(path):
+        return []
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def load_software(path):
+    """[(tool, version, image)] from SOFTWARE_VERSIONS' YAML, or [] without it.
+
+    The file is three fixed keys per tool, written by the module itself, so it is read line by
+    line rather than with PyYAML, which the report image does not ship.
+    """
+    if not path or not os.path.isfile(path):
+        return []
+    tools, cur = [], None
+    with open(path) as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if line and not line.startswith(" ") and line.endswith(":"):
+                cur = {"tool": line[:-1]}
+                tools.append(cur)
+            elif cur is not None and ":" in line:
+                key, val = line.strip().split(":", 1)
+                cur[key] = val.strip().strip('"')
+    return [(t["tool"], t.get("version", ""), t.get("image", "")) for t in tools]
+
+
+def _software_html(software):
+    if not software:
+        return ""
+    rows = "".join(f'<tr><td class="src-name">{html_escape(tool)}</td><td>{html_escape(ver)}</td>'
+                   f'<td><code>{html_escape(img)}</code></td></tr>' for tool, ver, img in software)
+    return ('<h2>Software</h2><p class="sources-lead">The tools this run used, with the version '
+            'reported by the container image each ran in.</p>'
+            '<table><thead><tr><th>Tool</th><th>Version</th><th>Container image</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>')
+
+
+def _sources_html(sources, software=()):
+    """The Sources view: every resource this run could annotate from, and whether it did.
+
+    Built from the same catalogue (assets/annotation_sources.yaml) that generates the README table
+    and docs/sources.md; fields MuSA derives itself (kind "computed") and MAF-format columns are
+    left out, since they are not evidence from an outside source.
+    """
+    counted = [s for s in sources if s.get("kind") == "resource" and s.get("level") != "format"]
+    if not counted:
+        return ('<p class="sources-lead">The list of annotation sources was not passed to this '
+                'report.</p>')
+    used = sum(1 for s in counted if s.get("active"))
+    out = [f'<p class="sources-lead">This report was built from <strong>{used}</strong> of the '
+           f'{len(counted)} annotation sources MuSA can use. Each one is listed with the pipeline '
+           'step that brought it in and the version installed for this run; sources this run did '
+           'not use are greyed out with the option that turns them on.</p>']
+    for level, title in _SOURCE_LEVELS:
+        group = [s for s in counted if s.get("level") == level]
+        if not group:
+            continue
+        out.append(f"<h2>{title}</h2>")
+        out.append('<table><thead><tr><th>Evidence</th><th>Source</th><th>What it adds</th>'
+                   '<th>Brought in by</th><th>Version</th><th>In this run</th></tr></thead><tbody>')
+        last_cat = None
+        for s in group:
+            cat = s.get("category", "")
+            status = "used" if s.get("active") else _MODE_HINT.get(s.get("mode"), "off")
+            out.append(
+                f'<tr class="{"" if s.get("active") else "src-off"}">'
+                f'<td class="src-cat">{html_escape(cat) if cat != last_cat else ""}</td>'
+                f'<td class="src-name">{html_escape(s.get("name", ""))}</td>'
+                f'<td>{html_escape(s.get("what", ""))}</td>'
+                f'<td>{html_escape(s.get("provider", ""))} <code>{html_escape(s.get("step", ""))}</code></td>'
+                f'<td>{html_escape(s.get("version") or "")}</td>'
+                f'<td class="src-status">{status}</td></tr>')
+            last_cat = cat
+        out.append("</tbody></table>")
+    out.append(_software_html(software))
+    return "".join(out)
+
+
 def _hpo_html(terms):
     if not terms:
         return ('<div class="case-hpo"><span class="case-hpo-none">'
@@ -2014,22 +2167,23 @@ def _hpo_html(terms):
 
 
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
-                    version="", hpo=(), assets_dir=None, vep="", clinvar=""):
+                    version="", hpo=(), assets_dir=None, vep="", clinvar="", sources=(), software=()):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
     n_conf = stats["conflicting"]
+    has_renovo = "RENOVO_Class" in df.columns
     scales = (
         _scale_html("ClinVar", stats["clinvar"],
                     f"{n_conf} conflicting" if n_conf else "")
-        + _scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier")
+        + (_scale_html("ReNOVo", stats["renovo"], "MuSA's own classifier") if has_renovo else "")
     )
 
     # ── findings blocks, grouped by why a variant is here ────────────────────
     # Each block header is the control that opens the table filtered to that block,
     # so the number a reader sees and the rows they get are the same set by
     # construction rather than by two definitions that could drift.
-    tones = {"flagged": "p", "lof": "p", "biallelic": "lp", "escalated": "lp",
+    tones = {"flagged": "p", "phenotype": "acc", "lof": "p", "biallelic": "lp", "escalated": "lp",
              "novel": "acc", "contested": "p"}
     blocks, index = [], []
     for key, title, why in GROUPS:
@@ -2057,8 +2211,9 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             f'<span class="index-title">{html_escape(title)}</span></button>'
         )
     priority_html = "".join(blocks) or (
-        '<p class="priority-none">Nothing in the review set is flagged by ClinVar or called '
-        'pathogenic by ReNOVo. The full variant table is still one click away.</p>')
+        '<p class="priority-none">Nothing in the review set is flagged by ClinVar'
+        + (' or called pathogenic by ReNOVo' if has_renovo else '')
+        + '. The full variant table is still one click away.</p>')
     index_html = (
         '<span class="band-index-label">Findings</span>' + "".join(index) if index
         else '<span class="band-index-none">No findings blocks on this case.</span>')
@@ -2081,6 +2236,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__INDEX__", index_html)
             .replace("__SCALES__", scales)
             .replace("__VERSIONS__", _versions_html(vep, clinvar))
+            .replace("__SOURCES__", _sources_html(sources, software))
             .replace("__HPO__", _hpo_html(hpo))
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
@@ -2105,7 +2261,7 @@ def main():
     print("MuSA: annotation report", file=sys.stderr)
     print(f"  patient        : {patient}", file=sys.stderr)
     print(f"  offline        : {offline}", file=sys.stderr)
-    print(f"  use_vep_plugins: {params['use_vep_plugins']}", file=sys.stderr)
+    print(f"  extended: {params['extended']}", file=sys.stderr)
     hpo = parse_hpo(params["hpo"])
     print(f"  HPO terms      : {len(hpo)}"
           + (f" ({', '.join(hpo)})" if hpo else " (none in samplesheet)"), file=sys.stderr)
@@ -2156,6 +2312,8 @@ def main():
         # already passes in, so no new argument has to be threaded through Nextflow.
         assets_dir=(os.path.dirname(params["logo_path"]) if params["logo_path"] else None),
         vep=vep,
+        sources=load_sources(params["sources_json"]),
+        software=load_software(params["versions_yml"]),
         clinvar=clinvar,
     )
 

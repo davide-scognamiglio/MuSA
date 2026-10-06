@@ -1,7 +1,11 @@
 /*
  * MuSA
  * Module: DOWNLOAD_CADD
- * Purpose: Download vep plugin database
+ * Purpose: Download the CADD plugin's precomputed scores
+ *
+ * Two score files, each with its index: every possible SNV, and the indels seen in gnomAD v4
+ * genomes (CADD has no precomputed score for any other indel). Under --update_db_only an unchanged
+ * entry already installed is reused rather than downloaded again (reuse_installed).
  */
 
 
@@ -39,33 +43,34 @@ process DOWNLOAD_CADD {
     fi
 
     mkdir -p CADD
-    cd CADD
+    reused=0
 
     # Loop over CADD entries defined in manifest
     for var in \$(compgen -v); do
         if [[ \$var =~ ^vep_cadd_.*_url\$ ]]; then
             prefix="\${var%_url}"
 
-            method_var="\${prefix}_method"
             out_var="\${prefix}_out"
 
             echo "[INFO] Processing \$prefix"
 
-            sha=\$(download_and_compute_sha "\${!var}" "\${!method_var}" "\${!out_var}")
-
-            # Write SHA back into manifest
-            write_computed_sha256 "../${manifest}" "\$prefix" "\$sha"
-
-            echo "[INFO] \$prefix hash written"
+            if sha=\$(reuse_installed "\$prefix" "${changed_entries}" "/data/vep_data/CADD/\${!out_var}"); then
+                reused=1
+                write_computed_sha256 "${manifest}" "\$prefix" "\$sha"
+            else
+                (cd CADD && fetch_entry "\$PWD/../${manifest}" "\$prefix")
+            fi
         fi
     done
 
-    cd ..
-
-    # Rename manifest for downstream consistency
     # Install into the data dir (bind-mounted at /data); see install_into_data in
-    # bin/download_and_hash.sh for why this is not publishDir.
-    install_into_data "CADD" "/data/vep_data/CADD"
+    # bin/download_and_hash.sh for why this is not publishDir. With reused files, only the new
+    # downloads are moved in, next to them.
+    if [[ "\$reused" == 1 ]]; then
+        install_files_into_data "CADD" "/data/vep_data/CADD"
+    else
+        install_into_data "CADD" "/data/vep_data/CADD"
+    fi
 
     mv ${manifest} cadd_manifest.yaml
     """

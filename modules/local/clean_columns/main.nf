@@ -5,7 +5,7 @@
  */
 
 process CLEAN_COLUMNS {
-    tag "clean-maf"
+    tag "${meta.patient}"
         cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'
@@ -43,9 +43,8 @@ process CLEAN_COLUMNS {
     #   alt             -> keep vcf_alt           (dbNSFP partial field)
     #   vcf_qual        -> keep QUAL              (exact duplicate)
     #   MIM_id          -> keep OMIM_id           (same database, side-by-side)
-    #   ClinPred        -> keep ClinPred_score    (dbNSFP has more coverage)
     #   HGVSp_snpEff    -> keep HGVSp_VEP        (identical content, keep VEP)
-    T1="CADD_phred,CADD_raw,clinvar_clnsig,clinvar_review,clinvar_trait,Start,pos(1-based),vcf_pos,End,Ref,Alt,ref,alt,vcf_qual,MIM_id,ClinPred,HGVSp_snpEff"
+    T1="CADD_phred,CADD_raw,clinvar_clnsig,clinvar_review,clinvar_trait,Start,pos(1-based),vcf_pos,End,Ref,Alt,ref,alt,vcf_qual,MIM_id,HGVSp_snpEff"
     #
     # TIER 2 — same underlying data, different tool/format/transcript scope
     #   CLIN_SIG           -> keep CLNSIG            (case-only diff: benign vs Benign)
@@ -58,9 +57,9 @@ process CLEAN_COLUMNS {
     #   CCDS_id            -> keep CCDS              (dbNSFP bare id vs VEP versioned)
     #   STRAND_VEP         -> keep STRAND            (completely empty column)
     #   cds_strand         -> keep STRAND            (same info, different encoding +/- vs 1/-1)
-    #   am_class           -> keep AlphaMissense_pred (VEP single vs dbNSFP multi-transcript)
-    #   am_pathogenicity   -> keep AlphaMissense_score (same)
     #   Uniprot_id         -> keep Uniprot_entry     (single vs multi-transcript mnemonic)
+    #   am_class           -> merged into AlphaMissense_pred, then dropped (see below)
+    #   am_pathogenicity   -> merged into AlphaMissense_score, then dropped (see below)
     T2="CLIN_SIG,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Uniprot_id"
     #
     # KEPT ON PURPOSE:
@@ -91,6 +90,23 @@ process CLEAN_COLUMNS {
     # CLNREVSTAT/CLNDN) is the single ClinVar source.
     DROP_ORIG="ClinVar"
 
+    # The protein change: HGVSp_VEP comes from dbNSFP (read on the MANE transcript), and VEP's own
+    # HGVSp is dropped above as its pre-merge twin. Basic mode has no dbNSFP, so there VEP's HGVSp
+    # (for the transcript VEP picked, Feature) becomes HGVSp_VEP, in dbNSFP's form: "p.Tyr414Cys"
+    # rather than "ENSP00000448059.1:p.Tyr414Cys", and "p.Leu385=" rather than VEP's URL-escaped
+    # "p.Leu385%3D".
+
+    # UTRAnnotator writes 5UTR_annotation as key=value pairs in Perl hash order, which changes from
+    # run to run ("type=uORF:KozakContext=..." one time, "KozakContext=...:type=uORF" the next), so
+    # two runs of the same VCF differed. The pairs are sorted by key, inside each '&'-joined item.
+
+    # AlphaMissense has two copies: dbNSFP's (per transcript, read on the MANE transcript) and the
+    # VEP plugin's (extended mode; DeepMind's canonical-transcript file, matched by position). They
+    # agree where both exist (median difference 0.004 on NA12878), but on ~6% of missense variants
+    # only the plugin has a value, because dbNSFP has none for the MANE transcript. dbNSFP's value
+    # is kept; an empty one is filled from the plugin (am_class mapped to dbNSFP's LB/A/LP codes),
+    # and AlphaMissense_source, written after AlphaMissense_pred, says which copy each row holds.
+
     awk -F'\\t' -v OFS='\\t' -v drop_cols="\$DROP" -v drop_orig_cols="\$DROP_ORIG" '
     BEGIN {
         n = split(drop_cols, arr, ",")
@@ -98,7 +114,38 @@ process CLEAN_COLUMNS {
         m = split(drop_orig_cols, arr2, ",")
         for (i = 1; i <= m; i++) drop_orig[arr2[i]] = 1
     }
+    function empty(v) { return v == "" || v == "." || v == "NA" || v == "nan" }
+    function sort_pairs(v,   items, n, i, out, pairs, m, j, k, t) {
+        n = split(v, items, "&")
+        out = ""
+        for (i = 1; i <= n; i++) {
+            m = split(items[i], pairs, ":")
+            for (j = 2; j <= m; j++) {
+                t = pairs[j]
+                for (k = j - 1; k >= 1 && pairs[k] > t; k--) pairs[k + 1] = pairs[k]
+                pairs[k + 1] = t
+            }
+            t = pairs[1]
+            for (j = 2; j <= m; j++) t = t ":" pairs[j]
+            out = out (i > 1 ? "&" : "") t
+        }
+        return out
+    }
     NR == 1 {
+        for (i = 1; i <= NF; i++) {
+            name = \$i
+            gsub(/\r/, "", name)
+            if (name == "AlphaMissense_score" && !am_score) am_score = i
+            if (name == "AlphaMissense_pred"  && !am_pred)  am_pred  = i
+            if (name == "am_pathogenicity"    && !am_vep)   am_vep   = i
+            if (name == "am_class"            && !am_cls)   am_cls   = i
+            if (name == "HGVSp"               && !vep_p)    vep_p    = i
+            if (name == "HGVSp_VEP")                        dbnsfp_p = i
+            if (name == "5UTR_annotation")                  utr5     = i
+        }
+        if (dbnsfp_p) vep_p = 0
+        am_after = am_pred ? am_pred : am_score
+        am_code["likely_benign"] = "LB"; am_code["ambiguous"] = "A"; am_code["likely_pathogenic"] = "LP"
         for (i = 1; i <= NF; i++) {
             col = \$i
             gsub(/\r/, "", col)
@@ -112,7 +159,8 @@ process CLEAN_COLUMNS {
             }
 
             # Rename to canonical MAF names
-            if (col == "SYMBOL")                       col = "Hugo_Symbol"
+            if (i == vep_p)                            col = "HGVSp_VEP"
+            else if (col == "SYMBOL")                  col = "Hugo_Symbol"
             else if (col == "ClinVar_CLNSIG")          col = "CLNSIG"
             else if (col == "ClinVar_CLNREVSTAT")      col = "CLNREVSTAT"
             else if (col == "ClinVar_CLNDN")           col = "CLNDN"
@@ -139,11 +187,35 @@ process CLEAN_COLUMNS {
     }
     {
         gsub(/\r/, "")
+        if (utr5 && NR > 1 && !empty(\$utr5)) \$utr5 = sort_pairs(\$utr5)
+        if (vep_p && NR > 1) {
+            p = \$vep_p
+            sub(/^[^:]*:/, "", p)
+            gsub(/%3D/, "=", p)
+            \$vep_p = p
+        }
+        if (am_after) {
+            if (NR == 1) {
+                am_src = "AlphaMissense_source"
+            } else if (!empty(\$am_score)) {
+                am_src = "dbNSFP"
+            } else if (am_vep && !empty(\$am_vep)) {
+                \$am_score = \$am_vep
+                if (am_pred) \$am_pred = (\$am_cls in am_code) ? am_code[\$am_cls] : "."
+                am_src = "VEP plugin"
+            } else {
+                am_src = "."
+            }
+        }
         out = ""
         sep = ""
         for (i = 1; i <= NF; i++) {
             if (keep[i]) {
                 out = out sep \$i
+                sep = OFS
+            }
+            if (i == am_after) {
+                out = out sep am_src
                 sep = OFS
             }
         }

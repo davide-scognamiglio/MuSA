@@ -109,17 +109,25 @@
                     "fa_icon": "fas fa-docker",
                     "default": "dsbioinfo/renovo-rebuild:1.5.0"
                 },
+                "extended": {
+                    "type": "boolean",
+                    "description": "Extended mode: dbNSFP (variant and gene level), RENOVO 1.5 and the VEP plugins. With setup it downloads them (~167 GB more, dbNSFP needs --dbnsfp_url or --dbnsfp_zip); with annotate it uses them.",
+                    "fa_icon": "fas fa-layer-group",
+                    "default": false
+                },
                 "download_vep_plugins": {
                     "type": "boolean",
-                    "description": "Download VEP plugins",
+                    "description": "Deprecated since 1.3: same as --extended.",
                     "fa_icon": "fas fa-download",
-                    "default": false
+                    "default": false,
+                    "hidden": true
                 },
                 "use_vep_plugins": {
                     "type": "boolean",
-                    "description": "Use VEP plugins",
+                    "description": "Deprecated since 1.3: same as --extended.",
                     "fa_icon": "fas fa-wrench",
-                    "default": false
+                    "default": false,
+                    "hidden": true
                 },
                 "drop_benign": {
                     "type": "boolean",

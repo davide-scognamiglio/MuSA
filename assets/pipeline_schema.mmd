@@ -1,0 +1,115 @@
+%% Source of assets/pipeline_schema.svg (nf-metro 2.0). Rendered from a checkout of nf-metro whose
+%% examples/assets holds the MuSA lockup logos:  nf-metro render pipeline_schema.mmd --format svg
+%%metro style: nfcore
+%%metro animate: true
+%%metro line_spread: centered | variants
+%%metro section_y_gap: 80
+%%metro legend: 22,292
+%%metro legend_scale: 0.9
+%%metro grid: preprocessing | 0,0
+%%metro grid: variants | 1,0
+%%metro grid: genes | 2,0
+%%metro grid: classify | 3,0
+%%metro grid: setup | 2,1
+%%metro logo_scale: 0.9
+%%metro logo: assets/musa_lockup_light.png | assets/musa_lockup_dark.png
+
+%%metro file: vcf_in | VCF
+%%metro file: yaml_in | YAML
+%%metro file: report_patient | HTML
+%%metro file: maf_out | MAF
+%%metro file: report_setup | HTML
+
+%%metro line: annotate | Annotate workflow | #2db572
+%%metro line: setup    | Setup workflow    | #0570b0
+
+%%metro marker: gatk_filter | circle, #9e9e9e
+%%metro marker: plugins     | circle, #9e9e9e
+%%metro marker: genebe      | circle, #9e9e9e
+%%metro marker: acmg        | circle, #9e9e9e
+%%metro marker: plugin_dbs  | circle, #9e9e9e
+%%metro marker: dbnsfp      | circle, #9e9e9e
+%%metro marker: renovo      | circle, #9e9e9e
+%%metro marker: omim        | circle, #9e9e9e
+%%metro marker: gencc       | circle, #9e9e9e
+%%metro marker: pathways    | circle, #9e9e9e
+%%metro marker: constraint  | circle, #9e9e9e
+%%metro marker_legend: circle, #9e9e9e | Optional (extended or online mode)
+
+graph LR
+
+    subgraph preprocessing [Preprocessing]
+        vcf_in[ ]
+        normalize[Normalize]
+        gatk_filter[GATK filter]
+        rename[Rename]
+
+        vcf_in -->|annotate| normalize
+        normalize -->|annotate| gatk_filter
+        gatk_filter -->|annotate| rename
+    end
+
+    subgraph variants [Variant-level annotation]
+        vep[Ensembl VEP]
+        clinvar[ClinVar · ClinGen]
+        plugins[21 VEP plugins]
+        genebe[GeneBe]
+        dbnsfp[dbNSFP 5.3]
+        vcf2maf[vcf2maf]
+        merge[Merge]
+        renovo[RENOVO 1.5]
+
+        vep -->|annotate| clinvar
+        clinvar -->|annotate| plugins
+        plugins -->|annotate| genebe
+        genebe -->|annotate| merge
+        dbnsfp -->|annotate| merge
+        vcf2maf -->|annotate| merge
+        merge -->|annotate| renovo
+    end
+
+    subgraph genes [Gene-level annotation]
+        omim[OMIM · Orphanet]
+        gencc[GenCC · HPO]
+        pathways[Pathways · HPA]
+        constraint[Constraint]
+        clingen_genes[ClinGen]
+        hpo[HPO match]
+
+        omim -->|annotate| gencc
+        gencc -->|annotate| pathways
+        pathways -->|annotate| constraint
+        constraint -->|annotate| clingen_genes
+        clingen_genes -->|annotate| hpo
+    end
+
+    subgraph classify [Classification & report]
+        clinvar_tiers[ClinVar tiers · PS1/PM5]
+        acmg[ACMG]
+        filter[Filter]
+        report_patient[ ]
+        maf_out[ ]
+
+        clinvar_tiers -->|annotate| acmg
+        acmg -->|annotate| filter
+        filter -->|annotate| report_patient
+        filter -->|annotate| maf_out
+    end
+
+    subgraph setup [Setup]
+        %%metro number: 0
+        yaml_in[ ]
+        core_dbs[Basic DBs]
+        plugin_dbs[Extended DBs]
+        report_setup[ ]
+
+        yaml_in -->|setup| core_dbs
+        core_dbs -->|setup| plugin_dbs
+        plugin_dbs -->|setup| report_setup
+    end
+
+    rename -->|annotate| vep
+    rename -->|annotate| dbnsfp
+    rename -->|annotate| vcf2maf
+    renovo -->|annotate| omim
+    hpo -->|annotate| clinvar_tiers

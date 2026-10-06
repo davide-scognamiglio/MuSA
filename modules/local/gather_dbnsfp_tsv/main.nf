@@ -5,7 +5,7 @@
  */
 
 process GATHER_DBNSFP_TSV {
-    tag "gather-dbNSFP-${meta.patient}"
+    tag "${meta.patient} | dbNSFP"
     cpus 1
     memory "2 GB"
     container "dsbioinfo/musa-helper:rebuild"

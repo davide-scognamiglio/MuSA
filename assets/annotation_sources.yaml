@@ -1,0 +1,942 @@
+# MuSA annotation sources: the single list of every resource that contributes a column to the MAF.
+#
+# Everything that tells a user where MuSA's evidence comes from is generated from this file, so it
+# cannot drift from the pipeline:
+#   - the "Annotation sources" block printed when `annotate` starts (lib/annot_utils.nf)
+#   - the Annotation sources view of the HTML report (bin/build_annotate_report.py, via a JSON Nextflow writes)
+#   - docs/sources.md and the sources table in README.md (bin/musa_sources.py render)
+# bin/musa_sources.py check verifies it against a real MAF: every column must belong to exactly one
+# source, and every source active in that run's mode must have columns in it.
+#
+# Two lists:
+#   providers  how a resource gets into MuSA: what is installed in --data_dir (or called online),
+#              which manifest entry versions it, and which step reads it.
+#   sources    what the resource is: the knowledge it adds, at which level, and the MAF columns it
+#              fills. Several sources can share one provider (dbNSFP carries ~70 of them).
+#
+# Fields
+#   provider.manifest  key in dbs_manifest.yaml whose `version` is reported (blank or "-" = none)
+#   provider.data      path under --data_dir; when the manifest has no version, the install date of
+#                      this file is reported instead
+#   provider.version   version fixed by the pipeline itself (containers, APIs)
+#   provider.mode      basic (always), extended (--extended true), online (--offline false), or
+#                      extended+online (both)
+#   source.level       variant | gene | score | filter | format
+#   source.kind        resource (external knowledge), computed (derived by a tool, no external
+#                      data) or copy (a resource already listed, reached through a second provider);
+#                      only resources are counted as annotation sources
+#   source.columns     regular expressions, each matching whole MAF column names;
+#                      {sample} stands for the patient's genotype column
+
+providers:
+  vep_cache:
+    name: Ensembl VEP cache
+    step: VEP_ANNOTATE_VCF
+    mode: basic
+    manifest: vep_cache
+    url: https://www.ensembl.org/info/docs/tools/vep/index.html
+  vep_plugins:
+    name: Ensembl VEP plugins
+    step: VEP_ANNOTATE_VCF
+    mode: extended
+    url: https://github.com/Ensembl/VEP_plugins
+  clinvar:
+    name: ClinVar
+    step: VEP_ANNOTATE_VCF (--custom)
+    mode: basic
+    manifest: clinvar
+    data: vep_data/ClinVar/clinvar.vcf.gz
+    url: https://www.ncbi.nlm.nih.gov/clinvar/
+  clingen_erepo:
+    name: ClinGen Evidence Repository
+    step: VEP_ANNOTATE_VCF (--custom)
+    mode: basic
+    manifest: clingen_variant_path
+    data: vep_data/ClinGen/clingen_pathogenicity.vcf.gz
+    url: https://erepo.clinicalgenome.org/
+  dbnsfp:
+    name: dbNSFP
+    step: DBNSFP_ANNOTATE_VCF_CHR
+    mode: extended
+    manifest: dbnsfp
+    url: https://www.dbnsfp.org
+  dbnsfp_gene:
+    name: dbNSFP gene file
+    step: DBNSFP_GENE_ANNOTATE_MAF
+    mode: extended
+    manifest: dbnsfp
+    url: https://www.dbnsfp.org
+  clingen_gene:
+    name: ClinGen gene curations
+    step: CLINGEN_ANNOTATE_MAF
+    mode: basic
+    manifest: clingen_gene_validity
+    data: clingen/clingen_gene_validity.csv
+    url: https://clinicalgenome.org/
+  vcf2maf:
+    name: vcf2maf
+    step: VCF_TO_MAF
+    mode: basic
+    version: container dsbioinfo/vcf2maf
+    url: https://github.com/mskcc/vcf2maf
+  musa:
+    name: MuSA
+    step: MERGE_ANNOTATIONS, ADD_GENOME_CHANGE, ADD_REF_CONTEXT, ENCODE_CLINVAR
+    mode: basic
+    url: https://github.com/davide-scognamiglio/MuSA
+  renovo_acmg:
+    name: MuSA
+    step: RENOVO_ADJUST_ACMG
+    mode: extended+online
+    url: https://github.com/davide-scognamiglio/MuSA
+  clinvar_residues:
+    name: ClinVar variant summary
+    step: CLINVAR_RESIDUES
+    mode: basic
+    manifest: clinvar_variant_summary
+    url: https://www.ncbi.nlm.nih.gov/clinvar/
+  renovo:
+    name: renovo-rebuild
+    step: RENOVO_SCORE
+    mode: extended
+    version: params.renovo_container
+    url: https://github.com/davide-scognamiglio/renovo-rebuild
+  genebe:
+    name: GeneBe API
+    step: GENEBE_ANNOTATE_VCF
+    mode: online
+    version: container genebe/pygenebe
+    url: https://genebe.net
+  hpo:
+    name: Human Phenotype Ontology
+    step: HPO_MATCH
+    mode: basic
+    manifest: hpo
+    data: hpo/hp.obo
+    url: https://hpo.jax.org
+
+sources:
+
+  # ── Variant level: transcript and consequence ───────────────────────────────────────────────────
+  - id: ensembl_genes
+    name: Ensembl / GENCODE gene models
+    what: Consequence, impact, transcript (MANE Select first), exon/intron, HGVS, HGNC symbol
+    level: variant
+    category: Consequence and transcript
+    provider: vep_cache
+    columns: [Consequence, IMPACT, Hugo_Symbol, Gene, Feature_type, Feature, BIOTYPE, EXON, INTRON,
+              HGVSc, cDNA_position, CDS_position, Protein_position, Amino_acids, Codons, DISTANCE,
+              STRAND, FLAGS, VARIANT_CLASS, SYMBOL_SOURCE, HGNC_ID, CANONICAL, CCDS, ENSP, SOURCE,
+              HGVS_OFFSET]
+  - id: mane
+    name: MANE (NCBI / EMBL-EBI)
+    what: MANE Select and MANE Plus Clinical transcript flags
+    level: variant
+    category: Consequence and transcript
+    provider: vep_cache
+    columns: [MANE, MANE_SELECT, MANE_PLUS_CLINICAL]
+  - id: uniprot_ids
+    name: UniProt (protein identifiers)
+    what: Swiss-Prot, TrEMBL and UniParc accessions of the affected protein
+    level: variant
+    category: Consequence and transcript
+    provider: vep_cache
+    columns: [SWISSPROT, TREMBL, UNIPARC, UNIPROT_ISOFORM]
+  - id: protein_domains
+    name: Protein domains (Pfam, PROSITE, SMART, …)
+    what: Protein domains and miRNA structures overlapped by the variant
+    level: variant
+    category: Consequence and transcript
+    provider: vep_cache
+    columns: [DOMAINS, miRNA]
+  - id: interpro
+    name: InterPro
+    what: InterPro domain of the affected residue
+    level: variant
+    category: Consequence and transcript
+    provider: dbnsfp
+    columns: [Interpro_domain]
+  - id: dbnsfp_transcripts
+    name: dbNSFP transcript and coordinate fields
+    what: Per-transcript IDs, HGVS (VEP and snpEff), codon details, GRCh37/hg18/T2T coordinates
+    level: variant
+    category: Consequence and transcript
+    kind: computed
+    provider: dbnsfp
+    columns: [aaref, aaalt, aapos, hg19_chr, 'hg19_pos\(1-based\)', hg18_chr, 'hg18_pos\(1-based\)',
+              hs1_chr, 'hs1_pos\(1-based\)', Ensembl_transcriptid, Uniprot_entry, HGVSc_snpEff,
+              HGVSp_VEP, GENCODE_basic, MANE_dbNSFP, refcodon, codonpos, codon_degeneracy]
+
+  # ── Variant level: known variants and literature ────────────────────────────────────────────────
+  - id: dbsnp
+    name: dbSNP
+    what: rsIDs and other known-variant identifiers (COSMIC, HGMD public) at the same position
+    level: variant
+    category: Known variants and literature
+    provider: vep_cache
+    columns: [Existing_variation, rs_dbSNP]
+  - id: ensembl_phenotypes
+    name: Ensembl variation phenotypes and literature
+    what: Phenotype associations of the variant and gene, somatic status, PubMed IDs
+    level: variant
+    category: Known variants and literature
+    provider: vep_cache
+    columns: [GENE_PHENO, PHENO, SOMATIC, PUBMED]
+  - id: gwas_catalog
+    name: GWAS Catalog
+    what: Published genome-wide associations of the variant (study, trait, p-value, effect) and of the gene
+    level: variant
+    category: Known variants and literature
+    provider: dbnsfp_gene
+    columns: ['GWAS_.*', 'Trait_association\(GWAS\)']
+    note: "Gene-level traits from dbNSFP's gene file, variant-level GWAS_* columns from the VEP GWAS plugin."
+
+  # ── Variant level: clinical assertions ──────────────────────────────────────────────────────────
+  - id: clinvar
+    name: ClinVar
+    what: Clinical significance, review status, condition, conflicting submissions, cross-references
+    level: variant
+    category: Clinical assertions
+    provider: clinvar
+    columns: [CLNSIG, CLNREVSTAT, CLNDN, CLNSIGCONF, CLNDISDB, CLNHGVS, GENEINFO, ALLELEID,
+              ClinVar_RS, MC, encoded_CLNSIG, encoded_CLNREVSTAT, clinvar_id, clinvar_hgvs,
+              clinvar_var_source, clinvar_MedGen_id, clinvar_OMIM_id, clinvar_Orphanet_id]
+  - id: clingen_vcep
+    name: ClinGen expert-panel classifications
+    what: Variant classifications by ClinGen Variant Curation Expert Panels, with ACMG evidence codes
+    level: variant
+    category: Clinical assertions
+    provider: clingen_erepo
+    columns: [ClinGenVCEP, 'ClinGen_Variant_.*']
+
+  # ── Variant level: population frequency ─────────────────────────────────────────────────────────
+  - id: gnomad41
+    name: gnomAD v4.1
+    what: Exome, genome and joint allele frequencies by ancestry group; the maximum population frequency
+    level: variant
+    category: Population frequency
+    provider: vep_cache
+    columns: ['gnomADe_.*', 'gnomADg_.*', 'gnomAD4\.1_joint.*', MAX_AF, MAX_AF_POPS]
+  - id: gnomad211
+    name: gnomAD v2.1.1
+    what: Exome frequencies in the controls, non-cancer and non-neuro subsets
+    level: variant
+    category: Population frequency
+    provider: dbnsfp
+    columns: ['gnomAD2\.1\.1_exomes_.*']
+  - id: kg
+    name: 1000 Genomes phase 3
+    what: Allele frequencies in five continental groups
+    level: variant
+    category: Population frequency
+    provider: vep_cache
+    columns: [AF, AFR_AF, AMR_AF, EAS_AF, EUR_AF, SAS_AF, '1000Gp3_.*']
+  - id: topmed
+    name: TOPMed (freeze 8)
+    what: Allele frequencies from the NHLBI TOPMed programme
+    level: variant
+    category: Population frequency
+    provider: dbnsfp
+    columns: ['TOPMed_frz8_.*']
+  - id: alfa
+    name: ALFA (NCBI)
+    what: Allele frequencies in 12 populations from dbGaP studies
+    level: variant
+    category: Population frequency
+    provider: dbnsfp
+    columns: ['ALFA_.*']
+  - id: allofus
+    name: All of Us
+    what: Allele frequencies by ancestry group from the All of Us Research Program
+    level: variant
+    category: Population frequency
+    provider: dbnsfp
+    columns: ['AllofUs_.*']
+  - id: rgc_me
+    name: Regeneron Genetics Center Million Exomes
+    what: Allele frequencies in about 30 populations (academic use only)
+    level: variant
+    category: Population frequency
+    provider: dbnsfp
+    columns: ['RegeneronME_.*']
+  - id: dbnsfp_popmax
+    name: dbNSFP population maximum
+    what: Highest frequency across the population databases dbNSFP carries
+    level: variant
+    category: Population frequency
+    kind: computed
+    provider: dbnsfp
+    columns: ['dbNSFP_POPMAX_.*']
+  - id: archaic
+    name: Archaic hominin genomes
+    what: Genotypes of the Altai, Vindija and Chagyrskaya Neanderthals and the Denisovan
+    level: variant
+    category: Population frequency
+    provider: dbnsfp
+    columns: [AltaiNeandertal, Denisova, VindijiaNeandertal, ChagyrskayaNeandertal]
+
+  # ── Variant level: pathogenicity predictors ─────────────────────────────────────────────────────
+  - id: sift
+    name: "SIFT"
+    what: "Sequence-conservation missense predictor, for the transcript VEP picked"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: vep_cache
+    columns: [SIFT]
+  - id: sift_dbnsfp
+    name: "SIFT (dbNSFP)"
+    what: "SIFT scores and predictions across transcripts"
+    level: variant
+    category: "Pathogenicity predictors"
+    kind: copy
+    provider: dbnsfp
+    columns: ['SIFT_.*']
+  - id: sift4g
+    name: "SIFT4G"
+    what: "Fast SIFT on a newer protein database"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['SIFT4G_.*']
+  - id: polyphen2
+    name: "PolyPhen-2"
+    what: "Structure and conservation missense predictor, for the transcript VEP picked"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: vep_cache
+    columns: [PolyPhen]
+  - id: polyphen2_dbnsfp
+    name: "PolyPhen-2 (dbNSFP)"
+    what: "PolyPhen-2 HumDiv and HumVar scores and predictions across transcripts"
+    level: variant
+    category: "Pathogenicity predictors"
+    kind: copy
+    provider: dbnsfp
+    columns: ['Polyphen2_.*']
+  - id: mutationtaster
+    name: "MutationTaster"
+    what: "Disease-causing potential of sequence changes"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MutationTaster_.*']
+  - id: mutationassessor
+    name: "MutationAssessor"
+    what: "Functional impact from evolutionary conservation"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MutationAssessor_.*']
+  - id: provean
+    name: "PROVEAN"
+    what: "Alignment-based impact of amino acid changes"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['PROVEAN_.*']
+  - id: vest4
+    name: "VEST4"
+    what: "Random-forest missense predictor"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['VEST4_.*']
+  - id: metasvm
+    name: "MetaSVM"
+    what: "SVM ensemble of predictors"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MetaSVM_.*', Reliability_index]
+  - id: metalr
+    name: "MetaLR"
+    what: "Logistic-regression ensemble of predictors"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MetaLR_.*']
+  - id: metarnn
+    name: "MetaRNN"
+    what: "Recurrent-neural-network ensemble"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MetaRNN_.*']
+  - id: mcap
+    name: "M-CAP"
+    what: "Clinical-grade missense classifier"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['M-CAP_.*']
+  - id: revel
+    name: "REVEL"
+    what: "Ensemble missense score"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['REVEL_.*']
+  - id: mutpred2
+    name: "MutPred2"
+    what: "Pathogenicity and likely molecular mechanisms"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MutPred2_.*']
+  - id: mvp
+    name: "MVP"
+    what: "Deep-learning missense predictor"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MVP_.*']
+  - id: gmvp
+    name: "gMVP"
+    what: "Graph-attention missense predictor"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['gMVP_.*']
+  - id: misfit
+    name: "MisFit"
+    what: "Selection-based missense fitness (dominant and selection scores)"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MisFit_.*']
+  - id: mpc
+    name: "MPC"
+    what: "Missense badness with regional constraint"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MPC_.*']
+  - id: primateai
+    name: "PrimateAI"
+    what: "Deep learning on primate variation"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['PrimateAI_.*']
+  - id: deogen2
+    name: "DEOGEN2"
+    what: "Variant and gene-level features combined"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['DEOGEN2_.*']
+  - id: bayesdel
+    name: "BayesDel"
+    what: "Bayesian deleteriousness score (with and without AF)"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['BayesDel_.*']
+  - id: clinpred
+    name: "ClinPred"
+    what: "Classifier trained on ClinVar"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['ClinPred_.*']
+  - id: lists2
+    name: "LIST-S2"
+    what: "Taxonomy-aware conservation predictor"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['LIST-S2_.*']
+  - id: varity
+    name: "VARITY"
+    what: "Rare-variant-focused missense predictor"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['VARITY_.*']
+  - id: esm1b
+    name: "ESM1b"
+    what: "Protein language model"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['ESM1b_.*']
+  - id: alphamissense
+    name: "AlphaMissense"
+    what: "Protein structure-aware deep learning (Google DeepMind)"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['AlphaMissense_.*']
+    note: "From dbNSFP, read on the MANE transcript; rows dbNSFP leaves empty are filled from the VEP AlphaMissense plugin, and AlphaMissense_source says which copy each row holds."
+  - id: phactboost
+    name: "PHACTboost"
+    what: "Phylogeny-aware gradient boosting"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['PHACTboost_.*']
+  - id: mutformer
+    name: "MutFormer"
+    what: "Transformer protein language model"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MutFormer_.*']
+  - id: mutscore
+    name: "MutScore"
+    what: "Positional clustering of pathogenic variants"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['MutScore_.*']
+  - id: popeve
+    name: "popEVE"
+    what: "Evolutionary model calibrated across the proteome"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['popEVE_.*']
+  - id: aloft
+    name: "ALoFT"
+    what: "Loss-of-function variants classified as tolerated, recessive or dominant"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['Aloft_.*']
+  - id: cadd
+    name: "CADD"
+    what: "Genome-wide deleteriousness (PHRED-scaled)"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: [CADD_PHRED, CADD_RAW, CADD_raw_rankscore]
+    note: "PHRED and raw scores from the VEP plugin; the rank score from dbNSFP."
+  - id: dann
+    name: "DANN"
+    what: "Deep-network deleteriousness"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['DANN_.*']
+  - id: fathmmxf
+    name: "fathmm-XF"
+    what: "Coding-variant pathogenicity"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['fathmm-XF_.*']
+  - id: eigen
+    name: "Eigen"
+    what: "Unsupervised functional score (Eigen and Eigen-PC)"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: dbnsfp
+    columns: ['Eigen-.*']
+  - id: eve
+    name: "EVE"
+    what: "Evolutionary model of variant effect"
+    level: variant
+    category: "Pathogenicity predictors"
+    provider: vep_plugins
+    plugin: EVE
+    manifest: vep_eve
+    mode: extended
+    columns: ['EVE_.*']
+
+  # ── Variant level: splicing ─────────────────────────────────────────────────────────────────────
+  - id: splicevault
+    name: "SpliceVault"
+    what: "Mis-splicing events seen in RNA-seq, with the SpliceAI delta"
+    level: variant
+    category: "Splicing"
+    provider: vep_plugins
+    plugin: SpliceVault
+    manifest: vep_splicevault
+    mode: extended
+    columns: ['SpliceVault_.*']
+  - id: maxentscan
+    name: "MaxEntScan"
+    what: "Splice-site strength before and after the variant"
+    level: variant
+    category: "Splicing"
+    provider: vep_plugins
+    plugin: MaxEntScan
+    manifest: vep_maxentscan
+    mode: extended
+    columns: ['MaxEntScan_.*']
+  - id: dbscsnv
+    name: "dbscSNV"
+    what: "Ensemble splice-altering predictions (AdaBoost and random forest)"
+    level: variant
+    category: "Splicing"
+    provider: vep_plugins
+    plugin: dbscSNV
+    manifest: vep_dbscsnv
+    mode: extended
+    columns: [ada_score, rf_score]
+
+  # ── Variant level: regulatory and functional assays ─────────────────────────────────────────────
+  - id: ensembl_regulation
+    name: "Ensembl Regulatory Build"
+    what: "Transcription-factor motifs and binding changes"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_cache
+    columns: [MOTIF_NAME, MOTIF_POS, HIGH_INF_POS, MOTIF_SCORE_CHANGE, TRANSCRIPTION_FACTORS]
+  - id: enformer
+    name: "Enformer"
+    what: "Predicted effect on gene expression (deep learning)"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: Enformer
+    manifest: vep_enformer
+    mode: extended
+    columns: ['Enformer_.*']
+  - id: utrannotator
+    name: "UTRannotator"
+    what: "Effect of 5′UTR variants on upstream open reading frames"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: UTRAnnotator
+    manifest: vep_utrannotator
+    mode: extended
+    columns: ['5UTR_.*', Existing_InFrame_oORFs, Existing_OutOfFrame_oORFs, Existing_uORFs]
+  - id: mavedb
+    name: "MaveDB"
+    what: "Scores from multiplexed assays of variant effect"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: MaveDB
+    manifest: vep_mavedb
+    mode: extended
+    columns: ['MaveDB_.*']
+  - id: mutfunc
+    name: "mutfunc"
+    what: "Predicted effect on linear motifs"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: mutfunc
+    manifest: vep_mutfunc
+    mode: extended
+    columns: ['mutfunc_.*']
+  - id: ancestral
+    name: "Ensembl ancestral alleles"
+    what: "Inferred ancestral allele from primate alignments"
+    level: variant
+    category: "Regulatory and functional"
+    provider: dbnsfp
+    columns: [AA, Ancestral_allele]
+    note: "AA from the VEP plugin; Ancestral_allele from dbNSFP."
+  - id: referencequality
+    name: "GRC reference issues"
+    what: "Known problems of the reference genome at the variant site"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: ReferenceQuality
+    manifest: vep_referencequality
+    mode: extended
+    columns: [ReferenceQuality]
+  - id: vep_computed
+    name: "VEP computed fields"
+    what: "Downstream protein effect, NMD escape, splice region, TSS distance, intronic HGVS offsets (plugins Downstream, NMD, SpliceRegion, TSSDistance, HGVSIntronOffset, SingleLetterAA)"
+    level: variant
+    category: "Consequence and transcript"
+    kind: computed
+    provider: vep_plugins
+    mode: extended
+    columns: [DownstreamProtein, ProteinLengthChange, NMD, SpliceRegion, TSSDistance, 'HGVS_Intron.*']
+
+  # ── Variant level: conservation ─────────────────────────────────────────────────────────────────
+  - id: gerp
+    name: "GERP++ / GERP (92 mammals)"
+    what: "Constrained-element rejected substitutions"
+    level: variant
+    category: "Conservation"
+    provider: dbnsfp
+    columns: ['GERP\+\+_.*', 'GERP_92_mammals.*']
+  - id: phylop
+    name: "phyloP"
+    what: "Base-wise conservation in vertebrates, mammals and primates"
+    level: variant
+    category: "Conservation"
+    provider: dbnsfp
+    columns: ['phyloP.*']
+  - id: phastcons
+    name: "phastCons"
+    what: "Conserved-element probability in vertebrates, mammals and primates"
+    level: variant
+    category: "Conservation"
+    provider: dbnsfp
+    columns: ['phastCons.*']
+  - id: bstatistic
+    name: "B statistic"
+    what: "Background selection"
+    level: variant
+    category: "Conservation"
+    provider: dbnsfp
+    columns: ['bStatistic.*']
+
+  # ── Gene level ──────────────────────────────────────────────────────────────────────────────────
+  - id: clingen_validity
+    name: "ClinGen gene–disease validity"
+    what: "Strength of evidence that the gene causes the disease, and mode of inheritance"
+    level: gene
+    category: "Gene–disease"
+    provider: clingen_gene
+    columns: ['ClinGen_GeneDisease_.*']
+  - id: clingen_dosage
+    name: "ClinGen dosage sensitivity"
+    what: "Haploinsufficiency and triplosensitivity scores"
+    level: gene
+    category: "Gene–disease"
+    provider: clingen_gene
+    columns: ['ClinGen_Haploinsufficiency_.*', 'ClinGen_Triplosensitivity_.*']
+  - id: clingen_actionability
+    name: "ClinGen actionability"
+    what: "Clinical actionability for adult and paediatric contexts"
+    level: gene
+    category: "Gene–disease"
+    provider: clingen_gene
+    columns: ['ClinGen_Actionability_.*']
+  - id: omim
+    name: "OMIM"
+    what: "Mendelian disorders linked to the gene"
+    level: gene
+    category: "Gene–disease"
+    provider: dbnsfp_gene
+    columns: [OMIM_id, MIM_phenotype_id, MIM_disease]
+  - id: orphanet
+    name: "Orphanet"
+    what: "Rare diseases linked to the gene and the type of association"
+    level: gene
+    category: "Gene–disease"
+    provider: dbnsfp_gene
+    columns: ['Orphanet_.*']
+  - id: gencc
+    name: "GenCC"
+    what: "Harmonised gene–disease validity from multiple curators"
+    level: gene
+    category: "Gene–disease"
+    provider: dbnsfp_gene
+    columns: ['GenCC_.*']
+  - id: hpo
+    name: "HPO gene terms (dbNSFP)"
+    what: "Phenotype terms annotated to the gene, as dbNSFP carries them"
+    level: gene
+    category: "Gene–disease"
+    provider: dbnsfp_gene
+    columns: [HPO_id, HPO_name]
+  - id: uniprot_function
+    name: "UniProt (function)"
+    what: "Protein function, disease involvement, tissue specificity and pathways"
+    level: gene
+    category: "Function and pathways"
+    provider: dbnsfp_gene
+    columns: [Function_description, Disease_description, 'Tissue_specificity\(Uniprot\)', 'Pathway\(Uniprot\)']
+  - id: go
+    name: "Gene Ontology"
+    what: "Biological process, cellular component and molecular function"
+    level: gene
+    category: "Function and pathways"
+    provider: dbnsfp_gene
+    columns: ['GO_.*']
+  - id: kegg
+    name: "KEGG"
+    what: "Pathways"
+    level: gene
+    category: "Function and pathways"
+    provider: dbnsfp_gene
+    columns: ['Pathway\(KEGG\)_.*']
+  - id: biocarta
+    name: "BioCarta"
+    what: "Pathways"
+    level: gene
+    category: "Function and pathways"
+    provider: dbnsfp_gene
+    columns: ['Pathway\(BioCarta\)_.*']
+  - id: consensuspathdb
+    name: "ConsensusPathDB"
+    what: "Integrated pathways"
+    level: gene
+    category: "Function and pathways"
+    provider: dbnsfp_gene
+    columns: ['Pathway\(ConsensusPathDB\)']
+  - id: hpa
+    name: "Human Protein Atlas"
+    what: "Consensus RNA expression in 50 tissues"
+    level: gene
+    category: "Expression"
+    provider: dbnsfp_gene
+    columns: ['HPA_consensus_.*']
+  - id: gnomad_constraint
+    name: "gnomAD gene constraint"
+    what: "pLI, LOEUF, missense and LoF observed/expected"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: [gnomAD_pLI, gnomAD_pRec, gnomAD_pNull, gnomAD_lof.oe, gnomAD_mis.oe, gnomAD_LOEUF, gnomAD_MOEUF]
+  - id: exac_constraint
+    name: "ExAC gene constraint"
+    what: "pLI (all, non-TCGA, non-psych), CNV scores, LoF FDR"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: ['ExAC_.*', LoF-FDR_ExAC, pLI_gene_value]
+    note: "pLI_gene_value comes from the VEP pLI plugin."
+  - id: rvis
+    name: "RVIS"
+    what: "Residual variation intolerance (EVS and ExAC)"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: ['RVIS_.*']
+  - id: gdi
+    name: "Gene Damage Index"
+    what: "Accumulated mutational damage and disease-gene predictions"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: [GDI, GDI-Phred, 'Gene damage prediction .*']
+  - id: loftool
+    name: "LoFtool"
+    what: "Gene intolerance to loss of function"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: [LoFtool_score]
+  - id: haploinsufficiency
+    name: "Haploinsufficiency predictions"
+    what: "P(HI) (Huang et al.), HIPred and GHIS"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: ['P\(HI\)', HIPred_score, HIPred, GHIS]
+  - id: recessive
+    name: "Recessive disease genes"
+    what: "Probability of being a recessive disease gene, known recessive status"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: ['P\(rec\)', Known_rec_info]
+  - id: essential
+    name: "Essential genes"
+    what: "Essentiality from CRISPR and gene-trap screens, indispensability"
+    level: gene
+    category: "Constraint and dosage"
+    provider: dbnsfp_gene
+    columns: ['Essential_gene.*', 'Gene_indispensability_.*']
+  - id: mgi
+    name: "MGI (mouse)"
+    what: "Mouse orthologue and its phenotypes"
+    level: gene
+    category: "Model organisms"
+    provider: dbnsfp_gene
+    columns: ['MGI_.*']
+  - id: zfin
+    name: "ZFIN (zebrafish)"
+    what: "Zebrafish orthologue and its phenotypes"
+    level: gene
+    category: "Model organisms"
+    provider: dbnsfp_gene
+    columns: ['ZFIN_.*']
+  - id: phenotypeorthologous
+    name: "Ensembl orthologue phenotypes"
+    what: "Phenotypes of the mouse and rat orthologues"
+    level: gene
+    category: "Model organisms"
+    provider: vep_plugins
+    plugin: PhenotypeOrthologous
+    manifest: vep_phenotypeorthologous
+    mode: extended
+    columns: ['PhenotypeOrthologous_.*']
+  - id: gene_ids
+    name: "Gene identifiers (HGNC, NCBI Gene, RefSeq, UCSC)"
+    what: "Full name, previous and alternative symbols, cross-references"
+    level: gene
+    category: "Function and pathways"
+    provider: dbnsfp_gene
+    columns: [Gene_old_names, Gene_other_names, Entrez_gene_id, Refseq_id, ucsc_id, Gene_full_name]
+
+  # ── Scores and classification ───────────────────────────────────────────────────────────────────
+  - id: renovo
+    name: "RENOVO 1.5"
+    what: "Machine-learning pathogenicity probability and six-class call for every variant"
+    level: score
+    category: "Classification"
+    provider: renovo
+    columns: [RENOVO_Class, PL_score]
+  - id: genebe_acmg
+    name: "GeneBe ACMG/AMP"
+    what: "Automated ACMG/AMP criteria and points-based score"
+    level: score
+    category: "Classification"
+    provider: genebe
+    mode: online
+    columns: ['acmg_.*']
+  - id: renovo_acmg
+    name: "RENOVO-adjusted ACMG score"
+    what: "GeneBe's ACMG score moved toward pathogenic or benign by RENOVO for missense variants"
+    level: score
+    category: "Classification"
+    kind: computed
+    provider: renovo_acmg
+    columns: [renovo_adj_acmg_score]
+  - id: clinvar_residues
+    name: "ClinVar residue evidence (PS1, PM5)"
+    what: "Pathogenic ClinVar variants at the same amino-acid residue: the same change from another nucleotide change (PS1), or another change (PM5)"
+    level: score
+    category: "Classification"
+    kind: computed
+    provider: clinvar_residues
+    columns: [ClinVar_PS1, ClinVar_PM5]
+
+  # ── Patient phenotype ───────────────────────────────────────────────────────────────────────────
+  - id: hpo_match
+    name: "Human Phenotype Ontology (ontology and annotations)"
+    what: "The patient's HPO terms against the gene's: exact, narrower or broader match, similarity score, best-matching OMIM/Orphanet disease, and the phenotype gene panel the filtered MAF uses"
+    level: gene
+    category: "Patient phenotype"
+    provider: hpo
+    columns: [HPO_match, HPO_match_score, HPO_matched_terms, HPO_best_disease, HPO_panel]
+    note: "Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms."
+
+  # ── MAF format and call information ─────────────────────────────────────────────────────────────
+  - id: input_vcf
+    name: Input VCF
+    what: Call quality, filter status, genotype and the original INFO and FORMAT fields
+    level: format
+    category: Call information
+    kind: computed
+    provider: musa
+    columns: [QUAL, FILTER, bioinfo_params, FORMAT_FIELDS, FORMAT_VALUES, INFO, FORMAT, '{sample}']
+  - id: maf_format
+    name: MAF format (vcf2maf)
+    what: Standard MAF columns, genomic coordinates, picked-transcript fields
+    level: format
+    category: Call information
+    kind: computed
+    provider: vcf2maf
+    columns: [Center, NCBI_Build, Chromosome, Start_Position, End_Position, Strand,
+              Variant_Classification, Variant_Type, Reference_Allele, Tumor_Seq_Allele1,
+              Tumor_Seq_Allele2, dbSNP_RS, dbSNP_Val_Status, Tumor_Sample_Barcode,
+              Matched_Norm_Sample_Barcode, Match_Norm_Seq_Allele1, Match_Norm_Seq_Allele2,
+              Tumor_Validation_Allele1, Tumor_Validation_Allele2, Match_Norm_Validation_Allele1,
+              Match_Norm_Validation_Allele2, Verification_Status, Validation_Status,
+              Mutation_Status, Sequencing_Phase, Sequence_Source, Validation_Method, Score,
+              BAM_File, Sequencer, Tumor_Sample_UUID, Matched_Norm_Sample_UUID, Transcript_ID,
+              t_depth, t_ref_count, t_alt_count, n_depth, n_ref_count, n_alt_count, all_effects,
+              ALLELE_NUM, RefSeq, ASN_AF, AA_AF, EA_AF, PICK, MINIMISED, flanking_bps, vcf_id,
+              vcf_ref, vcf_alt]
+  - id: musa_context
+    name: "MuSA sequence context"
+    what: "Genome change notation and reference sequence context"
+    level: format
+    category: "Call information"
+    kind: computed
+    provider: musa
+    columns: [genome_change, ref_context]

@@ -33,7 +33,12 @@ def changed_keys(old_entries, new_entries):
         if new_e.get("version", "") != old_e.get("version", ""):
             changed.append(key)
             continue
-        if new_e.get("expected_sha256", "") != old_e.get("expected_sha256", ""):
+        # An entry the manifest leaves unpinned (expected_sha256 "") is compared by version only:
+        # setup records the hash it computed as the installed entry's expected_sha256 (trust on
+        # first use), so comparing it with the manifest's empty value marked every unpinned entry
+        # (ClinVar, ClinGen) as changed, and each --update_db_only downloaded them again.
+        new_sha = new_e.get("expected_sha256", "")
+        if new_sha and new_sha != old_e.get("expected_sha256", ""):
             changed.append(key)
     return changed
 

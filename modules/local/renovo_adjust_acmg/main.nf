@@ -5,7 +5,7 @@
  */
 
 process RENOVO_ADJUST_ACMG {
-    tag "renovo-adjust"
+    tag "${meta.patient} | ACMG adjusted by RENOVO 1.5"
         cpus params.n_core
     memory { 18.GB * task.attempt }
     errorStrategy 'retry'

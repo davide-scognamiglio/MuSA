@@ -1,9 +1,10 @@
 include { MERGE_YAML as MERGE_EXTENDED_YAML } from '../../../modules/local/merge_yaml'
+include { DOWNLOAD_DBNSFP } from '../../../modules/local/download_dbnsfp'
+include { REFRESH_DBNSFP_ALIGNED_COLUMNS } from '../refresh_dbnsfp_aligned_columns'
 
 include { DOWNLOAD_ALPHAMISSENSE } from '../../../modules/local/download_alphamissense'
 include { DOWNLOAD_ANCESTRALALLELE } from '../../../modules/local/download_ancestralallele'
 include { DOWNLOAD_CADD } from '../../../modules/local/download_cadd'
-include { DOWNLOAD_CLINPRED } from '../../../modules/local/download_clinpred'
 include { DOWNLOAD_DBSCSNV } from '../../../modules/local/download_dbscsnv'
 include { DOWNLOAD_ENFORMER } from '../../../modules/local/download_enformer'
 include { DOWNLOAD_EVE } from '../../../modules/local/download_eve'
@@ -28,15 +29,26 @@ workflow EXTENDED_SETUP {
 
         /*
          * FAN-OUT: every module consumes SAME merged YAML + changed-entries gate.
-         * dbNSFP is not here: BASIC_SETUP always runs first and already installs it (and its
-         * aligned-columns file), and basic_yaml_ch carries its computed_sha256 into every partial
-         * YAML merged below. Outside --update_db_only nothing skips a download, so calling
-         * DOWNLOAD_DBNSFP here again fetched and reinstalled the ~47 GB zip a second time.
+         * dbNSFP is extended mode since 1.3: it needs a registration, and its ~47 GB serve
+         * extended annotation only (its predictors, its gene file and RENOVO 1.5, which reads its
+         * scores). It comes from the user (see checkDbnsfpSource in main.nf): a zip on disk, else
+         * a URL. ClinPred is not here: dbNSFP carries the same scores (99.97% identical on NA12878), so its VEP
+         * plugin (5.7 GB) added a score for 0.4% of variants. AlphaMissense stays: its plugin fills
+         * the ~6% of missense variants whose MANE transcript has no AlphaMissense value in dbNSFP
+         * (CLEAN_COLUMNS merges the two).
          */
+        dbnsfp_zip = params.dbnsfp_zip ? file(params.dbnsfp_zip, checkIfExists: true) : file("${projectDir}/assets/NO_FILE")
+        dbnsfp_ch  = DOWNLOAD_DBNSFP(basic_yaml_ch, changed_entries_ch, dbnsfp_zip, params.dbnsfp_url ?: "")
+
+        // Rebuild dbnsfp_transcript_aligned_columns.txt when dbNSFP changed (or was never built for
+        // the current install); no-ops otherwise, see the subworkflow's doc comment. basic_yaml_ch
+        // doubles as the "reference genome installed" token: BASIC_SETUP emits it only after
+        // DOWNLOAD_REFGENOME has finished.
+        REFRESH_DBNSFP_ALIGNED_COLUMNS(dbnsfp_ch, basic_yaml_ch)
+
         alphamissense_ch      = DOWNLOAD_ALPHAMISSENSE(basic_yaml_ch, changed_entries_ch)
         ancestralallele_ch    = DOWNLOAD_ANCESTRALALLELE(basic_yaml_ch, changed_entries_ch)
         cadd_ch               = DOWNLOAD_CADD(basic_yaml_ch, changed_entries_ch)
-        clinpred_ch           = DOWNLOAD_CLINPRED(basic_yaml_ch, changed_entries_ch)
         dbscsnv_ch            = DOWNLOAD_DBSCSNV(basic_yaml_ch, changed_entries_ch)
         enformer_ch           = DOWNLOAD_ENFORMER(basic_yaml_ch, changed_entries_ch)
         eve_ch                = DOWNLOAD_EVE(basic_yaml_ch, changed_entries_ch)
@@ -54,10 +66,10 @@ workflow EXTENDED_SETUP {
          * FAN-IN: merge all updated YAMLs
          */
         merged_input =
-            alphamissense_ch
-            .mix(ancestralallele_ch,
+            dbnsfp_ch
+            .mix(alphamissense_ch,
+                ancestralallele_ch,
                 cadd_ch,
-                clinpred_ch,
                 dbscsnv_ch,
                 enformer_ch,
                 eve_ch,

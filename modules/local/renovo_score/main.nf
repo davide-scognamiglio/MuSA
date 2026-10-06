@@ -10,7 +10,7 @@
  */
 
 process RENOVO_SCORE {
-    tag "renovo-score"
+    tag "${meta.patient} | RENOVO 1.5"
     // Measured on exomes and 50,000-variant ClinVar chunks: 3-8 s and ~0.45 GB. Reading the table is the
     // only multithreaded step and gains nothing beyond 4 threads.
     cpus 4

@@ -1,0 +1,98 @@
+include {VEP_ANNOTATE_VCF} from '../../../modules/local/vep_annotate_vcf'
+include {SPLIT_VCF_BY_CHR} from '../../../modules/local/split_vcf_by_chr'
+include {DBNSFP_ANNOTATE_VCF_CHR} from '../../../modules/local/dbnsfp_annotate_vcf_chr'
+include {GATHER_DBNSFP_TSV} from '../../../modules/local/gather_dbnsfp_tsv'
+include {GENEBE_ANNOTATE_VCF} from '../../../modules/local/genebe_annotate_vcf'
+include {VCF_TO_MAF} from '../../../modules/local/vcf_to_maf'
+include {PARSE_VEP_ANNOTATION} from '../../../modules/local/parse_vep_annotation'
+include {MERGE_ANNOTATIONS} from '../../../modules/local/merge_annotations'
+include {RENOVO_SCORE} from '../../../modules/local/renovo_score'
+include {ADD_GENOME_CHANGE} from '../../../modules/local/add_genome_change'
+include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
+include {CLEAN_COLUMNS} from '../../../modules/local/clean_columns'
+include {chrom_list} from '../../../lib/annot_utils.nf'
+
+/*
+ * Stage 1 of ANNOTATE: everything known about each variant, merged into one row per variant.
+ *
+ *   VEP_ANNOTATE_VCF         Ensembl VEP cache (gene models, MANE, dbSNP, gnomAD v4.1, 1000 Genomes,
+ *                            regulation, phenotypes) + ClinVar and ClinGen expert-panel
+ *                            classifications (VEP --custom) + VEP plugins in extended mode
+ *   GENEBE_ANNOTATE_VCF      GeneBe ACMG/AMP criteria (online mode)
+ *   DBNSFP_ANNOTATE_VCF_CHR  dbNSFP: ~35 pathogenicity predictors, 6 population databases,
+ *                            conservation (sharded by chromosome; extended mode)
+ *   VCF_TO_MAF               MAF format and coordinates
+ *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant (extended mode)
+ *
+ * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
+ * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops. Eight of its
+ * thirteen inputs are dbNSFP scores, so it runs only when dbNSFP does: in basic mode its scores
+ * would be imputed medians, not predictions.
+ * assets/annotation_sources.yaml lists every source and the MAF columns it fills.
+ */
+workflow ANNOTATE_VARIANTS {
+
+    take: vcf
+
+    main:
+
+        /*
+         * Branch 1: VEP pipeline
+         */
+        vep_vcf   = VEP_ANNOTATE_VCF(vcf)
+        vep_gene  = params.offline ? vep_vcf : GENEBE_ANNOTATE_VCF(vep_vcf)
+        vep_tsv   = PARSE_VEP_ANNOTATION(vep_gene)
+
+        /*
+         * Branch 2: dbNSFP (scattered by chromosome, gathered back to one TSV per patient).
+         * Extended mode only; in basic mode MERGE_ANNOTATIONS gets the NO_FILE placeholder instead.
+         */
+        if (params.extended) {
+            // The wanted chromosomes travel as ONE value, not as a channel to cross with: SPLIT_VCF_BY_CHR
+            // now shards a VCF in a single pass instead of being fanned out one task per chromosome.
+            chr_ch = Channel.value(chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai"))
+
+            // transpose() turns (meta, [shard, shard, ...]) into one (meta, shard) per shard; the chr is
+            // recovered from the filename that SPLIT_VCF_BY_CHR wrote it into, rebuilding the exact
+            // (meta, chr, shard) tuple DBNSFP_ANNOTATE_VCF_CHR already expects.
+            dbnsfp_shards = SPLIT_VCF_BY_CHR(vcf, chr_ch)
+                .transpose()
+                .map { meta, shard ->
+                    def m = (shard.name =~ /\.([^.]+)\.shard\.vcf$/)
+                    if (!m) error "SPLIT_VCF_BY_CHR produced an unparseable shard name: ${shard.name}"
+                    tuple(meta, m[0][1], shard)
+                }
+            dbnsfp_shard_tsv = DBNSFP_ANNOTATE_VCF_CHR(dbnsfp_shards)
+
+            dbnsfp_tsv = GATHER_DBNSFP_TSV(
+                dbnsfp_shard_tsv
+                    .map { meta, chr, tsv -> tuple(meta, tsv) }
+                    .groupTuple()
+            )
+        } else {
+            dbnsfp_tsv = vcf.map { meta, _vcf -> tuple(meta, file("${projectDir}/assets/NO_FILE")) }
+        }
+
+        /*
+         * Branch 3: vcf2maf
+         */
+        maf = VCF_TO_MAF(vcf)
+        maf_g_change = ADD_GENOME_CHANGE(maf)
+        maf_context = ADD_REF_CONTEXT(maf_g_change)
+
+        /*
+         * Fan-in
+         */
+        joined =
+            vep_tsv
+            .join(dbnsfp_tsv)
+            .join(maf_context)
+
+        // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
+        // running as a branch of its own.
+        merged_tsv = MERGE_ANNOTATIONS(joined)
+        merged = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
+
+    emit:
+        merged
+}

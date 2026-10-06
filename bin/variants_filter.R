@@ -1,60 +1,17 @@
 #!/usr/bin/env Rscript
 
-suppressPackageStartupMessages({
-  library(httr)
-  library(jsonlite)
-})
-
-# =========================
-# HPO utilities
-# =========================
-get_genes_from_hpo_codes <- function(hpo_codes) {
-  genes_by_hpo <- list()
-
-  for (hpo in strsplit(hpo_codes, ";")[[1]]) {
-    encoded <- gsub(":", "%3A", hpo)
-    url <- paste0("https://ontology.jax.org/api/network/annotation/", encoded)
-
-    resp <- GET(url)
-    data <- fromJSON(content(resp, "text"))
-
-    if (!is.null(data$genes$name) && length(data$genes$name) < 1000) {
-      genes_by_hpo[[hpo]] <- data$genes$name
-    }
-  }
-
-  unique(unlist(genes_by_hpo))
-}
-
 # =========================
 # Panel construction
 # =========================
-build_gene_panel <- function(panel_file = NULL,
-                             hpo_codes = NULL,
-                             offline = FALSE) {
-
-  panel_genes <- character(0)
-  print(panel_file)
-
-  # 1. Static panel
-  if (!is.null(panel_file)) {
-    print("PANEL FILE IS NOT NULL!")
-    panel_df <- read.csv(panel_file, header = TRUE, stringsAsFactors = FALSE)
-    panel_genes <- panel_df[[1]]
-    print("PANEL FILE GENES:")
-    print(panel_genes)
-  }
-
-  # 2. HPO-derived genes
-  if (!is.null(hpo_codes) && !offline) {
-    print("CALLING HPO API!")
-    hpo_genes <- get_genes_from_hpo_codes(hpo_codes)
-    panel_genes <- c(panel_genes, hpo_genes)
-    print("HPO PANEL GENES:")
-    print(panel_genes)
-  }
-
-  unique(panel_genes)
+# The static panel (--panel) is a gene list. The phenotype panel is no longer looked up online:
+# HPO_MATCH has already marked each row HPO_panel = yes/no from the patient's HPO terms and the
+# installed HPO release (bin/hpo_match.py), and "." when no term is specific enough to filter on.
+read_static_panel <- function(panel_file = NULL) {
+  if (is.null(panel_file)) return(character(0))
+  panel_df <- read.csv(panel_file, header = TRUE, stringsAsFactors = FALSE)
+  genes <- unique(panel_df[[1]])
+  message("Static panel: ", length(genes), " genes")
+  genes
 }
 
 # =========================
@@ -78,10 +35,16 @@ filter_maf <- function(maf,
 
   filtered <- maf
 
-  # Panel filter
-  if (!is.null(panel_genes) && length(panel_genes) > 0 && "Hugo_Symbol" %in% colnames(filtered)) {
-    keep <- !is.na(filtered$Hugo_Symbol) &
-            filtered$Hugo_Symbol %in% panel_genes
+  # Panel filter: a row stays if its gene is in the static panel or HPO_MATCH put it in the
+  # phenotype panel. Either panel on its own filters; with neither, nothing is dropped here.
+  use_static <- length(panel_genes) > 0 && "Hugo_Symbol" %in% colnames(filtered)
+  use_hpo    <- "HPO_panel" %in% colnames(filtered) && any(!is.na(filtered$HPO_panel))
+  if (use_static || use_hpo) {
+    keep <- rep(FALSE, nrow(filtered))
+    if (use_static) keep <- keep | (!is.na(filtered$Hugo_Symbol) & filtered$Hugo_Symbol %in% panel_genes)
+    if (use_hpo)    keep <- keep | (!is.na(filtered$HPO_panel) & filtered$HPO_panel == "yes")
+    message("Panel filter (", paste(c(if (use_static) "static", if (use_hpo) "HPO"), collapse = " + "),
+            "): ", sum(keep), " of ", nrow(filtered), " variants kept")
     filtered <- filtered[keep, , drop = FALSE]
   }
 
@@ -118,8 +81,8 @@ normalize_arg <- function(x) {
 
 maf_file      <- normalize_arg(args[1])
 patient_code  <- normalize_arg(args[2])
-hpo_codes     <- normalize_arg(args[3])
-offline       <- if (!is.null(args[4])) as.logical(args[4]) else FALSE
+# args[3] (HPO terms) and args[4] (offline) are no longer read: HPO_MATCH turns the terms into the
+# HPO_panel column upstream, with no network. Kept as positions so the module call is unchanged.
 panel_file    <- normalize_arg(args[5])
 max_freq      <- if (!is.null(normalize_arg(args[6]))) as.numeric(args[6]) else NULL
 drop_benign   <- if (!is.null(normalize_arg(args[7]))) as.logical(args[7]) else FALSE
@@ -175,11 +138,7 @@ write.table(
 # =========================
 # Build panel and filter
 # =========================
-panel_genes <- build_gene_panel(
-  panel_file = panel_file,
-  hpo_codes  = hpo_codes,
-  offline    = offline
-)
+panel_genes <- read_static_panel(panel_file)
 
 filtered_maf <- filter_maf(
   maf         = raw_maf,

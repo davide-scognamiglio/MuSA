@@ -20,11 +20,10 @@
  * unchanged/skipped download leaves the existing file in place and this reliably no-ops, without
  * ever paying for the (cheap, but not free) java dbNSFP query.
  *
- * Takes `refgenome_ready` as a second completion token, not just `dbnsfp_ready`: BASIC_SETUP and
- * EXTENDED_SETUP run DOWNLOAD_DBNSFP and DOWNLOAD_REFGENOME in parallel, and chrom_list() reads the
- * reference .fai off disk with a plain (eager) Groovy file read. Called directly at workflow-script
- * level, that read would race DOWNLOAD_REFGENOME on a first-ever setup run, when the .fai does not
- * exist yet. Routing it through `.map{}` on refgenome_ready defers the read until that upstream
+ * Takes `refgenome_ready` as a second completion token, not just `dbnsfp_ready`: chrom_list() reads
+ * the reference .fai off disk with a plain (eager) Groovy file read, and the reference genome is
+ * installed by BASIC_SETUP. Called directly at workflow-script level, that read would run before
+ * DOWNLOAD_REFGENOME on a first-ever setup run, when the .fai does not exist yet. Routing it through `.map{}` on refgenome_ready defers the read until that upstream
  * value has actually arrived, the same trick `gated` below uses for the aligned-columns file.
  */
 
@@ -38,7 +37,7 @@ workflow REFRESH_DBNSFP_ALIGNED_COLUMNS {
 
     take:
         dbnsfp_ready     // DOWNLOAD_DBNSFP's manifest output — value only matters as a completion token
-        refgenome_ready  // DOWNLOAD_REFGENOME's output — same, needed before chrom_list() can read the .fai
+        refgenome_ready  // BASIC_SETUP's merged YAML (emitted after DOWNLOAD_REFGENOME) — needed before chrom_list() can read the .fai
 
     main:
 
@@ -50,8 +49,8 @@ workflow REFRESH_DBNSFP_ALIGNED_COLUMNS {
             tuple([patient: 'dbnsfp_probe'], file("${projectDir}/assets/dbnsfp_probe_variants.vcf"))
         }
 
-        // Same shard -> annotate -> gather composition as ANNOTATE_GERMLINE's dbNSFP branch
-        // (subworkflows/local/annotate_germline/main.nf) — kept in lock-step deliberately, so a
+        // Same shard -> annotate -> gather composition as ANNOTATE_VARIANTS's dbNSFP branch
+        // (subworkflows/local/annotate_variants/main.nf) — kept in lock-step deliberately, so a
         // future change to that chain's shape is a change here too, not a silent divergence.
         chr_ch = refgenome_ready.map {
             chrom_list("${params.data_dir}/vep_data/reference_genome/${params.build}.fa.fai")

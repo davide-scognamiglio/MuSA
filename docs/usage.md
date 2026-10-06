@@ -17,14 +17,33 @@ The pipeline has two workflows, selected with `--workflow`:
 
 ## Setup workflow
 
-Run this first. It populates `--data_dir` with the VEP cache, the native dbNSFP distribution,
-ClinVar/ClinGen, and the reference genome, recording a SHA-256 checksum for each in a versioned
-manifest.
+Run this first. It populates `--data_dir` with the annotation databases, recording a SHA-256
+checksum for each in a versioned manifest. MuSA has two modes, and the same `--extended` switch
+selects them for `setup` (what to download) and `annotate` (what to use):
+
+| Mode | Databases | Size | Adds to the MAF |
+|---|---|---|---|
+| **Basic** (default) | VEP cache, reference genome, ClinVar, ClinGen, Human Phenotype Ontology | ~30 GB | Consequence, gnomAD/1000 Genomes frequencies, ClinVar and ClinGen classifications, gene–disease validity, HPO match |
+| **Extended** (`--extended true`) | + dbNSFP and the data files of 21 VEP plugins | ~170 GB | + ~35 dbNSFP predictors, dbNSFP gene file (OMIM, Orphanet, constraint, ...), RENOVO 1.5 classes, VEP plugin scores |
+
+Basic setup:
 
 ```bash
 nextflow run MuSA \
    --workflow setup \
    --data_dir /path/to/musa_data \
+   -profile docker
+```
+
+**Extended setup** additionally fetches dbNSFP and the data files for all 21 VEP plugins, bringing
+the total to ~170 GB. Required before `annotate --extended true`; on a basic data directory it only
+adds what is missing:
+
+```bash
+nextflow run MuSA \
+   --workflow setup \
+   --data_dir /path/to/musa_data \
+   --extended true \
    --dbnsfp_url '<your dbNSFP download link>' \
    -profile docker
 ```
@@ -32,26 +51,18 @@ nextflow run MuSA \
 **dbNSFP comes from your own registration.** dbNSFP is free for academic, non-commercial use but
 distributed only to registered users, so the manifest carries its version and SHA-256 and no URL.
 Register at [dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) and pass the link you
-receive with `--dbnsfp_url`, or a zip you already downloaded with `--dbnsfp_zip`. `setup` stops at
-startup if neither is given, and fails if the file's SHA-256 differs from the manifest's. The link is
+receive with `--dbnsfp_url`, or a zip you already downloaded with `--dbnsfp_zip`. An extended
+`setup` stops at startup if neither is given, and fails if the file's SHA-256 differs from the manifest's. The link is
 kept out of the parameter summary and the task logs, and never written into `--data_dir`.
 
-**Basic setup** (the command above) fetches what routine diagnostics needs: ~72 GB.
-
-**Extended setup** additionally fetches the data files for all 22 VEP plugins, bringing the total to
-~173 GB. Required before `--use_vep_plugins true`:
-
-```bash
-nextflow run MuSA \
-   --workflow setup \
-   --data_dir /path/to/musa_data \
-   --dbnsfp_url '<your dbNSFP download link>' \
-   --download_vep_plugins true \
-   -profile docker
-```
+The 1.2 flags `--download_vep_plugins` and `--use_vep_plugins` still work as aliases of
+`--extended true`, with a deprecation warning.
 
 When setup finishes, `<data_dir>/setup_report.html` lists every resource with its version, source
 and checksum, marked `VERIFIED`, `MISMATCH` or `PENDING`.
+
+Behind a proxy, add `--http_proxy` / `--https_proxy`: the download tasks run in containers, which
+do not inherit the host's proxy settings.
 
 To refresh databases later without re-downloading what has not changed, add `--update_db_only true`.
 The manifest is diffed against what is already on disk and only changed entries are fetched.
@@ -94,7 +105,8 @@ Results land in `<outdir>/<date>/<patient>/` — see [output.md](output.md).
 
 ### Basic and extended annotation
 
-Basic annotation is the default. To use the full plugin suite (requires extended setup):
+Basic annotation is the default. Extended annotation adds dbNSFP, RENOVO 1.5 and the VEP plugins
+(requires the extended setup; `annotate` stops at startup if `--data_dir` has no dbNSFP):
 
 ```bash
 nextflow run MuSA \
@@ -102,7 +114,7 @@ nextflow run MuSA \
    --input ./samplesheet.csv \
    --outdir ./results \
    --data_dir /path/to/musa_data \
-   --use_vep_plugins true \
+   --extended true \
    -profile docker
 ```
 
@@ -119,8 +131,8 @@ Behind a proxy, add `--http_proxy` / `--https_proxy`. To keep online mode but sk
 instance when the API is rate-limited), add `--skip_genebe true`.
 
 > [!NOTE]
-> Online mode sends variant coordinates to an external service. HPO-driven filtering also queries
-> the HPO API. Everything else runs against local databases.
+> Online mode sends variant coordinates to GeneBe. Everything else, HPO matching included, runs
+> against local databases.
 
 ### Filtering
 
@@ -132,8 +144,22 @@ The filtered MAF is produced by three filters, all optional and independently ap
 | `--max_freq` | `null` | Drop variants above this population allele frequency, e.g. `0.05`. |
 | `--drop_benign` | `false` | Drop variants ClinVar reports as benign. |
 
-The samplesheet's `hpo` column adds a fourth, per-patient: genes associated with those HPO terms are
-retrieved from the HPO API and used as an additional panel.
+The samplesheet's `hpo` column adds a fourth, per-patient, phenotype panel. `HPO_MATCH` compares the
+patient's terms with every gene's annotations in the HPO release `setup` installed (`hp.obo`,
+`genes_to_phenotype.txt` and `phenotype.hpoa`, all from the same release) and writes five columns:
+
+| Column | Meaning |
+|---|---|
+| `HPO_match` | `exact` (gene annotated to the patient's term), `narrower` (to a more specific term under it), `broader` (only to a more general one), `none`, or `unannotated` (no HPO phenotype annotation for the gene) |
+| `HPO_match_score` | 0–1: for each patient term, the information content of the most specific term it shares with the gene, relative to its own; averaged. 1 = every term matched exactly or narrower |
+| `HPO_matched_terms` | how each related patient term matched, and through which gene term |
+| `HPO_best_disease` | the gene's OMIM/Orphanet disease whose phenotype best matches the patient, with its score |
+| `HPO_panel` | `yes` if the gene matches, exactly or narrower, a term specific enough to filter on (annotated to fewer than 1,000 genes), else `no`; `.` when no term is that specific, and then no phenotype filter is applied |
+
+A gene stays in the filtered MAF if it is in the static `--panel` or `HPO_panel` is `yes`. Only
+terms under *Phenotypic abnormality* are compared; obsolete and alternative IDs are mapped to the
+current term, and unknown ones are reported in the task log and ignored. A data directory set up
+before MuSA 1.3 has no HPO files: run `setup --update_db_only true` once to add them (about 67 MB).
 
 ### Other parameters
 
@@ -204,7 +230,7 @@ workflow: 'annotate'
 input: './samplesheet.csv'
 outdir: './results'
 data_dir: '/path/to/musa_data'
-use_vep_plugins: true
+extended: true
 ```
 
 > [!WARNING]

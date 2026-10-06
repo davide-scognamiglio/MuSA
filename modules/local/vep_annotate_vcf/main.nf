@@ -6,7 +6,7 @@
 
 
 process VEP_ANNOTATE_VCF {
-    tag "vep-annotation"
+    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.extended ? ' + 21 plugins' : ''}"
     cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3
@@ -29,7 +29,7 @@ process VEP_ANNOTATE_VCF {
         // --dir_cache and --dir_plugins stay explicit, so they keep overriding --dir for their own
         // lookups; --dir only supplies the base the plugin reads.
         """
-        if [[ "${params.use_vep_plugins}" == "true" ]]; then
+        if [[ "${params.extended}" == "true" ]]; then
             echo "Running VEP with plugins..."
             vep \\
                 -i $vcf \\
@@ -50,8 +50,7 @@ process VEP_ANNOTATE_VCF {
                 --custom file="/data/vep_data/ClinGen/clingen_pathogenicity.vcf.gz",short_name=ClinGenVCEP,format=vcf,type=exact,coords=0,fields=Assertion%EvidenceCodes%Disease \\
                 --plugin AlphaMissense,file="/data/vep_data/AlphaMissense/AlphaMissense_${params.build}.tsv.gz" \\
                 --plugin AncestralAllele,"/data/vep_data/AncestralAllele/homo_sapiens_ancestor_GRCh38.fa.gz" \\
-                --plugin CADD,snv="/data/vep_data/CADD/whole_genome_SNVs.tsv.gz" \\
-                --plugin ClinPred,file="/data/vep_data/ClinPred/ClinPred_${params.build}_sorted_tabbed.tsv.gz" \\
+                --plugin CADD,snv="/data/vep_data/CADD/whole_genome_SNVs.tsv.gz",indels="/data/vep_data/CADD/gnomad.genomes.r4.0.indel.tsv.gz" \\
                 --plugin dbscSNV,"/data/vep_data/dbscSNV/dbscSNV1.1_GRCh38.txt.gz" \\
                 --plugin Downstream \\
                 --plugin Enformer,file="/data/vep_data/Enformer/enformer_grch38.vcf.gz" \\

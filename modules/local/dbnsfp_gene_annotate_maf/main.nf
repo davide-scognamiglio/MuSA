@@ -13,7 +13,7 @@
  */
 
 process DBNSFP_GENE_ANNOTATE_MAF {
-    tag "dbnsfp-gene-annotate"
+    tag "${meta.patient} | dbNSFP genes: OMIM, Orphanet, GenCC, HPO, GO, pathways, expression, constraint"
     cpus params.n_core
     memory { 8.GB * task.attempt }
     errorStrategy 'retry'

@@ -5,7 +5,7 @@
  */
 
 process DBNSFP_ANNOTATE_VCF_CHR {
-    tag "dbNSFP-annotation-${meta.patient}-${chr}"
+    tag "${meta.patient} | dbNSFP ${chr}"
     cpus params.dbnsfp_shard_cpus
     maxForks params.dbnsfp_max_forks
     errorStrategy 'retry'

@@ -87,6 +87,35 @@ download_and_compute_sha() {
 }
 
 # ---------------------------------------------------------------------------------------
+# fetch_entry <manifest> <entry_key>
+#
+# Download one manifest entry (parsed by parse_manifest) into the current directory, fail if
+# it does not match the entry's expected_sha256 when the manifest pins one, and record its
+# computed_sha256 in <manifest>. Pass <manifest> as an absolute path: callers cd into the
+# folder they build.
+# ---------------------------------------------------------------------------------------
+fetch_entry() {
+    local manifest="$1"
+    local key="$2"
+    local url_var="${key}_url" method_var="${key}_method" out_var="${key}_out"
+    local expected_var="${key}_expected_sha256"
+    local sha expected
+
+    if [[ -z "${!url_var:-}" ]]; then
+        echo "[ERROR] '$url_var' is not set. Check your manifest." >&2
+        return 1
+    fi
+    sha=$(download_and_compute_sha "${!url_var}" "${!method_var}" "${!out_var}") || return 1
+
+    expected="${!expected_var:-}"
+    if [[ -n "$expected" && "$sha" != "$expected" ]]; then
+        echo "[ERROR] ${!out_var}: SHA-256 $sha does not match the manifest ($expected)" >&2
+        return 1
+    fi
+    write_computed_sha256 "$manifest" "$key" "$sha"
+}
+
+# ---------------------------------------------------------------------------------------
 # install_into_data <source_dir> <target_dir>
 #
 # Move a freshly downloaded directory out of the task work dir and into the data directory,
@@ -123,6 +152,53 @@ install_into_data() {
 }
 
 # ---------------------------------------------------------------------------------------
+# reuse_installed <entry_key> <changed_entries_file> <installed_file>
+#
+# For a module whose folder holds several manifest entries (CADD: SNVs, indels, indexes).
+# should_skip_module skips the whole module when none of its entries changed; when one did,
+# the module used to download every entry again, i.e. adding CADD's 1.3 GB indel file meant
+# fetching the 87 GB SNV file a second time. Under --update_db_only, an entry that did not
+# change and whose file is installed is reused instead: this prints its SHA-256 (re-hashed,
+# minutes rather than hours of download) and returns 0. Returns 1 when the entry must be
+# downloaded: a full setup (NO_FILE), an entry that changed, or a file that is not there.
+# ---------------------------------------------------------------------------------------
+reuse_installed() {
+    local key="$1"
+    local changed_entries_file="$2"
+    local installed="$3"
+
+    [[ "$(basename "$changed_entries_file")" == "NO_FILE" ]] && return 1
+    grep -qxF "$key" "$changed_entries_file" && return 1
+    [[ -s "$installed" ]] || return 1
+
+    echo "[INFO] $key unchanged -- reusing $installed" >&2
+    sha256sum "$installed" | awk '{print $1}'
+}
+
+# ---------------------------------------------------------------------------------------
+# install_files_into_data <source_dir> <target_dir>
+#
+# The per-file counterpart of install_into_data, for a module that reused part of its folder
+# (reuse_installed): the files downloaded now are moved into the existing <target_dir>, each
+# under a staging name first, and the files left in place are kept.
+# ---------------------------------------------------------------------------------------
+install_files_into_data() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local f name
+
+    mkdir -p "$target_dir"
+    for f in "$source_dir"/*; do
+        [[ -e "$f" ]] || continue
+        name=$(basename "$f")
+        mv "$f" "$target_dir/.$name.incoming"
+        mv "$target_dir/.$name.incoming" "$target_dir/$name"
+        echo "[INFO] installed $target_dir/$name"
+    done
+    match_data_dir_owner "$target_dir"
+}
+
+# ---------------------------------------------------------------------------------------
 # match_data_dir_owner <path>...
 #
 # Give each path, and any directory created between it and /data, to the owner of the data
@@ -134,7 +210,10 @@ install_into_data() {
 # ---------------------------------------------------------------------------------------
 match_data_dir_owner() {
     local owner path dir
-    owner=$(stat -c '%u:%g' /data)
+    # -L: in the VEP image /data is a symlink to /opt/vep/.vep (the mount lands on its target), and
+    # without it stat reports the symlink's owner, root, so files installed from that image
+    # stayed root-owned.
+    owner=$(stat -L -c '%u:%g' /data)
     if [[ "$(id -u)" == "${owner%%:*}" ]]; then
         return 0
     fi

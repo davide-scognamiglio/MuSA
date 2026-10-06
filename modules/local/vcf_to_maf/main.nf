@@ -6,7 +6,7 @@
 
 
 process VCF_TO_MAF {
-    tag "vcf2maf"
+    tag "${meta.patient} | vcf2maf"
         cpus params.n_core
     memory { 18.GB * task.attempt }
     container "dsbioinfo/vcf2maf:rebuild"
