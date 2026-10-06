@@ -96,6 +96,10 @@ process CLEAN_COLUMNS {
     # rather than "ENSP00000448059.1:p.Tyr414Cys", and "p.Leu385=" rather than VEP's URL-escaped
     # "p.Leu385%3D".
 
+    # UTRAnnotator writes 5UTR_annotation as key=value pairs in Perl hash order, which changes from
+    # run to run ("type=uORF:KozakContext=..." one time, "KozakContext=...:type=uORF" the next), so
+    # two runs of the same VCF differed. The pairs are sorted by key, inside each '&'-joined item.
+
     # AlphaMissense has two copies: dbNSFP's (per transcript, read on the MANE transcript) and the
     # VEP plugin's (extended mode; DeepMind's canonical-transcript file, matched by position). They
     # agree where both exist (median difference 0.004 on NA12878), but on ~6% of missense variants
@@ -111,6 +115,22 @@ process CLEAN_COLUMNS {
         for (i = 1; i <= m; i++) drop_orig[arr2[i]] = 1
     }
     function empty(v) { return v == "" || v == "." || v == "NA" || v == "nan" }
+    function sort_pairs(v,   items, n, i, out, pairs, m, j, k, t) {
+        n = split(v, items, "&")
+        out = ""
+        for (i = 1; i <= n; i++) {
+            m = split(items[i], pairs, ":")
+            for (j = 2; j <= m; j++) {
+                t = pairs[j]
+                for (k = j - 1; k >= 1 && pairs[k] > t; k--) pairs[k + 1] = pairs[k]
+                pairs[k + 1] = t
+            }
+            t = pairs[1]
+            for (j = 2; j <= m; j++) t = t ":" pairs[j]
+            out = out (i > 1 ? "&" : "") t
+        }
+        return out
+    }
     NR == 1 {
         for (i = 1; i <= NF; i++) {
             name = \$i
@@ -121,6 +141,7 @@ process CLEAN_COLUMNS {
             if (name == "am_class"            && !am_cls)   am_cls   = i
             if (name == "HGVSp"               && !vep_p)    vep_p    = i
             if (name == "HGVSp_VEP")                        dbnsfp_p = i
+            if (name == "5UTR_annotation")                  utr5     = i
         }
         if (dbnsfp_p) vep_p = 0
         am_after = am_pred ? am_pred : am_score
@@ -166,6 +187,7 @@ process CLEAN_COLUMNS {
     }
     {
         gsub(/\r/, "")
+        if (utr5 && NR > 1 && !empty(\$utr5)) \$utr5 = sort_pairs(\$utr5)
         if (vep_p && NR > 1) {
             p = \$vep_p
             sub(/^[^:]*:/, "", p)
