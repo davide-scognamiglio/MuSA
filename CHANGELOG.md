@@ -5,6 +5,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.2.0 - 2026-09-24
 
+> Updated in place on 2026-10-06: the database manifest is pinned to the test-datasets commit this
+> release was built for (`97a8128`). It followed test-datasets `main`, which now carries MuSA 1.3's
+> entries; 1.2's CADD download would have fetched 1.3's indel file, and `--update_db_only` would
+> have re-downloaded the whole CADD folder (87 GB).
+
 RENOVO scores from renovo-rebuild (RENOVO 1.5) and no more ANNOVAR, plus the setup and
 Nextflow-compatibility fixes, which were also applied retroactively to v1.1.0 and v1.0.0.
 
