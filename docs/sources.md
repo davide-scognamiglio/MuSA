@@ -2,7 +2,7 @@
 
 <!-- Generated from assets/annotation_sources.yaml by bin/musa_sources.py render. Edit the catalogue, not this file. -->
 
-MuSA annotates every variant from **95 sources**: 67 at variant level, 26 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
+MuSA annotates every variant from **103 sources**: 72 at variant level, 29 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
 
 When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, and the report's **Annotation sources** view records what that run actually used.
 
@@ -20,7 +20,9 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 | Protein domains (Pfam, PROSITE, SMART, …) | Protein domains and miRNA structures overlapped by the variant | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `DOMAINS`, `miRNA` |
 | InterPro | InterPro domain of the affected residue | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | extended | `Interpro_domain` |
 | dbNSFP transcript and coordinate fields ⁽ᶜ⁾ | Per-transcript IDs, HGVS (VEP and snpEff), codon details, GRCh37/hg18/T2T coordinates | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | extended | `aaref`, `aaalt`, `aapos`, `hg19_chr`, `hg19_pos\(1-based\)`, `hg18_chr`, `hg18_pos\(1-based\)`, `hs1_chr`, `hs1_pos\(1-based\)`, `Ensembl_transcriptid`, `Uniprot_entry`, `HGVSc_snpEff`, `HGVSp_VEP`, `GENCODE_basic`, `MANE_dbNSFP`, `refcodon`, `codonpos`, `codon_degeneracy` |
-| VEP computed fields ⁽ᶜ⁾ | Downstream protein effect, NMD escape, splice region, TSS distance, intronic HGVS offsets (plugins Downstream, NMD, SpliceRegion, TSSDistance, HGVSIntronOffset, SingleLetterAA) | Ensembl VEP plugins (`VEP_ANNOTATE_VCF`) | extended | `DownstreamProtein`, `ProteinLengthChange`, `NMD`, `SpliceRegion`, `TSSDistance`, `HGVS_Intron.*` |
+| GENCODE Ribo-seq ORFs | Consequence on translated ORFs outside the annotated coding sequence (uORFs, lncRNA ORFs) | VEP plugin RiboseqORFs (`VEP_ANNOTATE_VCF`) | extended | `RiboseqORFs_.*` |
+| Locus Reference Genomic (LRG) | LRG record of the transcript, the stable reference used in clinical reports | VEP plugin FlagLRG (`VEP_ANNOTATE_VCF`) | extended | `FlagLRG` |
+| VEP computed fields ⁽ᶜ⁾ | Downstream protein effect, NMD escape, splice region, TSS distance, intronic HGVS offsets, nearest exon junction, nearest gene of intergenic variants, BLOSUM62 substitution score (plugins Downstream, NMD, SpliceRegion, TSSDistance, HGVSIntronOffset, SingleLetterAA, NearestExonJB, NearestGene, Blosum62) | Ensembl VEP plugins (`VEP_ANNOTATE_VCF`) | extended | `DownstreamProtein`, `ProteinLengthChange`, `NMD`, `SpliceRegion`, `TSSDistance`, `HGVS_Intron.*`, `NearestExonJB`, `NearestGene`, `BLOSUM62` |
 
 ### Known variants and literature
 
@@ -97,6 +99,7 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
+| SpliceAI | Predicted splice-site gain and loss (delta scores and positions), SNVs on MANE transcripts *Ensembl's masked scores; indels have none (Illumina distributes their scores only through BaseSpace).* | VEP plugin SpliceAI (`VEP_ANNOTATE_VCF`) | extended | `SpliceAI_pred.*` |
 | SpliceVault | Mis-splicing events seen in RNA-seq, with the SpliceAI delta | VEP plugin SpliceVault (`VEP_ANNOTATE_VCF`) | extended | `SpliceVault_.*` |
 | MaxEntScan | Splice-site strength before and after the variant | VEP plugin MaxEntScan (`VEP_ANNOTATE_VCF`) | extended | `MaxEntScan_.*` |
 | dbscSNV | Ensemble splice-altering predictions (AdaBoost and random forest) | VEP plugin dbscSNV (`VEP_ANNOTATE_VCF`) | extended | `ada_score`, `rf_score` |
@@ -105,6 +108,8 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
+| ProtVar | Missense structural context: predicted stability change, AlphaFold pockets, protein-protein interfaces | VEP plugin ProtVar (`VEP_ANNOTATE_VCF`) | extended | `ProtVar_.*` |
+| IntAct | Molecular interactions experimentally affected by mutations at the variant | VEP plugin IntAct (`VEP_ANNOTATE_VCF`) | extended | `IntAct_.*` |
 | Ensembl Regulatory Build | Transcription-factor motifs and binding changes | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `MOTIF_NAME`, `MOTIF_POS`, `HIGH_INF_POS`, `MOTIF_SCORE_CHANGE`, `TRANSCRIPTION_FACTORS` |
 | Enformer | Predicted effect on gene expression (deep learning) | VEP plugin Enformer (`VEP_ANNOTATE_VCF`) | extended | `Enformer_.*` |
 | UTRannotator | Effect of 5′UTR variants on upstream open reading frames | VEP plugin UTRAnnotator (`VEP_ANNOTATE_VCF`) | extended | `5UTR_.*`, `Existing_InFrame_oORFs`, `Existing_OutOfFrame_oORFs`, `Existing_uORFs` |
@@ -128,6 +133,7 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
+| Gene2Phenotype (G2P) | Flags variants whose zygosity and frequency fit the gene's allelic requirement in G2P | VEP plugin G2P (`VEP_ANNOTATE_VCF`) | extended | `G2P_.*` |
 | ClinGen gene–disease validity | Strength of evidence that the gene causes the disease, and mode of inheritance | ClinGen gene curations (`CLINGEN_ANNOTATE_MAF`) | basic | `ClinGen_GeneDisease_.*` |
 | ClinGen dosage sensitivity | Haploinsufficiency and triplosensitivity scores | ClinGen gene curations (`CLINGEN_ANNOTATE_MAF`) | basic | `ClinGen_Haploinsufficiency_.*`, `ClinGen_Triplosensitivity_.*` |
 | ClinGen actionability | Clinical actionability for adult and paediatric contexts | ClinGen gene curations (`CLINGEN_ANNOTATE_MAF`) | basic | `ClinGen_Actionability_.*` |
@@ -135,6 +141,21 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 | Orphanet | Rare diseases linked to the gene and the type of association | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `Orphanet_.*` |
 | GenCC | Harmonised gene–disease validity from multiple curators | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `GenCC_.*` |
 | HPO gene terms (dbNSFP) | Phenotype terms annotated to the gene, as dbNSFP carries them | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `HPO_id`, `HPO_name` |
+
+### Constraint and dosage
+
+| Source | What it adds | Brought in by | Mode | Columns |
+|---|---|---|---|---|
+| MechPredict | Predicted disease mechanism of the gene: dominant-negative, gain- or loss-of-function | VEP plugin MechPredict (`VEP_ANNOTATE_VCF`) | extended | `MechPredict_.*` |
+| Dosage sensitivity (Collins 2022) | Probability that the gene is haploinsufficient (pHaplo) or triplosensitive (pTriplo), from rare CNVs | VEP plugin DosageSensitivity (`VEP_ANNOTATE_VCF`) | extended | `pHaplo`, `pTriplo` |
+| gnomAD gene constraint | pLI, LOEUF, missense and LoF observed/expected | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `gnomAD_pLI`, `gnomAD_pRec`, `gnomAD_pNull`, `gnomAD_lof.oe`, `gnomAD_mis.oe`, `gnomAD_LOEUF`, `gnomAD_MOEUF` |
+| ExAC gene constraint | pLI (all, non-TCGA, non-psych), CNV scores, LoF FDR *pLI_gene_value comes from the VEP pLI plugin.* | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `ExAC_.*`, `LoF-FDR_ExAC`, `pLI_gene_value` |
+| RVIS | Residual variation intolerance (EVS and ExAC) | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `RVIS_.*` |
+| Gene Damage Index | Accumulated mutational damage and disease-gene predictions | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `GDI`, `GDI-Phred`, `Gene damage prediction .*` |
+| LoFtool | Gene intolerance to loss of function | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `LoFtool_score` |
+| Haploinsufficiency predictions | P(HI) (Huang et al.), HIPred and GHIS | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `P\(HI\)`, `HIPred_score`, `HIPred`, `GHIS` |
+| Recessive disease genes | Probability of being a recessive disease gene, known recessive status | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `P\(rec\)`, `Known_rec_info` |
+| Essential genes | Essentiality from CRISPR and gene-trap screens, indispensability | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `Essential_gene.*`, `Gene_indispensability_.*` |
 
 ### Function and pathways
 
@@ -152,19 +173,6 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
 | Human Protein Atlas | Consensus RNA expression in 50 tissues | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `HPA_consensus_.*` |
-
-### Constraint and dosage
-
-| Source | What it adds | Brought in by | Mode | Columns |
-|---|---|---|---|---|
-| gnomAD gene constraint | pLI, LOEUF, missense and LoF observed/expected | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `gnomAD_pLI`, `gnomAD_pRec`, `gnomAD_pNull`, `gnomAD_lof.oe`, `gnomAD_mis.oe`, `gnomAD_LOEUF`, `gnomAD_MOEUF` |
-| ExAC gene constraint | pLI (all, non-TCGA, non-psych), CNV scores, LoF FDR *pLI_gene_value comes from the VEP pLI plugin.* | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `ExAC_.*`, `LoF-FDR_ExAC`, `pLI_gene_value` |
-| RVIS | Residual variation intolerance (EVS and ExAC) | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `RVIS_.*` |
-| Gene Damage Index | Accumulated mutational damage and disease-gene predictions | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `GDI`, `GDI-Phred`, `Gene damage prediction .*` |
-| LoFtool | Gene intolerance to loss of function | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `LoFtool_score` |
-| Haploinsufficiency predictions | P(HI) (Huang et al.), HIPred and GHIS | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `P\(HI\)`, `HIPred_score`, `HIPred`, `GHIS` |
-| Recessive disease genes | Probability of being a recessive disease gene, known recessive status | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `P\(rec\)`, `Known_rec_info` |
-| Essential genes | Essentiality from CRISPR and gene-trap screens, indispensability | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `Essential_gene.*`, `Gene_indispensability_.*` |
 
 ### Model organisms
 
