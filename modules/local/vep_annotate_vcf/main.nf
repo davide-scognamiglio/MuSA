@@ -6,7 +6,7 @@
 
 
 process VEP_ANNOTATE_VCF {
-    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.extended ? ' + 21 plugins' : ''}"
+    tag "${meta.patient} | Ensembl VEP + ClinVar + ClinGen${params.extended ? ' + 32 plugins' : ''}"
     cpus params.n_core
     errorStrategy 'retry'
     maxRetries 3
@@ -50,22 +50,33 @@ process VEP_ANNOTATE_VCF {
                 --custom file="/data/vep_data/ClinGen/clingen_pathogenicity.vcf.gz",short_name=ClinGenVCEP,format=vcf,type=exact,coords=0,fields=Assertion%EvidenceCodes%Disease \\
                 --plugin AlphaMissense,file="/data/vep_data/AlphaMissense/AlphaMissense_${params.build}.tsv.gz" \\
                 --plugin AncestralAllele,"/data/vep_data/AncestralAllele/homo_sapiens_ancestor_GRCh38.fa.gz" \\
+                --plugin Blosum62 \\
                 --plugin CADD,snv="/data/vep_data/CADD/whole_genome_SNVs.tsv.gz",indels="/data/vep_data/CADD/gnomad.genomes.r4.0.indel.tsv.gz" \\
                 --plugin dbscSNV,"/data/vep_data/dbscSNV/dbscSNV1.1_GRCh38.txt.gz" \\
+                --plugin DosageSensitivity,file="/data/vep_data/DosageSensitivity/Collins_rCNV_2022.dosage_sensitivity_scores.tsv.gz" \\
                 --plugin Downstream \\
                 --plugin Enformer,file="/data/vep_data/Enformer/enformer_grch38.vcf.gz" \\
                 --plugin EVE,file="/data/vep_data/EVE/eve_merged.vcf.gz" \\
+                --plugin FlagLRG,"/data/vep_data/FlagLRG/list_LRGs_transcripts_xrefs.txt" \\
+                --plugin G2P,file="/data/vep_data/G2P/G2P_all.csv" \\
                 --plugin GWAS,file="/data/vep_data/GWAS/gwas-catalog-download-associations-v1.0-full.tsv" \\
                 --plugin HGVSIntronOffset \\
+                --plugin IntAct,mutation_file="/data/vep_data/IntAct/mutations.tsv",mapping_file="/data/vep_data/IntAct/mutation_gc_map.txt.gz" \\
                 --plugin MaveDB,file="/data/vep_data/MaveDB/MaveDB_variants.tsv.gz" \\
                 --plugin MaxEntScan,"/data/vep_data/MaxEntScan/MaxEntScan-master" \\
+                --plugin MechPredict,file="/data/vep_data/MechPredict/MechPredict_input.tsv" \\
                 --plugin mutfunc,motif=1,extended=1,db="/data/vep_data/mutfunc/mutfunc_data.db" \\
+                --plugin NearestExonJB \\
+                --plugin NearestGene,gff3="/data/vep_data/gene_gff3/genes.gff3.gz" \\
                 --plugin NMD \\
                 --plugin PhenotypeOrthologous,file="/data/vep_data/PhenotypeOrthologous/PhenotypesOrthologous_homo_sapiens_112_GRCh38.gff3.gz" \\
                 --plugin pLI,"/data/vep_data/pLI/pLI_values.txt" \\
+                --plugin ProtVar,db="/data/vep_data/ProtVar/ProtVar_data.db" \\
                 --plugin ReferenceQuality,"/data/vep_data/ReferenceQuality/sorted_GRCh38_quality_mergedfile.gff3.gz" \\
+                --plugin RiboseqORFs,file="/data/vep_data/RiboseqORFs/Ribo-seq_ORFs.bed.gz" \\
                 --plugin SingleLetterAA \\
                 --plugin SpliceRegion \\
+                --plugin SpliceAI,snv="/data/vep_data/SpliceAI/spliceai_scores.masked.snv.ensembl_mane_v1.4.grch38.vcf.gz",indel="/data/vep_data/SpliceAI/spliceai_scores.none.indel.vcf.gz",split_output=1 \\
                 --plugin SpliceVault,file="/data/vep_data/SpliceVault/SpliceVault_data_GRCh38.tsv.gz" \\
                 --plugin TSSDistance \\
                 --plugin UTRAnnotator,file="/data/vep_data/UTRannotator/uORF_5UTR_GRCh38_PUBLIC.txt" 

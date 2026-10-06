@@ -544,6 +544,87 @@ sources:
     columns: ['EVE_.*']
 
   # ── Variant level: splicing ─────────────────────────────────────────────────────────────────────
+  - id: spliceai
+    name: "SpliceAI"
+    what: "Predicted splice-site gain and loss (delta scores and positions), SNVs on MANE transcripts"
+    level: variant
+    category: "Splicing"
+    provider: vep_plugins
+    plugin: SpliceAI
+    manifest: vep_spliceai_snv
+    mode: extended
+    note: "Ensembl's masked scores; indels have none (Illumina distributes their scores only through BaseSpace)."
+    columns: ['SpliceAI_pred.*']
+  - id: protvar
+    name: "ProtVar"
+    what: "Missense structural context: predicted stability change, AlphaFold pockets, protein-protein interfaces"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: ProtVar
+    manifest: vep_protvar
+    mode: extended
+    columns: ['ProtVar_.*']
+  - id: intact
+    name: "IntAct"
+    what: "Molecular interactions experimentally affected by mutations at the variant"
+    level: variant
+    category: "Regulatory and functional"
+    provider: vep_plugins
+    plugin: IntAct
+    manifest: vep_intact_mapping
+    mode: extended
+    columns: ['IntAct_.*']
+  - id: riboseqorfs
+    name: "GENCODE Ribo-seq ORFs"
+    what: "Consequence on translated ORFs outside the annotated coding sequence (uORFs, lncRNA ORFs)"
+    level: variant
+    category: "Consequence and transcript"
+    provider: vep_plugins
+    plugin: RiboseqORFs
+    manifest: vep_riboseqorfs
+    mode: extended
+    columns: ['RiboseqORFs_.*']
+  - id: g2p
+    name: "Gene2Phenotype (G2P)"
+    what: "Flags variants whose zygosity and frequency fit the gene's allelic requirement in G2P"
+    level: gene
+    category: "Gene–disease"
+    provider: vep_plugins
+    plugin: G2P
+    manifest: vep_g2p
+    mode: extended
+    columns: ['G2P_.*']
+  - id: mechpredict
+    name: "MechPredict"
+    what: "Predicted disease mechanism of the gene: dominant-negative, gain- or loss-of-function"
+    level: gene
+    category: "Constraint and dosage"
+    provider: vep_plugins
+    plugin: MechPredict
+    manifest: vep_mechpredict_dn
+    mode: extended
+    columns: ['MechPredict_.*']
+  - id: dosage_collins
+    name: "Dosage sensitivity (Collins 2022)"
+    what: "Probability that the gene is haploinsufficient (pHaplo) or triplosensitive (pTriplo), from rare CNVs"
+    level: gene
+    category: "Constraint and dosage"
+    provider: vep_plugins
+    plugin: DosageSensitivity
+    manifest: vep_dosagesensitivity
+    mode: extended
+    columns: [pHaplo, pTriplo]
+  - id: lrg
+    name: "Locus Reference Genomic (LRG)"
+    what: "LRG record of the transcript, the stable reference used in clinical reports"
+    level: variant
+    category: "Consequence and transcript"
+    provider: vep_plugins
+    plugin: FlagLRG
+    manifest: vep_flaglrg
+    mode: extended
+    columns: [FlagLRG]
   - id: splicevault
     name: "SpliceVault"
     what: "Mis-splicing events seen in RNA-seq, with the SpliceAI delta"
@@ -643,13 +724,13 @@ sources:
     columns: [ReferenceQuality]
   - id: vep_computed
     name: "VEP computed fields"
-    what: "Downstream protein effect, NMD escape, splice region, TSS distance, intronic HGVS offsets (plugins Downstream, NMD, SpliceRegion, TSSDistance, HGVSIntronOffset, SingleLetterAA)"
+    what: "Downstream protein effect, NMD escape, splice region, TSS distance, intronic HGVS offsets, nearest exon junction, nearest gene of intergenic variants, BLOSUM62 substitution score (plugins Downstream, NMD, SpliceRegion, TSSDistance, HGVSIntronOffset, SingleLetterAA, NearestExonJB, NearestGene, Blosum62)"
     level: variant
     category: "Consequence and transcript"
     kind: computed
     provider: vep_plugins
     mode: extended
-    columns: [DownstreamProtein, ProteinLengthChange, NMD, SpliceRegion, TSSDistance, 'HGVS_Intron.*']
+    columns: [DownstreamProtein, ProteinLengthChange, NMD, SpliceRegion, TSSDistance, 'HGVS_Intron.*', NearestExonJB, NearestGene, BLOSUM62]
 
   # ── Variant level: conservation ─────────────────────────────────────────────────────────────────
   - id: gerp

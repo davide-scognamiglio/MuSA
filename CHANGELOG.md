@@ -3,6 +3,47 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.4.0 - 2026-10-06
+
+Eleven new VEP plugins in extended mode.
+
+### `Added`
+
+- **11 new VEP plugins in extended mode (21 → 32), 36 new MAF columns:**
+  - SpliceAI: Ensembl's masked SNV scores on MANE transcripts (`SpliceAI_pred_*`);
+  - ProtVar: predicted stability change, AlphaFold pockets, protein-protein interfaces;
+  - IntAct: molecular interactions affected by the variant (human rows only);
+  - Gene2Phenotype (G2P): the variant's gene and genotype against G2P's panels;
+  - GENCODE Ribo-seq ORFs: consequences on translated non-canonical ORFs;
+  - MechPredict: dominant-negative, gain- and loss-of-function likelihood of the gene;
+  - DosageSensitivity: Collins 2022 haploinsufficiency and triplosensitivity (`pHaplo`,
+    `pTriplo`);
+  - FlagLRG: the transcript's Locus Reference Genomic record;
+  - NearestExonJB, NearestGene (offline, from Ensembl 116's GFF3) and BLOSUM62.
+
+  Extended `setup` grows by ~29 GB (SpliceAI 27 GB), to ~200 GB. On NA12878 the VEP step takes
+  2 min 14 s at 8 cores (1 min 55 s with the 1.3 plugins). Illumina distributes SpliceAI's
+  indel scores only through an account, so the plugin reads a header-only indel file and indels
+  get no SpliceAI score.
+
+  Not added:
+  - GeneSplicer: it tripled the VEP step's run time (+58 s per 6,000 variants) for a value on 3%
+    of variants, and SpliceAI, MaxEntScan, dbscSNV and SpliceVault already cover splicing;
+  - PromoterAI and AVI: their downloads need a licence agreement or a browser session;
+  - LoFtool and GO: already in dbNSFP's gene file;
+  - gnomAD mitochondrial frequencies and Ensembl Phenotypes: mostly redundant, and Phenotypes
+    needs hours of database queries.
+
+### `Changed`
+
+- An extended MAF has 887 columns (851 in 1.3), and the sources catalogue lists 103 sources
+  (95 in 1.3). Basic mode is unchanged.
+
+### Upgrading from 1.3
+
+Run `setup --extended true --update_db_only true` once on an extended data directory to add the
+new plugins' data. Basic data directories need nothing.
+
 ## v1.3.0 - 2026-10-06
 
 A smaller default install, offline phenotype matching, ClinVar evidence at the variant's residue

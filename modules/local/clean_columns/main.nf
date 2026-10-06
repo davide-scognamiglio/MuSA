@@ -58,9 +58,10 @@ process CLEAN_COLUMNS {
     #   STRAND_VEP         -> keep STRAND            (completely empty column)
     #   cds_strand         -> keep STRAND            (same info, different encoding +/- vs 1/-1)
     #   Uniprot_id         -> keep Uniprot_entry     (single vs multi-transcript mnemonic)
+    #   IND, ZYG           -> keep the genotype column (G2P plugin's sample name and zygosity)
     #   am_class           -> merged into AlphaMissense_pred, then dropped (see below)
     #   am_pathogenicity   -> merged into AlphaMissense_score, then dropped (see below)
-    T2="CLIN_SIG,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Uniprot_id"
+    T2="CLIN_SIG,#CHROM,#chr,HGVSc_VEP,Ensembl_proteinid,Uniprot_acc,genename,CCDS_id,STRAND_VEP,cds_strand,am_class,am_pathogenicity,Uniprot_id,IND,ZYG"
     #
     # KEPT ON PURPOSE:
     #   MANE_dbNSFP          — dbNSFP's per-transcript MANE array (renamed in MERGE_ANNOTATIONS to
