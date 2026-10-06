@@ -19,6 +19,7 @@ process BUILD_ANNOTATE_REPORT {
         file("${meta.patient}.filtered.maf") 
         file("${meta.patient}.raw.maf") 
         path(sources_json)
+        path(versions_yml)
     
     output:       
         tuple val(meta), 
@@ -34,6 +35,6 @@ process BUILD_ANNOTATE_REPORT {
         logo="${projectDir}/assets/MuSA_logo.png"
         build_annotate_report.py "${meta.patient}" "${params.extended}" \
         "${params.offline}" "${params.skip_genebe}" "\$logo" "${workflow.manifest.version}" \
-        "${meta.hpo ?: ''}" "${params.vep_container}" "/data" "${sources_json}"
+        "${meta.hpo ?: ''}" "${params.vep_container}" "/data" "${sources_json}" "${versions_yml}"
         """
 }

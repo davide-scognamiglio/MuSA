@@ -76,6 +76,8 @@ DETAIL_COLUMNS = [
     ("MIM_disease",          "OMIM phenotypes"),
     ("Orphanet_disorder",    "Orphanet"),
     ("encoded_CLNREVSTAT",   "ClinVar review status"),
+    ("ClinVar_PS1",          "Same amino-acid change pathogenic in ClinVar (PS1)"),
+    ("ClinVar_PM5",          "Other pathogenic change at this residue (PM5)"),
     ("ClinGen_GeneDisease_Disease",        "ClinGen gene-disease"),
     ("ClinGen_GeneDisease_MOI",            "Inheritance (ClinGen)"),
     ("ClinGen_GeneDisease_Classification", "Gene-disease validity"),
@@ -107,7 +109,8 @@ DETAIL_COLUMNS = [
 DETAIL_SECTIONS = [
     ("Variant details", ["HGVSc", "HGVSp_VEP", "Consequence", "IMPACT", "VARIANT_CLASS"]),
     ("Population",     ["MAX_AF", "MAX_AF_POPS"]),
-    ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinGen_GeneDisease_Disease",
+    ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinVar_PS1", "ClinVar_PM5",
+                        "ClinGen_GeneDisease_Disease",
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
                         "MIM_disease", "Orphanet_disorder"]),
     ("Patient phenotype", ["HPO_match", "HPO_match_score", "HPO_matched_terms",
@@ -148,6 +151,8 @@ def parse_args():
         # JSON list of this run's annotation sources, written by the ANNOTATE workflow from
         # assets/annotation_sources.yaml (lib/annot_utils.nf annotation_sources).
         "sources_json":    args[9] if len(args) > 9 else "",
+        # Tool versions of this run, written by SOFTWARE_VERSIONS (one probe per container image).
+        "versions_yml":    args[10] if len(args) > 10 else "",
     }
 
 
@@ -2075,7 +2080,39 @@ def load_sources(path):
         return json.load(fh)
 
 
-def _sources_html(sources):
+def load_software(path):
+    """[(tool, version, image)] from SOFTWARE_VERSIONS' YAML, or [] without it.
+
+    The file is three fixed keys per tool, written by the module itself, so it is read line by
+    line rather than with PyYAML, which the report image does not ship.
+    """
+    if not path or not os.path.isfile(path):
+        return []
+    tools, cur = [], None
+    with open(path) as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if line and not line.startswith(" ") and line.endswith(":"):
+                cur = {"tool": line[:-1]}
+                tools.append(cur)
+            elif cur is not None and ":" in line:
+                key, val = line.strip().split(":", 1)
+                cur[key] = val.strip().strip('"')
+    return [(t["tool"], t.get("version", ""), t.get("image", "")) for t in tools]
+
+
+def _software_html(software):
+    if not software:
+        return ""
+    rows = "".join(f'<tr><td class="src-name">{html_escape(tool)}</td><td>{html_escape(ver)}</td>'
+                   f'<td><code>{html_escape(img)}</code></td></tr>' for tool, ver, img in software)
+    return ('<h2>Software</h2><p class="sources-lead">The tools this run used, with the version '
+            'reported by the container image each ran in.</p>'
+            '<table><thead><tr><th>Tool</th><th>Version</th><th>Container image</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table>')
+
+
+def _sources_html(sources, software=()):
     """The Sources view: every resource this run could annotate from, and whether it did.
 
     Built from the same catalogue (assets/annotation_sources.yaml) that generates the README table
@@ -2112,6 +2149,7 @@ def _sources_html(sources):
                 f'<td class="src-status">{status}</td></tr>')
             last_cat = cat
         out.append("</tbody></table>")
+    out.append(_software_html(software))
     return "".join(out)
 
 
@@ -2129,7 +2167,7 @@ def _hpo_html(terms):
 
 
 def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, mode,
-                    version="", hpo=(), assets_dir=None, vep="", clinvar="", sources=()):
+                    version="", hpo=(), assets_dir=None, vep="", clinvar="", sources=(), software=()):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     masthead = style.masthead_id(logo_b64, logo_mime, version, "Variant review")
 
@@ -2198,7 +2236,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
             .replace("__INDEX__", index_html)
             .replace("__SCALES__", scales)
             .replace("__VERSIONS__", _versions_html(vep, clinvar))
-            .replace("__SOURCES__", _sources_html(sources))
+            .replace("__SOURCES__", _sources_html(sources, software))
             .replace("__HPO__", _hpo_html(hpo))
             .replace("__NCOL__", str(len(payload["main"])))
             .replace("__HEADERS__", headers)
@@ -2275,6 +2313,7 @@ def main():
         assets_dir=(os.path.dirname(params["logo_path"]) if params["logo_path"] else None),
         vep=vep,
         sources=load_sources(params["sources_json"]),
+        software=load_software(params["versions_yml"]),
         clinvar=clinvar,
     )
 
