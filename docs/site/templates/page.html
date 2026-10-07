@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}} · MuSA</title>
+<meta name="description" content="{{DESCRIPTION}}">
+<meta name="theme-color" content="#0d1117">
+<link rel="canonical" href="{{CANONICAL}}">
+<meta property="og:title" content="{{TITLE}} · MuSA">
+<meta property="og:description" content="{{DESCRIPTION}}">
+<meta property="og:image" content="{{SITE_URL}}static/img/musa-film-poster.jpg">
+<link rel="icon" type="image/png" href="{{ROOT}}static/img/musa-mark.png">
+<link rel="stylesheet" href="{{ROOT}}static/css/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+{{NAV}}
+<div class="wrap doc">
+  <nav class="side" aria-label="Pages">{{SIDEBAR}}</nav>
+  <main id="main" class="prose">
+{{CONTENT}}
+{{PAGER}}
+  </main>
+</div>
+{{FOOTER}}
+<script src="{{ROOT}}static/js/site.js" defer></script>
+</body>
+</html>

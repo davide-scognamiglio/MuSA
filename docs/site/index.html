@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MuSA · germline variant annotation, from VCF to review report</title>
+<meta name="description" content="MuSA (Multi-Source variant Annotation) is a Nextflow pipeline that turns a germline VCF into one annotated row per variant and an HTML report a clinician can review. Ensembl VEP, ClinVar, ClinGen and HPO, offline; dbNSFP and 32 VEP plugins in extended mode.">
+<meta name="theme-color" content="#0d1117">
+<link rel="canonical" href="{{SITE_URL}}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MuSA · deep germline variant annotation">
+<meta property="og:description" content="One patient, 22,572 variants, one to review. A Nextflow pipeline from VCF to a clinician-ready report and a model-ready MAF.">
+<meta property="og:url" content="{{SITE_URL}}">
+<meta property="og:image" content="{{SITE_URL}}static/img/musa-film-poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="static/img/musa-mark.png">
+<link rel="preload" href="static/fonts/Poppins-600.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="static/css/site.css">
+<script type="application/ld+json">{{JSONLD}}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+{{NAV}}
+
+<main id="main">
+
+<!-- Hook: the film's opening lines -->
+<header class="hero">
+  <div class="wrap">
+    <p class="k1">1 patient</p>
+    <h1 class="display"><span class="n">22,572</span> <span class="u">variants.</span><span class="q">Which one matters?</span></h1>
+    <p class="lede"><strong>MuSA</strong> is a Nextflow pipeline that turns a germline VCF into one annotated row per
+      variant and a report a clinician can review, with every database version recorded.</p>
+    <div class="btns">
+      <a class="btn primary" href="tutorials/first-run/">Get started</a>
+      <a class="btn" href="example/">Open the example report</a>
+    </div>
+    <figure class="film" id="film">
+      <video id="filmv" src="static/video/musa-1.4.mp4" poster="static/img/musa-film-poster.jpg" muted loop playsinline preload="none"
+             aria-label="MuSA 1.4 film, 62 seconds, no sound: one patient's 22,572 variants narrowed to the one that fits the phenotype, the pipeline, its sources, and the two outputs"></video>
+      <div class="ctl"><button type="button" id="filmplay" aria-pressed="false">Play</button></div>
+    </figure>
+    <p class="film-note">MuSA 1.4 in 62 seconds. NA12878 reference sample, test phenotype.</p>
+  </div>
+</header>
+
+<!-- From 22,572 to 1. Desktop: driven by scroll. Phones and tablets: plays once when it comes into view. -->
+<section class="story" id="story" aria-label="From 22,572 variants to the one that fits the phenotype">
+  <div class="stage">
+    <div class="wrap">
+      <div class="count" id="count">22,572</div>
+      <div class="count-label" id="countlabel">variants in one exome</div>
+      <div class="hpo">
+        <div class="hchip" data-at="0.18"><div class="t">Hyperphenylalaninemia</div><div class="id">HP:0004923</div></div>
+        <div class="hchip" data-at="0.24"><div class="t">Intellectual disability</div><div class="id">HP:0001249</div></div>
+        <div class="hchip" data-at="0.30"><div class="t">Multiple exostoses</div><div class="id">HP:0002762</div></div>
+      </div>
+      <p class="cap" data-at="0.38">Matched offline, gene by gene.</p>
+      <p class="cap" data-at="0.66"><span>1</span> · Fits the patient's phenotype</p>
+      <div class="card-slot" id="cardslot" data-at="0.74">
+        <div class="rcard">
+          <div class="lbl">Review set</div>
+          <div class="gene">PAH</div>
+          <div class="dis">Phenylketonuria <span>· OMIM:261600</span></div>
+          <div class="coord">p.Tyr414Cys · g.chr12:102840474T&gt;C</div>
+          <div class="chips"><span class="chip">ClinVar P ★★★</span><span class="chip">RENOVO P</span><span class="chip hp">HPO exact · 0.69</span></div>
+          <div class="ev"><i></i><span>Matched: Hyperphenylalaninemia, Intellectual disability</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Two outputs, one per reader: film scene 7 -->
+<section class="band" id="outputs">
+  <div class="wrap">
+    <h2 class="h2">A report for the clinician, a table for the bioinformatician.</h2>
+
+    <div class="duo">
+      <div class="txt">
+        <p class="who v">For the clinician</p>
+        <h3 class="what">Interactive HTML report</h3>
+        <ul class="pts v">
+          <li><i></i>The review set comes first</li>
+          <li><i></i>Findings grouped by why they matter</li>
+          <li><i></i>Evidence one click away</li>
+        </ul>
+        <p class="more">One self-contained file. Opens offline in any browser, no server. <a href="example/">Open the NA12878 report</a></p>
+      </div>
+      <div class="frame report" id="reportframe">
+        <img src="static/img/report-na12878.png" alt="MuSA HTML report for NA12878: the review set count and the findings grouped by reason" width="1400" height="980" loading="lazy">
+      </div>
+    </div>
+
+    <div class="duo flip">
+      <div class="txt">
+        <p class="who c">For the bioinformatician</p>
+        <h3 class="what">Model-ready MAF</h3>
+        <ul class="pts c">
+          <li><i></i>One row per variant</li>
+          <li><i></i>887 columns, every score a number</li>
+          <li><i></i>Ready for pandas, R or a model</li>
+        </ul>
+        <p class="more">Tab-separated, one transcript per variant (MANE Select). <a href="tutorials/maf-in-python/">Load it in pandas</a></p>
+      </div>
+      <div class="frame maf" id="mafframe">
+        <div class="maf-scroll" tabindex="0" aria-label="Six rows of NA12878's MAF, scrollable sideways">
+          <table class="maf">
+            <thead><tr><th>Hugo_Symbol</th><th>HGVSp_VEP</th><th>CLNSIG</th><th>gnomADe_AF</th><th>REVEL_score</th><th>AlphaMissense_score</th><th>CADD_PHRED</th><th>HPO_match</th><th>HPO_match_score</th><th>RENOVO_Class</th><th>PL_score</th></tr></thead>
+            <tbody>
+              <tr><td>PAH</td><td>p.Tyr414Cys</td><td class="p">Pathogenic</td><td>0.0003646</td><td>0.982</td><td>0.8118</td><td>26.4</td><td>exact</td><td>0.69</td><td class="p">HP Pathogenic</td><td>0.918</td></tr>
+              <tr><td>RBM20</td><td>p.Glu1223Gln</td><td>Benign</td><td>0.8386</td><td>0.33</td><td>0.1009</td><td>22.8</td><td>none</td><td>0.045</td><td>IP Benign</td><td>0.187</td></tr>
+              <tr><td>NRAP</td><td>p.Met1337Thr</td><td>Likely_benign</td><td>0.006521</td><td>0.065</td><td>0.386</td><td>22</td><td>none</td><td>0.276</td><td>IP Benign</td><td>0.178</td></tr>
+              <tr><td>CUBN</td><td>p.Phe253Ser</td><td>Benign</td><td>0.672</td><td>0.209</td><td>0.0626</td><td>9.22</td><td>none</td><td>0.275</td><td>IP Benign</td><td>0.086</td></tr>
+              <tr><td>DLAT</td><td>p.Val318Ala</td><td>Benign</td><td>0.3953</td><td>0.046</td><td>0.059</td><td>10.93</td><td>narrower</td><td>0.419</td><td>IP Benign</td><td>0.096</td></tr>
+              <tr><td>LRRC56</td><td>p.Asp523His</td><td>Benign</td><td>0.817</td><td>0.059</td><td>0.1374</td><td>22.2</td><td>broader</td><td>0.222</td><td>IP Benign</td><td>0.066</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="maf-note">NA12878, extended mode: 22,572 rows × 887 columns · tab-separated</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- The pipeline: film scene 5. Wide screens get the metro map; narrow screens a vertical line. -->
+<section class="band" id="pipeline">
+  <div class="wrap">
+    <h2 class="h2">From VCF to report, in four stages.</h2>
+    <p class="lede">Each variant is annotated in parallel, merged on one transcript, given gene-level evidence, classified,
+      filtered and reported. Nextflow runs it in Docker, Singularity or Podman, on a laptop, a server or a cluster.</p>
+  </div>
+  <div class="wrap">
+    <div class="mapbox" id="mapbox">
+<!--MAP-->
+    </div>
+    <ol class="stages" id="stages" aria-label="The four stages of the annotate workflow, and setup">
+      <li><h3><span>1</span>Preprocessing</h3><p>Normalize · GATK filter · Rename</p></li>
+      <li><h3><span>2</span>Variant-level annotation</h3><p>Ensembl VEP with ClinVar, ClinGen and up to 32 plugins · dbNSFP 5.3 · vcf2maf · optional GeneBe · merge · RENOVO 1.5</p></li>
+      <li><h3><span>3</span>Gene-level annotation</h3><p>OMIM · Orphanet · GenCC · HPO · pathways · HPA · constraint · ClinGen · HPO match</p></li>
+      <li><h3><span>4</span>Classification and report</h3><p>ClinVar tiers · PS1/PM5 · optional ACMG · filter · HTML report and MAF</p></li>
+      <li class="setup"><h3><span>0</span>Setup, once</h3><p>Basic and extended databases, from a pinned YAML manifest, with a setup report</p></li>
+    </ol>
+    <p class="mapcap">Violet: the annotate workflow. Cyan: setup, which builds the database directory once.</p>
+  </div>
+</section>
+
+<!-- Sources converge into one row: film scene 6 -->
+<section class="band" id="sources">
+  <div class="wrap">
+    <h2 class="h2">103 sources merged into one row per variant: <span class="accent">887 columns.</span></h2>
+    <div class="converge" id="converge" aria-hidden="true"></div>
+    <p class="row-label">PAH p.Tyr414Cys · one row</p>
+    <div class="row" id="row" aria-hidden="true"></div>
+    <p class="more"><a href="docs/sources/">Every source, its version and its columns</a></p>
+  </div>
+</section>
+
+<!-- Modes -->
+<section class="band tight" id="modes">
+  <div class="wrap">
+    <h2 class="h2 s">Basic by default, extended with one flag.</h2>
+    <div class="modes">
+      <div class="mode">
+        <h3>Basic</h3>
+        <p class="sz">Default · ~30 GB · 168 columns</p>
+        <ul>
+          <li>Ensembl VEP: consequences on MANE transcripts, gnomAD, 1000 Genomes, dbSNP</li>
+          <li>ClinVar with review status, and ClinGen expert-panel classifications</li>
+          <li>ClinGen gene–disease validity and dosage sensitivity</li>
+          <li>Offline HPO matching against the patient's phenotype</li>
+          <li>ACMG PS1/PM5 evidence from ClinVar</li>
+        </ul>
+        <p class="flag">No registration. Runs offline.</p>
+      </div>
+      <div class="mode">
+        <h3>Extended</h3>
+        <p class="sz"><code>--extended true</code> · ~200 GB · 887 columns</p>
+        <ul>
+          <li>dbNSFP 5: ~35 predictors, and a gene file with OMIM, Orphanet and constraint</li>
+          <li>32 VEP plugins: AlphaMissense, CADD, SpliceAI, SpliceVault, EVE, ProtVar, Gene2Phenotype…</li>
+          <li>RENOVO 1.5, a machine-learning pathogenicity classifier</li>
+          <li>Optional online mode: ACMG/AMP scoring through GeneBe</li>
+        </ul>
+        <p class="flag">dbNSFP needs a free academic registration.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Reproducible by design: a real excerpt of setup_report.html instead of claims -->
+<section class="band tight" id="reproducible">
+  <div class="wrap">
+    <h2 class="h2 s">Say exactly which data produced a call.</h2>
+    <p class="lede">Setup hashes every file it downloads and writes the result to <code>setup_report.html</code>:</p>
+    <div class="specimen" tabindex="0" aria-label="Four rows from a MuSA setup report, scrollable sideways">
+      <table>
+        <thead><tr><th>State</th><th>Resource</th><th>Version</th><th>SHA-256</th></tr></thead>
+        <tbody>
+          <tr><td><span class="st ok">✓ Verified</span></td><td>vep_cache</td><td>116</td><td><code>014c7dd9bb5ad06665866d62eb80f31ca761197bcb9b59280300676f996e600d</code></td></tr>
+          <tr><td><span class="st ok">✓ Verified</span></td><td>reference_genome</td><td>hg38</td><td><code>c1dd87068c254eb53d944f71e51d1311964fce8de24d6fc0effc9c61c01527d4</code></td></tr>
+          <tr><td><span class="st ok">✓ Verified</span></td><td>vep_cadd_snvs</td><td>1.7</td><td><code>11582f442d3db5bc529a3786e9ddfe27860642c2447d64e468387ad9c050645a</code></td></tr>
+          <tr><td><span class="st un">○ Unpinned</span></td><td>clinvar</td><td>2026-07-06</td><td><code>f41ed2eccfa6c1dfa439216682c73e1a131646ac3856015202bba62b0cbc8d63</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">55 of the 67 files in MuSA 1.4's manifest are checked against a pinned checksum. ClinVar's weekly
+      release and ClinGen's live exports change under the same address, so their hashes are recorded rather than checked.
+      Annotation itself runs offline: only setup downloads, and only the optional GeneBe scoring sends variants out.</p>
+  </div>
+</section>
+
+<!-- Get started -->
+<section class="band tight" id="start">
+  <div class="wrap">
+    <h2 class="h2 s">Three commands to a first report.</h2>
+    <ol class="steps">
+      <li class="step"><div><h3>Install Nextflow</h3><p>Version 25.10 or later, plus Docker, Singularity or Podman.</p>
+        <div class="cmd"><code>curl -s https://get.nextflow.io | bash</code><button class="copy" type="button">Copy</button></div></div></li>
+      <li class="step"><div><h3>Download every database with one command</h3><p>Once. Basic mode is ~30 GB and needs no account. Use an absolute path.</p>
+        <div class="cmd"><code>nextflow run davide-scognamiglio/MuSA \
+  --workflow setup \
+  --data_dir $PWD/musa_data \
+  -profile docker</code><button class="copy" type="button">Copy</button></div></div></li>
+      <li class="step"><div><h3>Run the bundled test</h3><p>A single-variant VCF, done in a couple of minutes. Then open the report in a browser.</p>
+        <div class="cmd"><code>nextflow run davide-scognamiglio/MuSA \
+  -profile test,docker \
+  --data_dir $PWD/musa_data \
+  --outdir output_test</code><button class="copy" type="button">Copy</button></div></div></li>
+    </ol>
+    <div class="btns">
+      <a class="btn primary" href="tutorials/first-run/">Annotate your own VCF</a>
+      <a class="btn" href="docs/usage/">Read the usage guide</a>
+    </div>
+  </div>
+</section>
+
+<!-- Latest release, generated from CHANGELOG.md -->
+<section class="band tight" id="release">
+  <div class="wrap">
+    <h2 class="h2 s">{{REL_TITLE}}</h2>
+    <div class="release">
+      <div>
+        <div class="ver">{{REL_VERSION}}</div>
+        <p class="date">{{REL_DATE}}</p>
+        <div class="btns">
+          <a class="btn" href="releases/">All releases</a>
+          <a class="btn" href="{{REL_GITHUB}}">Release on GitHub</a>
+        </div>
+        {{REL_DOI}}
+      </div>
+      <div class="prose">{{REL_BODY}}</div>
+    </div>
+  </div>
+</section>
+
+<!-- Cite -->
+<section class="band tight" id="cite">
+  <div class="wrap">
+    <h2 class="h2 s">If MuSA helped, cite the paper.</h2>
+    <div class="cite">
+      <p class="ref">Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow pipeline for deep,
+        reproducible annotation and clinical ranking of genomic variants. <em>BMC Bioinformatics</em> 27:199 (2026).
+        <a href="https://doi.org/10.1186/s12859-026-06513-0">doi:10.1186/s12859-026-06513-0</a></p>
+      <p class="ref sub">For the exact software version, add the Zenodo DOI:
+        <a href="https://doi.org/10.5281/zenodo.23185068">10.5281/zenodo.23185068</a> (all versions).</p>
+<pre id="bibtex">@article{scognamiglio2026musa,
+  title   = {MuSA: a Nextflow pipeline for deep, reproducible annotation and clinical ranking of genomic variants},
+  author  = {Scognamiglio, Davide and Bonetti, Emanuele and Moroni, Alice and Sangiorgi, Luca and Pedrini, Elena},
+  journal = {BMC Bioinformatics},
+  volume  = {27},
+  number  = {1},
+  pages   = {199},
+  year    = {2026},
+  doi     = {10.1186/s12859-026-06513-0}
+}</pre>
+      <div><button class="copy" type="button" data-copy="#bibtex">Copy BibTeX</button></div>
+    </div>
+  </div>
+</section>
+
+<!-- Outro: film scene 8 -->
+<section class="outro">
+  <div class="wrap">
+    <img src="static/img/musa-logo-dark.png" alt="MuSA, Multi-Source variant Annotation" width="1100" height="263" loading="lazy">
+    <p class="tag">Deep annotation. Reproducible by design.</p>
+    <div class="btns">
+      <a class="btn primary" href="tutorials/first-run/">Get started</a>
+      <a class="btn" href="https://github.com/davide-scognamiglio/MuSA">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+</main>
+{{FOOTER}}
+<script src="static/js/site.js" defer></script>
+</body>
+</html>

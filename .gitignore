@@ -23,3 +23,5 @@ vacation_handsoff.md
 .impeccable/
 # Local secrets (e.g. our registered dbNSFP download link) -- never commit
 private/
+_site/
+docs/site/static/video/

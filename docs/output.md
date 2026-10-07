@@ -57,7 +57,7 @@ hundreds of heterogeneous annotations without nesting, and carries a sample iden
 per-patient MAFs can be concatenated into a cohort table and read directly by tools such as
 [maftools](https://bioconductor.org/packages/maftools/).
 
-Both MAFs are tab-separated with a single header line. Missing values are written as `.` — the
+Both MAFs are tab-separated with a single header line. Missing values are written as `.`: the
 pipeline normalises `NA`, empty cells and `.` to that one spelling, so a missing value tests the
 same way in every column.
 
@@ -74,7 +74,7 @@ Reference data is written under `--data_dir` in the layout the annotate workflow
     checksum, each marked `VERIFIED`, `MISMATCH` or `PENDING`.
 - `*_manifest.yaml`
   - The merged manifest: a machine-readable record of exactly which database versions were
-    installed and what their checksums were. Keep it — it is the audit trail for any annotation
+    installed and what their checksums were. Keep it: it is the audit trail for any annotation
     produced against this data directory.
 
 </details>
