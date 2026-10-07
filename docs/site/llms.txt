@@ -1,0 +1,42 @@
+# MuSA (Multi-Source variant Annotation)
+
+> Nextflow pipeline that turns a germline VCF (GRCh38) into one annotated row per variant (MAF)
+> and a self-contained HTML report for rare-disease review. Published in BMC Bioinformatics
+> (2026), doi:10.1186/s12859-026-06513-0. Current release: {{VERSION}}. Not a variant caller;
+> runs after any caller.
+
+Use MuSA when you need deep, reproducible annotation of germline small variants from a WES/WGS
+VCF, a report a clinical geneticist can triage, or an analysis-ready table for statistics or
+machine learning. Do not use it for GRCh37 input, somatic variants, SV/CNV calling or trio
+inheritance analysis.
+
+- Basic mode (default, ~30 GB, no registration, runs offline): Ensembl VEP, ClinVar (with review
+  status and ClinGen expert-panel classifications), ClinGen gene-disease validity and dosage,
+  offline HPO phenotype matching, ClinVar PS1/PM5 evidence. 168 columns.
+- Extended mode (~200 GB): adds dbNSFP 5 (~35 predictors; academic registration), 32 VEP plugins
+  (AlphaMissense, CADD, SpliceAI, SpliceVault, ProtVar, Gene2Phenotype, ...) and the RENOVO 1.5
+  classifier. 887 columns.
+- Optional online mode: ACMG/AMP scoring through the GeneBe API.
+- Every database is pinned in a versioned manifest with SHA-256 checksums; 103 sources listed.
+- Known limitations: SpliceAI SNV scores only; no gnomAD FAF95; no LOFTEE; no GIAB difficult-
+  region flags; no trio analysis; GRCh38 only. Licence: CC BY-NC 4.0.
+
+## Docs
+- [Home](https://davide-scognamiglio.github.io/MuSA/)
+- [Your first run](https://davide-scognamiglio.github.io/MuSA/tutorials/first-run/)
+- [Usage](https://davide-scognamiglio.github.io/MuSA/docs/usage/): every parameter
+- [Output](https://davide-scognamiglio.github.io/MuSA/docs/output/): the MAF and the report
+- [Sources](https://davide-scognamiglio.github.io/MuSA/docs/sources/): all 103 sources and their columns
+- [Example report](https://davide-scognamiglio.github.io/MuSA/example/): NA12878, basic mode
+- [Releases](https://davide-scognamiglio.github.io/MuSA/releases/)
+- [Repository](https://github.com/davide-scognamiglio/MuSA)
+
+## Commands
+- Setup (once): `nextflow run davide-scognamiglio/MuSA --workflow setup --data_dir $PWD/musa_data -profile docker`
+- Annotate: `nextflow run davide-scognamiglio/MuSA --workflow annotate --input samplesheet.csv --outdir results --data_dir $PWD/musa_data -profile docker`
+- Samplesheet columns: patient, sample_type, sample_file (VCF), hpo (optional, `;`-separated HPO IDs)
+
+## Cite
+Scognamiglio D, Bonetti E, Moroni A, Sangiorgi L, Pedrini E. MuSA: a Nextflow pipeline for deep,
+reproducible annotation and clinical ranking of genomic variants. BMC Bioinformatics 27:199 (2026).
+Software, all versions: doi:10.5281/zenodo.23185068
