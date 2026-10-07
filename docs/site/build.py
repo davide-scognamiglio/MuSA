@@ -141,6 +141,10 @@ def footer(root: str) -> str:
         f'<a href="{REPO_URL}">GitHub</a></span>'
         "<span>Research software for variant review by qualified professionals. Not a certified medical device.</span>"
         "</div></footer>"
+        # Back to top: a plain link without JS; site.js shows it only once the reader is far down.
+        '<a class="totop" href="#" aria-label="Back to top">'
+        '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" '
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></a>'
     )
 
 

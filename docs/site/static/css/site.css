@@ -31,6 +31,7 @@
   --wrap: 1180px;
   --gutter: clamp(16px, 5vw, 48px);
   --ease: cubic-bezier(.22, 1, .36, 1);   /* ease-out-quint */
+  --z-totop: 15;
   --z-nav: 20;
   --z-skip: 30;
 }
@@ -301,6 +302,17 @@ table.maf td.p { color: var(--p-light); }
 footer { border-top: 1px solid var(--hair); padding: 34px 0 48px; color: var(--muted); font-size: 14px; }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: space-between; }
 footer a { color: var(--muted); } footer a:hover { color: var(--ink); }
+
+/* Back to top */
+.totop {
+  position: fixed; z-index: var(--z-totop);
+  right: max(16px, env(safe-area-inset-right)); bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px));
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%;
+  background: color-mix(in oklch, var(--raised) 92%, transparent); border: 1px solid var(--faint); color: var(--ink);
+  transition: opacity .3s var(--ease), transform .3s var(--ease), border-color .2s;
+}
+.totop:hover { text-decoration: none; border-color: var(--muted); }
+.js .totop:not(.show) { opacity: 0; transform: translateY(8px); pointer-events: none; visibility: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

@@ -25,6 +25,20 @@
   const nav = $(".nav"), menu = $(".menu-btn");
   if (menu) menu.addEventListener("click", () => menu.setAttribute("aria-expanded", String(nav.classList.toggle("open"))));
 
+  // ── Back to top: appears after about two screens of scrolling ──
+  const top = $(".totop");
+  if (top) {
+    const toggle = () => top.classList.toggle("show", window.scrollY > window.innerHeight * 2);
+    addEventListener("scroll", () => requestAnimationFrame(toggle), { passive: true });
+    toggle();
+    top.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
+      const brand = $(".brand");                  // keep keyboard focus at the top too
+      if (brand) brand.focus({ preventScroll: true });
+    });
+  }
+
   // ── Copy buttons: copy the sibling <code>, or the element named in data-copy ──
   $$(".copy").forEach((b) => b.addEventListener("click", async () => {
     const src = b.dataset.copy ? $(b.dataset.copy) : b.parentElement.querySelector("code");
