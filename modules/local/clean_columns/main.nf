@@ -86,10 +86,11 @@ process CLEAN_COLUMNS {
 
     DROP="\${ORIG},\${T1},\${T2},\${DEAD}"
 
-    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below): the
-    # bare custom ClinVar id column. The self-managed ClinVar VCF (VEP --custom: ClinVar_CLNSIG/
-    # CLNREVSTAT/CLNDN) is the single ClinVar source.
-    DROP_ORIG="ClinVar"
+    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below). None
+    # at present: the bare custom ClinVar id column, dropped up to 1.4, is the ClinVar VariationID and
+    # is kept as ClinVar_VariationID, the key CLINVAR_SUBMISSIONS joins on. The self-managed ClinVar
+    # VCF (VEP --custom: ClinVar_CLNSIG/CLNREVSTAT/CLNDN) is the single ClinVar source.
+    DROP_ORIG=""
 
     # The protein change: HGVSp_VEP comes from dbNSFP (read on the MANE transcript), and VEP's own
     # HGVSp is dropped above as its pre-merge twin. Basic mode has no dbNSFP, so there VEP's HGVSp
@@ -151,8 +152,8 @@ process CLEAN_COLUMNS {
             col = \$i
             gsub(/\r/, "", col)
 
-            # Drop by ORIGINAL name first, so the bare ClinVar id column goes before the custom
-            # ClinVar_* fields are renamed to their canonical names just below.
+            # Drop by ORIGINAL name first, before the custom ClinVar_* fields are renamed to their
+            # canonical names just below.
             if (col in drop_orig) {
                 keep[i] = 0
                 \$i = col
@@ -162,6 +163,7 @@ process CLEAN_COLUMNS {
             # Rename to canonical MAF names
             if (i == vep_p)                            col = "HGVSp_VEP"
             else if (col == "SYMBOL")                  col = "Hugo_Symbol"
+            else if (col == "ClinVar")                 col = "ClinVar_VariationID"
             else if (col == "ClinVar_CLNSIG")          col = "CLNSIG"
             else if (col == "ClinVar_CLNREVSTAT")      col = "CLNREVSTAT"
             else if (col == "ClinVar_CLNDN")           col = "CLNDN"

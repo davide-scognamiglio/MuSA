@@ -95,6 +95,12 @@ providers:
     mode: basic
     manifest: clinvar_variant_summary
     url: https://www.ncbi.nlm.nih.gov/clinvar/
+  clinvar_submissions:
+    name: ClinVar submission summary
+    step: CLINVAR_SUBMISSIONS
+    mode: basic
+    manifest: clinvar_submission_summary
+    url: https://www.ncbi.nlm.nih.gov/clinvar/
   renovo:
     name: renovo-rebuild
     step: RENOVO_SCORE
@@ -199,7 +205,7 @@ sources:
     category: Clinical assertions
     provider: clinvar
     columns: [CLNSIG, CLNREVSTAT, CLNDN, CLNSIGCONF, CLNDISDB, CLNHGVS, GENEINFO, ALLELEID,
-              ClinVar_RS, MC, encoded_CLNSIG, encoded_CLNREVSTAT, clinvar_id, clinvar_hgvs,
+              ClinVar_VariationID, ClinVar_RS, MC, encoded_CLNSIG, encoded_CLNREVSTAT, clinvar_id, clinvar_hgvs,
               clinvar_var_source, clinvar_MedGen_id, clinvar_OMIM_id, clinvar_Orphanet_id]
   - id: clingen_vcep
     name: ClinGen expert-panel classifications
@@ -975,6 +981,14 @@ sources:
     kind: computed
     provider: clinvar_residues
     columns: [ClinVar_PS1, ClinVar_PM5]
+  - id: clinvar_submissions
+    name: "ClinVar submissions (submitters' comments)"
+    what: "What individual ClinVar submitters wrote: ACMG codes they name (PS3/BS3), functional studies they describe and with what result, cited PMIDs; the expert panel's own codes kept apart"
+    level: variant
+    category: "Clinical assertions"
+    provider: clinvar_submissions
+    columns: ['ClinVar_SCV_.*', ClinVar_EP_codes]
+    note: "Rule-based reading of the submission comments (bin/clinvar_submissions.py); expert-panel and practice-guideline submissions never enter the counts. Facts only: a submission naming PS3 is not a PS3 call."
 
   # ── Patient phenotype ───────────────────────────────────────────────────────────────────────────
   - id: hpo_match
