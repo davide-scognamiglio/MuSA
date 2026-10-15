@@ -26,6 +26,7 @@ include { DOWNLOAD_MECHPREDICT } from '../../../modules/local/download_mechpredi
 include { DOWNLOAD_DOSAGESENSITIVITY } from '../../../modules/local/download_dosagesensitivity'
 include { DOWNLOAD_FLAGLRG } from '../../../modules/local/download_flaglrg'
 include { DOWNLOAD_GENE_GFF3 } from '../../../modules/local/download_gene_gff3'
+include { DOWNLOAD_GNOMAD_EXOMES } from '../../../modules/local/download_gnomad_exomes'
 
 
 workflow EXTENDED_SETUP {
@@ -82,6 +83,9 @@ workflow EXTENDED_SETUP {
         flaglrg_ch            = DOWNLOAD_FLAGLRG(basic_yaml_ch, changed_entries_ch)
         gene_gff3_ch          = DOWNLOAD_GENE_GFF3(basic_yaml_ch, changed_entries_ch)
 
+        // Added in 1.5: gnomAD v4.1 exomes counts (AC/AN/nhomalt, FAF) for every variant type.
+        gnomad_exomes_ch      = DOWNLOAD_GNOMAD_EXOMES(basic_yaml_ch, changed_entries_ch)
+
         /*
          * FAN-IN: merge all updated YAMLs
          */
@@ -110,7 +114,8 @@ workflow EXTENDED_SETUP {
                 mechpredict_ch,
                 dosagesensitivity_ch,
                 flaglrg_ch,
-                gene_gff3_ch)
+                gene_gff3_ch,
+                gnomad_exomes_ch)
             .collect()
 
         merged_yaml = MERGE_EXTENDED_YAML(merged_input)
