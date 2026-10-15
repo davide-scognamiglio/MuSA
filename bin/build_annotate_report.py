@@ -85,6 +85,7 @@ DETAIL_COLUMNS = [
     ("gnomAD_LOEUF",         "gnomAD LOEUF"),
     ("PL_score",             "ReNOVo pathogenicity score"),
     ("PUBMED",               "PubMed"),
+    ("PubTator3_pmids",      "PubMed (PubTator3)"),
     ("ref_context",          "Reference context"),
     ("bioinfo_params",       "Call quality"),
     ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
@@ -1268,8 +1269,8 @@ PAGE_JS = r"""
       .concat(grab(/OMIM:(\d+)/g, col("CLNDISDB")[i] || ""))
       .concat(grab(/\[MIM:(\d+)\]/g, col("MIM_disease")[i] || "")));
   }
-  function pubmedIds(i) {
-    return uniq(grab(/(\d{5,8})/g, col("PUBMED")[i] || ""));
+  function pubmedIds(i, key) {
+    return uniq(grab(/(\d{5,9})/g, col(key || "PUBMED")[i] || ""));
   }
   function rsIds(i) {
     return uniq(grab(/(rs\d+)/g, (col("ClinVar_RS")[i] || "") + " " + (col("Existing_variation")[i] || ""))
@@ -1458,8 +1459,8 @@ PAGE_JS = r"""
     if (k === "MAX_AF") return "<dd>" + afCell(v) + "</dd>";
     if (k === "MAX_AF_POPS") return '<dd class="plain">' + esc(String(v).replace(/_/g, " ")) + "</dd>";
     if (k === "IMPACT") return '<dd class="plain">' + esc(String(v).toLowerCase()) + "</dd>";
-    if (k === "PUBMED") {
-      return '<dd class="plain refs">' + pubmedIds(i).map(function (id) {
+    if (k === "PUBMED" || k === "PubTator3_pmids") {
+      return '<dd class="plain refs">' + pubmedIds(i, k).map(function (id) {
         return link("https://pubmed.ncbi.nlm.nih.gov/" + id + "/", id);
       }).join(" ") + "</dd>";
     }

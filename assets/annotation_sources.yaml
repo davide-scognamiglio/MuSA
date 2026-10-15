@@ -95,6 +95,12 @@ providers:
     mode: basic
     manifest: clinvar_variant_summary
     url: https://www.ncbi.nlm.nih.gov/clinvar/
+  pubtator3:
+    name: PubTator3 (MuSA snapshot)
+    step: PUBTATOR3_LINKS
+    mode: basic
+    manifest: pubtator3_index
+    url: https://www.ncbi.nlm.nih.gov/research/pubtator3/
   clinvar_submissions:
     name: ClinVar submission summary
     step: CLINVAR_SUBMISSIONS
@@ -188,6 +194,14 @@ sources:
     category: Known variants and literature
     provider: vep_cache
     columns: [GENE_PHENO, PHENO, SOMATIC, PUBMED]
+  - id: pubtator3
+    name: PubTator3
+    what: "PubMed and PMC articles that mention the variant (NCBI text mining), with the articles ClinVar and dbSNP cite"
+    level: variant
+    category: Known variants and literature
+    provider: pubtator3
+    columns: ['PubTator3_.*']
+    note: "Matched on rsID, gene + protein change and gene + cDNA change; up to 50 PMIDs listed, ClinVar-cited first, PubTator3_n counts all."
   - id: gwas_catalog
     name: GWAS Catalog
     what: Published genome-wide associations of the variant (study, trait, p-value, effect) and of the gene

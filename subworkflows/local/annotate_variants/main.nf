@@ -10,6 +10,7 @@ include {RENOVO_SCORE} from '../../../modules/local/renovo_score'
 include {ADD_GENOME_CHANGE} from '../../../modules/local/add_genome_change'
 include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
 include {CLEAN_COLUMNS} from '../../../modules/local/clean_columns'
+include {PUBTATOR3_LINKS} from '../../../modules/local/pubtator3_links'
 include {chrom_list} from '../../../lib/annot_utils.nf'
 
 /*
@@ -23,6 +24,8 @@ include {chrom_list} from '../../../lib/annot_utils.nf'
  *                            conservation (sharded by chromosome; extended mode)
  *   VCF_TO_MAF               MAF format and coordinates
  *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant (extended mode)
+ *   PUBTATOR3_LINKS          PubMed articles mentioning the variant (PubTator3, ClinVar and dbSNP
+ *                            citations)
  *
  * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
  * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops. Eight of its
@@ -91,7 +94,8 @@ workflow ANNOTATE_VARIANTS {
         // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
         // running as a branch of its own.
         merged_tsv = MERGE_ANNOTATIONS(joined)
-        merged = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
+        cleaned = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
+        merged = PUBTATOR3_LINKS(cleaned)
 
     emit:
         merged

@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""PubMed articles that mention the variant, from PubTator3.
+
+    pubtator3_links.py --maf in.maf --index pubtator3_index.tsv.gz --output out.maf
+
+The index (built once per MuSA release by tools/snapshots/pubtator3_snapshot.py from NCBI's
+mutation2pubtator3) maps a variant to the articles where PubTator3 found it, plus the articles
+ClinVar and dbSNP cite for it. A MAF row is looked up three ways and the articles are pooled:
+  - its dbSNP ids (rs... in Existing_variation),
+  - gene + protein change ("PAH:p.Y414C", from Hugo_Symbol and HGVSp_VEP),
+  - gene + cDNA change ("PAH:c.1241A>G", from HGVSc).
+The cDNA form matches only papers that number the variant on the same transcript; synonymous
+protein changes are not looked up (a paper's "p.L12=" does not identify the nucleotide change).
+
+Adds three columns, "." when nothing is found:
+  PubTator3_n       how many articles in all
+  PubTator3_pmids   up to 50 of them: those ClinVar cites first, then text-mined, then dbSNP-cited,
+                    newest first within each group
+  PubTator3_source  for each listed PMID, in the same order: ClinVar, text-mined or dbSNP, joined
+                    with "+" when several apply
+
+This complements VEP's PUBMED column (articles dbSNP links to the variant's rsID); both are kept.
+"""
+
+import argparse
+import gzip
+import os
+import re
+import sys
+
+MAX_PMIDS = 50
+SOURCE_NAME = {"C": "ClinVar", "T": "text-mined", "D": "dbSNP"}
+RANK = {"C": 0, "T": 1, "D": 2}
+AA3 = {"Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "Glu": "E", "Gly": "G",
+       "His": "H", "Ile": "I", "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", "Ser": "S",
+       "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V", "Ter": "X"}
+PROTEIN = re.compile(r"^p\.\(?([A-Z][a-z]{2})(\d+)([A-Z][a-z]{2})\)?$")
+RSID = re.compile(r"\brs\d+\b")
+COLUMNS = ["PubTator3_n", "PubTator3_pmids", "PubTator3_source"]
+
+
+def keys(row, col):
+    out = RSID.findall(row[col["Existing_variation"]]) if "Existing_variation" in col else []
+    gene = row[col["Hugo_Symbol"]] if "Hugo_Symbol" in col else ""
+    if gene and gene != ".":
+        m = PROTEIN.match(row[col["HGVSp_VEP"]] if "HGVSp_VEP" in col else "")
+        if m and m.group(1) in AA3 and m.group(3) in AA3 and m.group(1) != m.group(3):
+            out.append(f"{gene}:p.{AA3[m.group(1)]}{m.group(2)}{AA3[m.group(3)]}")
+        c = row[col["HGVSc"]].split(":")[-1] if "HGVSc" in col else ""
+        if c.startswith("c."):
+            out.append(f"{gene}:{c}")
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--maf", required=True)
+    ap.add_argument("--index", required=True)
+    ap.add_argument("--output", required=True)
+    args = ap.parse_args()
+    if not os.path.isfile(args.index):
+        sys.exit(f"{args.index} not found: this data directory predates MuSA 1.5's PubTator3 index. "
+                 "Run `--workflow setup --update_db_only true` once to add it.")
+
+    with open(args.maf, newline="\n") as fin:
+        header = fin.readline().rstrip("\n").split("\t")
+        col = {}
+        for i, name in enumerate(header):
+            col.setdefault(name, i)
+        rows = [line.rstrip("\n").split("\t") for line in fin]
+    row_keys = [keys(r, col) for r in rows]
+    wanted = {k for ks in row_keys for k in ks}
+
+    # The index holds ~2.5 million keys; only the MAF's are kept in memory.
+    index = {}
+    with gzip.open(args.index, "rt") as fh:
+        if fh.readline().rstrip("\n") != "key\tpmids":
+            sys.exit(f"{args.index}: unexpected header; rebuild it with this MuSA version's setup")
+        for line in fh:
+            key, _, pmids = line.rstrip("\n").partition("\t")
+            if key in wanted:
+                index[key] = pmids
+
+    n_hit = 0
+    with open(args.output, "w", newline="\n") as fout:
+        fout.write("\t".join(header + COLUMNS) + "\n")
+        for r, ks in zip(rows, row_keys):
+            found = {}
+            for k in ks:
+                for item in index.get(k, "").split(","):
+                    if item:
+                        pmid, _, letters = item.partition(":")
+                        found[pmid] = found.get(pmid, "") + letters
+            if not found:
+                fout.write("\t".join(r + ["."] * len(COLUMNS)) + "\n")
+                continue
+            n_hit += 1
+            ranked = sorted(found.items(), key=lambda kv: (min(RANK.get(c, 9) for c in kv[1]),
+                                                           -int(kv[0]) if kv[0].isdigit() else 0))
+            listed = ranked[:MAX_PMIDS]
+            sources = ["+".join(SOURCE_NAME[c] for c in sorted(set(letters), key=RANK.get) if c in SOURCE_NAME)
+                       for _, letters in listed]
+            fout.write("\t".join(r + [str(len(found)), ",".join(p for p, _ in listed),
+                                      ",".join(sources)]) + "\n")
+    print(f"{args.output}: PubTator3 articles for {n_hit} of {len(rows)} variants", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
