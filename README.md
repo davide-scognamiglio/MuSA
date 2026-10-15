@@ -12,8 +12,9 @@
 
 **MuSA (Multi-Source variant Annotation)** turns a germline VCF into an interpretation-ready MAF and
 a self-contained HTML report a clinician can triage without opening a spreadsheet. It annotates
-every variant with **Ensembl VEP, ClinVar, ClinGen and the Human Phenotype Ontology**, and in
-extended mode with **dbNSFP, 32 VEP plugins and the RENOVO ML pathogenicity classifier**, merges
+every variant with **Ensembl VEP, ClinVar, ClinGen, the Human Phenotype Ontology and PubTator3
+literature links**, and in extended mode with **dbNSFP, gnomAD exomes counts, 32 VEP plugins and
+the RENOVO ML pathogenicity classifier**, merges
 everything into one row-per-variant table, and ranks the result so the variants worth a second look
 surface first.
 
@@ -36,7 +37,7 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | **Genome build** | GRCh38/hg38 only. |
 | **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
-| **Storage, one-time** | ~30 GB for basic annotation, ~200 GB for extended (dbNSFP, RENOVO 1.5 and 32 VEP plugins). Downloaded once by the `setup` workflow, reused by every `annotate` run. |
+| **Storage, one-time** | ~30 GB for basic annotation, ~215 GB for extended (dbNSFP, RENOVO 1.5, gnomAD exomes and 32 VEP plugins). Downloaded once by the `setup` workflow, reused by every `annotate` run. |
 | **dbNSFP (extended mode)** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup --extended true`. Basic mode does not need it. |
 | **GeneBe (optional)** | Only needed for online-mode ACMG/AMP scoring. Free account at [genebe.net](https://genebe.net/signup). Offline mode (the default) does not need it; HPO matching runs offline. |
 | **License** | MuSA itself is [CC BY-NC 4.0](LICENSE) — non-commercial use and redistribution, with attribution. |
@@ -87,9 +88,10 @@ Two workflows:
 
 **Annotation sources.** MuSA brings in evidence at two levels and then classifies each variant:
 
-- **Variant level:** Ensembl VEP (with ClinVar and ClinGen expert-panel classifications) and
-  vcf2maf; in extended mode also 32 VEP plugins and dbNSFP (pathogenicity predictors, population
-  databases, conservation).
+- **Variant level:** Ensembl VEP (with ClinVar and ClinGen expert-panel classifications),
+  vcf2maf, PubTator3 literature links and what ClinVar submitters wrote about the variant; in
+  extended mode also 32 VEP plugins, gnomAD v4.1 exomes counts and dbNSFP (pathogenicity
+  predictors, population databases, conservation).
 - **Gene level:** ClinGen (gene–disease validity, dosage sensitivity, actionability) and the
   patient's HPO terms matched against each gene's; in extended mode also dbNSFP's gene file (OMIM,
   Orphanet, GenCC, pathways, expression, constraint).
@@ -208,8 +210,8 @@ build`) rather than silently mis-annotating a GRCh37 VCF — realign or lift ove
 
 | Mode | What it adds | Approx. size | When to use it |
 |---|---|---|---|
-| **Basic** (default) | VEP cache (consequences, gnomAD, 1000 Genomes, dbSNP), reference genome, ClinVar, ClinGen, Human Phenotype Ontology | ~30 GB | Consequence, frequency, clinical significance, gene-disease validity, phenotype match. No registration needed |
-| **Extended** (`--extended true`) | + dbNSFP (~35 predictors, gene file with OMIM/Orphanet/constraint), RENOVO 1.5, all 32 VEP plugins and their data (AlphaMissense, CADD, SpliceAI, Enformer, EVE, SpliceVault, ProtVar, G2P, ...) | ~200 GB total | Deep annotation: in-silico predictions and RENOVO classes. dbNSFP needs a registration |
+| **Basic** (default) | VEP cache (consequences, gnomAD, 1000 Genomes, dbSNP), reference genome, ClinVar (with its submission comments), ClinGen, Human Phenotype Ontology, PubTator3 | ~30 GB | Consequence, frequency, clinical significance, gene-disease validity, phenotype match. No registration needed |
+| **Extended** (`--extended true`) | + dbNSFP (~35 predictors, gene file with OMIM/Orphanet/constraint), RENOVO 1.5, gnomAD v4.1 exomes counts, all 32 VEP plugins and their data (AlphaMissense, CADD, SpliceAI, Enformer, EVE, SpliceVault, ProtVar, G2P, ...) | ~215 GB total | Deep annotation: in-silico predictions and RENOVO classes. dbNSFP needs a registration |
 
 The same `--extended true` switches `setup` (download) and `annotate` (use). An extended `annotate`
 stops at startup if the data directory has no dbNSFP.

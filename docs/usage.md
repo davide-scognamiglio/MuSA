@@ -23,8 +23,8 @@ selects them for `setup` (what to download) and `annotate` (what to use):
 
 | Mode | Databases | Size | Adds to the MAF |
 |---|---|---|---|
-| **Basic** (default) | VEP cache, reference genome, ClinVar, ClinGen, Human Phenotype Ontology | ~30 GB | Consequence, gnomAD/1000 Genomes frequencies, ClinVar and ClinGen classifications, gene–disease validity, HPO match |
-| **Extended** (`--extended true`) | + dbNSFP and the data files of 32 VEP plugins | ~200 GB | + ~35 dbNSFP predictors, dbNSFP gene file (OMIM, Orphanet, constraint, ...), RENOVO 1.5 classes, VEP plugin scores |
+| **Basic** (default) | VEP cache, reference genome, ClinVar (VCF and submission comments), ClinGen, Human Phenotype Ontology, PubTator3 variant mentions | ~30 GB | Consequence, gnomAD/1000 Genomes frequencies, ClinVar and ClinGen classifications, what ClinVar submitters wrote, gene–disease validity, HPO match and onset, literature links |
+| **Extended** (`--extended true`) | + dbNSFP, gnomAD v4.1 exomes and the data files of 32 VEP plugins | ~215 GB | + ~35 dbNSFP predictors, dbNSFP gene file (OMIM, Orphanet, constraint, ...), RENOVO 1.5 classes, gnomAD counts for indels, VEP plugin scores |
 
 Basic setup:
 
@@ -35,8 +35,8 @@ nextflow run MuSA \
    -profile docker
 ```
 
-**Extended setup** additionally fetches dbNSFP and the data files for all 32 VEP plugins, bringing
-the total to ~200 GB. Required before `annotate --extended true`; on a basic data directory it only
+**Extended setup** additionally fetches dbNSFP, gnomAD v4.1 exomes and the data files for all 32
+VEP plugins, bringing the total to ~215 GB. Required before `annotate --extended true`; on a basic data directory it only
 adds what is missing:
 
 ```bash

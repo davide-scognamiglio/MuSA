@@ -3,6 +3,52 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.5.0 - unreleased
+
+Facts for ACMG/AMP classification tools downstream of MuSA: what ClinVar submitters wrote, the
+literature that mentions the variant, gnomAD counts for indels, and the age of onset of the gene's
+diseases. MuSA still assigns no ACMG criterion itself.
+
+### `Added`
+
+- **ClinVar submission comments** (`ClinVar_SCV_*`, `ClinVar_EP_codes`; basic mode). ClinVar's
+  monthly `submission_summary` is indexed at setup. Each variant gets:
+  - how many submissions name PS3 or BS3;
+  - how many describe a functional study, and with what result;
+  - how many state that no functional evidence exists;
+  - the PMIDs those statements cite, and the shortest such statement.
+
+  Expert-panel and practice-guideline submissions are kept out of every count and listed apart, so a
+  benchmark built on panel assertions can leave them out. The statement rules were audited by hand
+  on 100 statements: effect reported 39/40, no effect 29/30, no evidence 15/15.
+- **PubTator3 literature links** (`PubTator3_n`, `PubTator3_pmids`, `PubTator3_source`; basic mode).
+  These are the PubMed and PMC articles that mention the variant: NCBI's text mining, plus the
+  articles ClinVar and dbSNP cite. Matched on rsID, gene + protein change and gene + cDNA change. On
+  the ClinGen Evidence Repository they find 70% of the papers expert panels cited as functional
+  evidence, against 17% for VEP's `PUBMED` (kept).
+- **gnomAD v4.1 exomes counts for every variant type** (`gnomADe41_*`; extended mode). VEP's cache
+  gives allele frequencies only, and dbNSFP's counts cover SNVs only. Now SNVs and indels alike get
+  AC, AN, AF and homozygote counts, overall and per genetic-ancestry group, the grpmax group and
+  gnomAD's FAF95/FAF99, from Ensembl's trimmed VCFs (~15 GB). `gnomADe41_status` says whether the
+  variant was `found` or `not_found` (queried and absent), so a variant absent from gnomAD is no
+  longer indistinguishable from one never looked up.
+- **`HPO_onset`**: for each of the gene's diseases, the age of onset HPO records (e.g. `Infantile
+  onset`), filled for every run from the HPO release already installed.
+
+### `Changed`
+
+- **Without patient HPO terms the `HPO_match*`, `HPO_matched_terms`, `HPO_best_disease` and
+  `HPO_panel` columns read `not_requested`**, not `.`, so a comparison that was not made cannot be
+  read as a gene that matched nothing (`none`).
+- `ClinVar_VariationID` (the ClinVar VCF id) is kept; it was dropped up to 1.4.
+- {COLUMNS_AND_SOURCES}
+
+### Upgrading from 1.4
+
+Run `setup --update_db_only true` once (add `--extended true` on an extended data directory). Basic
+setup downloads ~500 MB from NCBI and keeps about 45 MB (the PubTator3 and ClinVar submission
+indexes, built locally); extended adds ~15 GB of gnomAD exomes.
+
 ## v1.4.0 - 2026-10-06
 
 Eleven new VEP plugins in extended mode.

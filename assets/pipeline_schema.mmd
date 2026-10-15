@@ -52,12 +52,13 @@ graph LR
     subgraph variants [Variant-level annotation]
         vep[Ensembl VEP]
         clinvar[ClinVar · ClinGen]
-        plugins[32 VEP plugins]
+        plugins[32 VEP plugins · gnomAD counts]
         genebe[GeneBe]
         dbnsfp[dbNSFP 5.3]
         vcf2maf[vcf2maf]
         merge[Merge]
         renovo[RENOVO 1.5]
+        literature[PubTator3]
 
         vep -->|annotate| clinvar
         clinvar -->|annotate| plugins
@@ -66,6 +67,7 @@ graph LR
         dbnsfp -->|annotate| merge
         vcf2maf -->|annotate| merge
         merge -->|annotate| renovo
+        renovo -->|annotate| literature
     end
 
     subgraph genes [Gene-level annotation]
@@ -85,12 +87,14 @@ graph LR
 
     subgraph classify [Classification & report]
         clinvar_tiers[ClinVar tiers · PS1/PM5]
+        submissions[ClinVar submissions]
         acmg[ACMG]
         filter[Filter]
         report_patient[ ]
         maf_out[ ]
 
-        clinvar_tiers -->|annotate| acmg
+        clinvar_tiers -->|annotate| submissions
+        submissions -->|annotate| acmg
         acmg -->|annotate| filter
         filter -->|annotate| report_patient
         filter -->|annotate| maf_out
@@ -111,5 +115,5 @@ graph LR
     rename -->|annotate| vep
     rename -->|annotate| dbnsfp
     rename -->|annotate| vcf2maf
-    renovo -->|annotate| omim
+    literature -->|annotate| omim
     hpo -->|annotate| clinvar_tiers

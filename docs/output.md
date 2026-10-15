@@ -61,6 +61,32 @@ Both MAFs are tab-separated with a single header line. Missing values are writte
 pipeline normalises `NA`, empty cells and `.` to that one spelling, so a missing value tests the
 same way in every column.
 
+#### When "missing" carries meaning
+
+A few columns distinguish *looked up and absent* from *not looked up*, because the difference
+changes what the row says:
+
+| Value | Columns | Meaning |
+|---|---|---|
+| `.` | all | no value: not annotated, or the source has nothing for the variant |
+| `not_found` | `gnomADe41_status` | the variant's chromosome was queried in gnomAD v4.1 exomes and gnomAD has no record of the variant |
+| `found` | `gnomADe41_status` | gnomAD v4.1 exomes has the variant (the `gnomADe41_*` counts are filled) |
+| `not_requested` | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` | the samplesheet gave no HPO terms, so no comparison was made (`none` means compared, nothing matched) |
+| `unannotated` | `HPO_match`, `HPO_onset` | HPO has no phenotype (or disease) annotation for the gene |
+| `0` | `ClinVar_SCV_*_n` | the variant is in ClinVar and no counted submission says that; `.` means no ClinVar record |
+
+#### Columns holding several values
+
+| Columns | Separator | Example |
+|---|---|---|
+| `HPO_onset` | `;` between diseases, `,` between one disease's onsets | `OMIM:615681=Juvenile onset (HP:0003621),Childhood onset (HP:0011463)` |
+| `ClinVar_SCV_PS3_codes`, `ClinVar_SCV_BS3_codes` | `;` between codes, `:` before the count | `PS3:4;PS3_Moderate:1` |
+| `ClinVar_EP_codes` | `; ` between expert-panel submissions, `,` between codes | `Pathogenic: PS3,PM2_Supporting [ClinGen ... VCEP]` |
+| `PubTator3_pmids`, `PubTator3_source`, `ClinVar_SCV_func_pmids`, `PUBMED`, `Existing_variation`, `MaveDB_score` (VEP plugin) | `,` | `41892021,40730740` |
+| `Consequence` and other VEP multi-value fields | `,` (VEP's `&`) | `missense_variant,splice_region_variant` |
+| `HPO_matched_terms`, `ClinVar_PM5` | `; ` | `R978H 3★; R978S 1★` |
+
+
 ## Setup workflow
 
 Reference data is written under `--data_dir` in the layout the annotate workflow expects
