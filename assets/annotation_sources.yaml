@@ -984,7 +984,15 @@ sources:
     category: "Patient phenotype"
     provider: hpo
     columns: [HPO_match, HPO_match_score, HPO_matched_terms, HPO_best_disease, HPO_panel]
-    note: "Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms."
+    note: "Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms, \"not_requested\" otherwise."
+  - id: hpo_onset
+    name: "Human Phenotype Ontology (age of onset)"
+    what: "Age of onset HPO records for each of the gene's diseases"
+    level: gene
+    category: "Patient phenotype"
+    provider: hpo
+    columns: [HPO_onset]
+    note: "Disease-level clinical-course annotations under Onset (HP:0003674) in phenotype.hpoa; filled for every run."
 
   # ── MAF format and call information ─────────────────────────────────────────────────────────────
   - id: input_vcf

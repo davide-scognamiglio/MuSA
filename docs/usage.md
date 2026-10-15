@@ -146,7 +146,9 @@ The filtered MAF is produced by three filters, all optional and independently ap
 
 The samplesheet's `hpo` column adds a fourth, per-patient, phenotype panel. `HPO_MATCH` compares the
 patient's terms with every gene's annotations in the HPO release `setup` installed (`hp.obo`,
-`genes_to_phenotype.txt` and `phenotype.hpoa`, all from the same release) and writes five columns:
+`genes_to_phenotype.txt` and `phenotype.hpoa`, all from the same release) and writes five columns.
+Without patient terms all five are `not_requested`, so a comparison that was not made is never
+mistaken for a gene that matched nothing (`none`).
 
 | Column | Meaning |
 |---|---|
@@ -155,6 +157,12 @@ patient's terms with every gene's annotations in the HPO release `setup` install
 | `HPO_matched_terms` | how each related patient term matched, and through which gene term |
 | `HPO_best_disease` | the gene's OMIM/Orphanet disease whose phenotype best matches the patient, with its score |
 | `HPO_panel` | `yes` if the gene matches, exactly or narrower, a term specific enough to filter on (annotated to fewer than 1,000 genes), else `no`; `.` when no term is that specific, and then no phenotype filter is applied |
+
+A sixth column, `HPO_onset`, is filled whether or not the samplesheet gives terms: for each of the
+gene's diseases, the age-of-onset terms HPO records for it (disease-level clinical-course
+annotations under *Onset*, HP:0003674), e.g. `OMIM:615681=Juvenile onset (HP:0003621),Childhood
+onset (HP:0011463)`. Diseases are `;`-separated and one disease's onsets `,`-separated; `.` means
+the gene's diseases have no onset recorded, `unannotated` that HPO links no disease to the gene.
 
 A gene stays in the filtered MAF if it is in the static `--panel` or `HPO_panel` is `yes`. Only
 terms under *Phenotypic abnormality* are compared; obsolete and alternative IDs are mapped to the

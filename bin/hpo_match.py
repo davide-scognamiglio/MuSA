@@ -4,7 +4,7 @@
     hpo_match.py --maf in.maf --hpo "HP:0001250;HP:0004322" --hpo-dir /data/hpo --output out.maf
 
 Reads the ontology (hp.obo) and the gene and disease annotations of the same release
-(genes_to_phenotype.txt, phenotype.hpoa) and appends five columns:
+(genes_to_phenotype.txt, phenotype.hpoa) and appends six columns:
 
   HPO_match         strongest relation between the patient's terms and the gene's:
                       exact        the gene is annotated to the patient's term
@@ -25,10 +25,19 @@ Reads the ontology (hp.obo) and the gene and disease annotations of the same rel
                     enough to define a panel (annotated to fewer than PANEL_MAX_GENES genes,
                     the same cut-off the former online lookup used). "." when no patient term
                     is that specific, so FILTER_VARIANTS applies no HPO filter.
+  HPO_onset         the age of onset HPO records for each of the gene's diseases, whether or not
+                    patient terms were given: "OMIM:619340=Infantile onset (HP:0003593);..."
+                    (several onsets of one disease are ","-joined). "." when the gene's diseases
+                    have no onset annotated, "unannotated" when HPO links no disease to the gene.
 
 Only terms under Phenotypic abnormality (HP:0000118) are compared: mode of inheritance, onset and
 frequency terms describe diseases, not the patient's findings. Obsolete and alternative IDs are
-mapped to their current term. Without patient terms every column is ".".
+mapped to their current term. Without patient terms the five matching columns are "not_requested",
+so a missing comparison is never mistaken for a gene that matched nothing ("none").
+
+HPO_onset is a fact about the disease, not a judgement: onset comes from the disease-level
+clinical-course annotations (aspect C, terms under Onset HP:0003674), not from the onset some
+annotations give for a single phenotypic feature.
 """
 
 import argparse
@@ -37,10 +46,13 @@ import sys
 from collections import defaultdict
 
 PHENOTYPIC_ABNORMALITY = "HP:0000118"
+ONSET = "HP:0003674"
 PANEL_MAX_GENES = 1000
 MISSING = "."
+NOT_REQUESTED = "not_requested"
 RANK = {"exact": 3, "narrower": 2, "broader": 1, "none": 0}
-COLUMNS = ["HPO_match", "HPO_match_score", "HPO_matched_terms", "HPO_best_disease", "HPO_panel"]
+MATCH_COLUMNS = ["HPO_match", "HPO_match_score", "HPO_matched_terms", "HPO_best_disease", "HPO_panel"]
+COLUMNS = MATCH_COLUMNS + ["HPO_onset"]
 
 
 # ── ontology ──────────────────────────────────────────────────────────────────────────────────────
@@ -156,6 +168,35 @@ def load_disease_annotations(path, onto):
     return names, terms
 
 
+def load_disease_onsets(path, onto):
+    """Disease ID -> onset terms, from the disease-level clinical-course annotations."""
+    onsets = defaultdict(set)
+    with open(path, encoding="utf-8") as fh:
+        header = None
+        for line in fh:
+            if line.startswith("#"):
+                continue
+            r = line.rstrip("\n").split("\t")
+            if header is None:
+                header = {c: i for i, c in enumerate(r)}
+                continue
+            if r[header["aspect"]] != "C" or r[header["qualifier"]] == "NOT":
+                continue
+            term = onto.resolve(r[header["hpo_id"]])
+            if term and term != ONSET and ONSET in onto.ancestors(term):
+                onsets[r[header["database_id"]]].add(term)
+    return onsets
+
+
+def onset_column(gene, gene_diseases, disease_onsets, onto):
+    diseases = gene_diseases.get(gene)
+    if not diseases:
+        return "unannotated"
+    parts = [f"{d}=" + ",".join(onto.label(t) for t in sorted(disease_onsets[d]))
+             for d in sorted(diseases) if disease_onsets.get(d)]
+    return ";".join(parts) or MISSING
+
+
 def information_content(gene_terms, onto):
     """IC(t) = -ln(fraction of annotated genes carrying t or a descendant of t)."""
     count = defaultdict(int)
@@ -269,17 +310,21 @@ def main():
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
+    obo = f"{args.hpo_dir}/hp.obo"
+    try:
+        onto = Ontology(obo)
+    except FileNotFoundError:
+        sys.exit(f"{obo} not found: this data directory predates HPO support. Run "
+                 "`--workflow setup --update_db_only true` once to add the HPO files.")
+    gene_terms, gene_diseases, by_id = load_gene_annotations(
+        f"{args.hpo_dir}/genes_to_phenotype.txt", onto)
+    disease_onsets = load_disease_onsets(f"{args.hpo_dir}/phenotype.hpoa", onto)
+
     raw = (args.hpo or "").strip()
     if raw.upper() in ("", "NULL", "NA", "."):
         patient, notes = [], []
         print("HPO: no patient terms in the samplesheet", file=sys.stderr)
     else:
-        obo = f"{args.hpo_dir}/hp.obo"
-        try:
-            onto = Ontology(obo)
-        except FileNotFoundError:
-            sys.exit(f"{obo} not found: this data directory predates HPO support. Run "
-                     "`--workflow setup --update_db_only true` once to add the HPO files.")
         patient, notes = parse_patient_terms(raw, onto)
         print(f"HPO {onto.version}: {len(patient)} patient term(s) "
               f"{', '.join(onto.label(p) for p in patient) or '(none)'}", file=sys.stderr)
@@ -290,21 +335,17 @@ def main():
             open(args.output, "w", encoding="utf-8", newline="\n") as fout:
         header = fin.readline().rstrip("\n").split("\t")
         fout.write("\t".join(header + COLUMNS) + "\n")
-        if not patient:
-            for line in fin:
-                fout.write(line.rstrip("\n") + "\t" + "\t".join([MISSING] * len(COLUMNS)) + "\n")
-            return
 
-        gene_terms, gene_diseases, by_id = load_gene_annotations(
-            f"{args.hpo_dir}/genes_to_phenotype.txt", onto)
-        disease_names, disease_terms = load_disease_annotations(
-            f"{args.hpo_dir}/phenotype.hpoa", onto)
-        ic, gene_count, ic_max = information_content(gene_terms, onto)
-        m = Matcher(onto, patient, ic, ic_max, gene_count)
-        skipped = sorted(set(patient) - m.panel_terms)
-        if skipped:
-            print(f"  too general to filter on (>= {PANEL_MAX_GENES} genes): "
-                  f"{', '.join(onto.label(p) for p in skipped)}", file=sys.stderr)
+        m = None
+        if patient:
+            disease_names, disease_terms = load_disease_annotations(
+                f"{args.hpo_dir}/phenotype.hpoa", onto)
+            ic, gene_count, ic_max = information_content(gene_terms, onto)
+            m = Matcher(onto, patient, ic, ic_max, gene_count)
+            skipped = sorted(set(patient) - m.panel_terms)
+            if skipped:
+                print(f"  too general to filter on (>= {PANEL_MAX_GENES} genes): "
+                      f"{', '.join(onto.label(p) for p in skipped)}", file=sys.stderr)
 
         col = {c: i for i, c in enumerate(header)}
         sym_i, id_i = col.get("Hugo_Symbol"), col.get("Entrez_gene_id")
@@ -316,14 +357,17 @@ def main():
             if gene is None and sym_i is not None and sym_i < len(r):
                 gene = r[sym_i]
             if gene not in cache:
-                cache[gene] = gene_columns(gene, gene_terms, gene_diseases, disease_names,
-                                           disease_terms, m)
+                match = (gene_columns(gene, gene_terms, gene_diseases, disease_names,
+                                      disease_terms, m)
+                         if m else [NOT_REQUESTED] * len(MATCH_COLUMNS))
+                cache[gene] = match + [onset_column(gene, gene_diseases, disease_onsets, onto)]
             counts[cache[gene][0]] += 1
             fout.write("\t".join(r + cache[gene]) + "\n")
-        print("  variants by HPO match: "
-              + ", ".join(f"{k} {counts[k]}" for k in
-                          ("exact", "narrower", "broader", "none", "unannotated") if counts[k]),
-              file=sys.stderr)
+        if m:
+            print("  variants by HPO match: "
+                  + ", ".join(f"{k} {counts[k]}" for k in
+                              ("exact", "narrower", "broader", "none", "unannotated") if counts[k]),
+                  file=sys.stderr)
 
 
 if __name__ == "__main__":

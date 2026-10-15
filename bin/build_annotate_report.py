@@ -92,11 +92,13 @@ DETAIL_COLUMNS = [
     # Present only when GeneBe ran (online mode). renovo_adj_acmg_score is not GeneBe's:
     # RENOVO_ADJUST_ACMG pushes GeneBe's score past 5 or below 0 for missense variants
     # by PL_score, so it is labelled as MuSA's and shown next to the original.
-    # Present when the samplesheet gave HPO terms (HPO_MATCH, bin/hpo_match.py).
+    # From HPO_MATCH (bin/hpo_match.py): the match columns carry data only when the samplesheet
+    # gave HPO terms ("not_requested" otherwise); HPO_onset is always filled.
     ("HPO_match",              "Match with the patient's phenotype"),
     ("HPO_match_score",        "Phenotype similarity (0-1)"),
     ("HPO_matched_terms",      "Matched HPO terms"),
     ("HPO_best_disease",       "Best-matching disease"),
+    ("HPO_onset",              "Age of onset (HPO)"),
     ("acmg_criteria",          "GeneBe ACMG criteria"),
     ("acmg_score",             "GeneBe ACMG score"),
     ("renovo_adj_acmg_score",  "ACMG score, ReNOVo-adjusted (missense)"),
@@ -112,7 +114,7 @@ DETAIL_SECTIONS = [
     ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinVar_PS1", "ClinVar_PM5",
                         "ClinGen_GeneDisease_Disease",
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
-                        "MIM_disease", "Orphanet_disorder"]),
+                        "MIM_disease", "Orphanet_disorder", "HPO_onset"]),
     ("Patient phenotype", ["HPO_match", "HPO_match_score", "HPO_matched_terms",
                            "HPO_best_disease"]),
     ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
@@ -1024,7 +1026,10 @@ PAGE_JS = r"""
     return cache[key];
   }
 
-  function absent(v) { return !v || v === "." || v === "nan" || v === "None"; }
+  // "not_requested": HPO matching without patient terms (bin/hpo_match.py), shown as no data.
+  function absent(v) {
+    return !v || v === "." || v === "nan" || v === "None" || v === "not_requested";
+  }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
