@@ -96,10 +96,10 @@ providers:
     manifest: clinvar_variant_summary
     url: https://www.ncbi.nlm.nih.gov/clinvar/
   pubtator3:
-    name: PubTator3 (MuSA snapshot)
+    name: PubTator3 (NCBI mutation2pubtator3)
     step: PUBTATOR3_LINKS
     mode: basic
-    manifest: pubtator3_index
+    manifest: pubtator3
     url: https://www.ncbi.nlm.nih.gov/research/pubtator3/
   clinvar_submissions:
     name: ClinVar submission summary

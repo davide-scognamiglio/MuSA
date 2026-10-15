@@ -24,7 +24,7 @@ process PUBTATOR3_LINKS {
 
     script:
     """
-    pubtator3_links.py --maf ${maf} \\
+    pubtator3_links.py annotate --maf ${maf} \\
         --index /data/pubtator3/pubtator3_index.tsv.gz \\
         --output ${meta.patient}.pubtator3.maf
     """

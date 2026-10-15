@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
 """PubMed articles that mention the variant, from PubTator3.
 
-    pubtator3_links.py --maf in.maf --index pubtator3_index.tsv.gz --output out.maf
+    pubtator3_links.py build    mutation2pubtator3.gz MANE.summary.txt.gz pubtator3_index.tsv.gz
+    pubtator3_links.py annotate --maf in.maf --index pubtator3_index.tsv.gz --output out.maf
 
-The index (built once per MuSA release by tools/snapshots/pubtator3_snapshot.py from NCBI's
-mutation2pubtator3) maps a variant to the articles where PubTator3 found it, plus the articles
-ClinVar and dbSNP cite for it. A MAF row is looked up three ways and the articles are pooled:
+build (setup)
+    NCBI's mutation2pubtator3.gz lists every variant mention PubTator3 found in PubMed and PMC, plus
+    the articles ClinVar and dbSNP cite, one row per article and variant concept. The index maps
+        "rs121908062"     a variant PubTator3 normalised to dbSNP
+        "PAH:p.Y414C"     gene symbol + protein change (one-letter, stop as X)
+        "PAH:c.1241A>G"   gene symbol + cDNA change, as the paper numbers it
+    to "PMID:sources" items, newest first (T text-mined, C cited by ClinVar, D cited by dbSNP/dbGaP).
+    Gene-scoped keys need PubTator3's CorrespondingGene (an NCBI Gene id), mapped to the symbol MuSA
+    writes through the MANE summary; a protein or cDNA mention with no gene, or a gene outside MANE,
+    is left out ("p.Y414C" alone could be any protein). NCBI replaces the file in place, so the
+    index reflects the day setup ran; the setup report records the file's checksum.
+
+annotate
+    A MAF row is looked up three ways and the articles are pooled:
   - its dbSNP ids (rs... in Existing_variation),
   - gene + protein change ("PAH:p.Y414C", from Hugo_Symbol and HGVSp_VEP),
   - gene + cDNA change ("PAH:c.1241A>G", from HGVSc).
@@ -27,6 +39,7 @@ import gzip
 import os
 import re
 import sys
+from collections import defaultdict
 
 MAX_PMIDS = 50
 SOURCE_NAME = {"C": "ClinVar", "T": "text-mined", "D": "dbSNP"}
@@ -37,6 +50,53 @@ AA3 = {"Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", "Gln": "Q", "
 PROTEIN = re.compile(r"^p\.\(?([A-Z][a-z]{2})(\d+)([A-Z][a-z]{2})\)?$")
 RSID = re.compile(r"\brs\d+\b")
 COLUMNS = ["PubTator3_n", "PubTator3_pmids", "PubTator3_source"]
+SOURCE_LETTER = {"PubTator3": "T", "ClinVar": "C", "dbSNP": "D", "dbGAP": "D"}
+RS_CONCEPT = re.compile(r"^rs\d+$")
+HGVS = re.compile(r"HGVS:([pc]\.[^;]+)")
+GENE = re.compile(r"CorrespondingGene:([\d;,]+)")
+
+
+# ── build ─────────────────────────────────────────────────────────────────────────────────────────
+def build(args):
+    ent2sym = {}
+    with gzip.open(args.mane, "rt") as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+        i_id, i_sym = header.index("#NCBI_GeneID"), header.index("symbol")
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            ent2sym[f[i_id].split(":")[1]] = f[i_sym]
+
+    index = defaultdict(dict)   # key -> pmid -> set of source letters
+    rows = kept = 0
+    with gzip.open(args.pubtator, "rt", encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            if len(f) < 5:
+                continue
+            rows += 1
+            pmid, concept, sources = f[0], f[2], f[4]
+            letters = {SOURCE_LETTER[s] for s in sources.split("|") if s in SOURCE_LETTER}
+            found = []
+            if RS_CONCEPT.match(concept):
+                found.append(concept)
+            else:
+                h, g = HGVS.search(concept), GENE.search(concept)
+                if h and g:
+                    change = h.group(1).replace("*", "X")
+                    found += [f"{ent2sym[e]}:{change}" for e in re.split(r"[;,]", g.group(1)) if e in ent2sym]
+            for k in found:
+                index[k].setdefault(pmid, set()).update(letters)
+            kept += bool(found)
+
+    with gzip.open(args.output, "wt") as fh:
+        fh.write("key\tpmids\n")
+        for key in sorted(index):
+            pmids = sorted(index[key].items(), key=lambda kv: -int(kv[0]) if kv[0].isdigit() else 0)
+            fh.write(key + "\t" + ",".join(f"{p}:{''.join(sorted(s)) or 'T'}" for p, s in pmids) + "\n")
+    print(f"{args.output}: {len(index)} keys from {kept} of {rows} PubTator3 rows")
+
+
+# ── annotate ──────────────────────────────────────────────────────────────────────────────────────
 
 
 def keys(row, col):
@@ -52,12 +112,7 @@ def keys(row, col):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--maf", required=True)
-    ap.add_argument("--index", required=True)
-    ap.add_argument("--output", required=True)
-    args = ap.parse_args()
+def annotate(args):
     if not os.path.isfile(args.index):
         sys.exit(f"{args.index} not found: this data directory predates MuSA 1.5's PubTator3 index. "
                  "Run `--workflow setup --update_db_only true` once to add it.")
@@ -103,6 +158,21 @@ def main():
             fout.write("\t".join(r + [str(len(found)), ",".join(p for p, _ in listed),
                                       ",".join(sources)]) + "\n")
     print(f"{args.output}: PubTator3 articles for {n_hit} of {len(rows)} variants", file=sys.stderr)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    b = sub.add_parser("build")
+    b.add_argument("pubtator")
+    b.add_argument("mane")
+    b.add_argument("output")
+    a = sub.add_parser("annotate")
+    a.add_argument("--maf", required=True)
+    a.add_argument("--index", required=True)
+    a.add_argument("--output", required=True)
+    args = ap.parse_args()
+    {"build": build, "annotate": annotate}[args.cmd](args)
 
 
 if __name__ == "__main__":
