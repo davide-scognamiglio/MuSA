@@ -250,13 +250,14 @@ features. Pick one with `-r`:
 
 | Release | Use it to | Run with |
 |---|---|---|
-| **1.4.0** (latest) | start new analyses: 32 VEP plugins in extended mode (SpliceAI, ProtVar, G2P, ...) | `-r v1.4.0` |
+| **1.5.0** (latest) | start new analyses: ClinVar submission comments, PubTator3 literature links, HPO age of onset, gnomAD v4.1 exomes counts | `-r v1.5.0` |
+| **1.4.0** | reproduce results made with 1.4 (32 VEP plugins) | `-r v1.4.0` |
 | **1.3.0** | reproduce results made with 1.3 (21 VEP plugins) | `-r v1.3.0` |
 | **1.2.0** | reproduce results made with 1.2 (dbNSFP and RENOVO 1.5 in every run) | `-r v1.2.0` |
 | **1.1.0** | reproduce results made with 1.1 (ANNOVAR-based RENOVO) | `-r v1.1.0` |
 | **1.0.0** | run the version described in the [paper](https://doi.org/10.1186/s12859-026-06513-0) | `-r v1.0.0` |
 
-`v1.0.0` and `v1.1.0` were updated in place on 2026-09-24, and `v1.2.0` on 2026-10-06, with stability and correctness fixes (see
+`v1.0.0` and `v1.1.0` were updated in place on 2026-09-24, `v1.2.0` on 2026-10-06, and `v1.3.0` and `v1.4.0` on 2026-10-26, with stability and correctness fixes (see
 [CHANGELOG](CHANGELOG.md)). If you ran one of them before its update, refresh Nextflow's copy of the
 pipeline once with `nextflow drop davide-scognamiglio/MuSA`. Each release downloads the databases
 it was built for, from a manifest pinned in
