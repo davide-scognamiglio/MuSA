@@ -57,6 +57,14 @@ hundreds of heterogeneous annotations without nesting, and carries a sample iden
 per-patient MAFs can be concatenated into a cohort table and read directly by tools such as
 [maftools](https://bioconductor.org/packages/maftools/).
 
+The transcript is VEP's `--pick` choice, ordered by consequence severity first (`--pick_order
+rank,mane_select,...`): a variant is reported with its most severe consequence on any transcript,
+which is not always the MANE Select one. On the ClinGen Evidence Repository, 342 of the 11,714
+variants that overlap a MANE transcript (2.9%) are reported on another transcript, for example a
+`stop_gained` on an NMD transcript that is missense on MANE. `MANE_SELECT` is empty on those rows.
+dbNSFP lists only non-synonymous changes, so a variant reported as missense on another transcript
+but synonymous or intronic on MANE can have no dbNSFP values at all.
+
 Both MAFs are tab-separated with a single header line. Missing values are written as `.`: the
 pipeline normalises `NA`, empty cells and `.` to that one spelling, so a missing value tests the
 same way in every column.
