@@ -3,6 +3,23 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.6.0 - unreleased
+
+### `Added`
+
+- **HPO terms by name.** The samplesheet's `hpo` field takes HPO codes or exact primary names, in
+  any case and mixed (`HP:0001250;microcephaly`). Every patient's terms are resolved before
+  annotation starts; a synonym, a misspelling or an obsolete code with no replacement stops the
+  run in seconds with the closest primary names, instead of being dropped silently.
+- **The sample's own genotype** (`Zygosity`, `Sample_GT`, `Sample_DP`, `Sample_GQ`, `Sample_AD`,
+  `Sample_VAF`), read from its FORMAT values on every row.
+
+### `Fixed`
+
+- **The report's zygosity and read-depth warning came from INFO** (`AC`/`AN`/`DP`). Those describe
+  every sample of a joint-called VCF, and many VCFs have no `AC`/`AN` at all: on GIAB's NA12878 the
+  report showed no zygosity for any variant. Both now come from the sample's own call.
+
 ## v1.5.0 - 2026-10-26
 
 Facts for ACMG/AMP classification tools downstream of MuSA: what ClinVar submitters wrote, the

@@ -87,6 +87,12 @@ DETAIL_COLUMNS = [
     ("PUBMED",               "PubMed"),
     ("PubTator3_pmids",      "PubMed (PubTator3)"),
     ("ref_context",          "Reference context"),
+    ("Zygosity",             "Zygosity"),
+    ("Sample_GT",            "Genotype"),
+    ("Sample_DP",            "Read depth"),
+    ("Sample_GQ",            "Genotype quality"),
+    ("Sample_AD",            "Allele depths (ref, alt)"),
+    ("Sample_VAF",           "Alternate allele fraction"),
     ("bioinfo_params",       "Call quality"),
     ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
     ("PhenotypeOrthologous_Rat_phenotype",   "Rat orthologue phenotype"),
@@ -122,6 +128,8 @@ DETAIL_SECTIONS = [
     ("Prediction",     ["PL_score", "acmg_criteria", "acmg_score", "renovo_adj_acmg_score"]),
     # No "References" section: every accession in the MAF is rendered as a link at the
     # top of the panel instead, so listing the raw strings again would be noise.
+    ("Genotype",        ["Zygosity", "Sample_GT", "Sample_DP", "Sample_GQ", "Sample_AD",
+                         "Sample_VAF"]),
     ("Call parameters", ["bioinfo_params", "ref_context"]),
     ("Model organisms", ["PhenotypeOrthologous_Mouse_phenotype",
                          "PhenotypeOrthologous_Rat_phenotype"]),
@@ -352,6 +360,15 @@ def zygosity(value):
     return "homozygous" if ac >= an else "heterozygous"
 
 
+def row_zygosity(df, i):
+    """The sample's zygosity: the Zygosity column (1.6+, from its own GT); INFO AC/AN for older
+    MAFs, where it is right only for a single-sample VCF."""
+    if "Zygosity" in df.columns:
+        z = str(df["Zygosity"].iloc[i])
+        return "" if z in (".", "nan", "") else z
+    return zygosity(df["bioinfo_params"].iloc[i]) if "bioinfo_params" in df.columns else ""
+
+
 # ── payload ───────────────────────────────────────────────────────────────────
 def build_payload(df, main_cols, detail_cols, flags, prio, groups):
     """Columnar, per-column dictionary-encoded JSON.
@@ -457,8 +474,7 @@ def overview(df, flags):
     lof = [i for i in idx
            if str(impact.iloc[i]).upper() == "HIGH"
            and str(valid.iloc[i]).strip().lower() in ("definitive", "strong")]
-    biallelic = [i for i in idx
-                 if zygosity(info.iloc[i]) in ("homozygous", "hemizygous")]
+    biallelic = [i for i in idx if row_zygosity(df, i) in ("homozygous", "hemizygous")]
 
     # The patient's phenotype: genes HPO_MATCH put in the phenotype panel (an exact or narrower
     # match on a specific term). When every term was too general to make a panel, HPO_panel is
@@ -1026,6 +1042,7 @@ PAGE_JS = r"""
     cache[key] = c.v ? c.v : c.i.map(function (i) { return c.d[i]; });
     return cache[key];
   }
+  function has(key) { return !!P.data[key]; }
 
   // "not_requested": HPO matching without patient terms (bin/hpo_match.py), shown as no data.
   function absent(v) {
@@ -1340,6 +1357,12 @@ PAGE_JS = r"""
     if (an === 1) return "hemizygous";
     return ac >= an ? "homozygous" : "heterozygous";
   }
+  // The sample's own call (Zygosity, 1.6+); INFO AC/AN only for older MAFs, where it holds for a
+  // single-sample VCF but counts every sample of a joint-called one.
+  function sampleZygosity(i, f) {
+    if (has("Zygosity")) { var z = col("Zygosity")[i]; return absent(z) ? "" : z; }
+    return zygosity(f);
+  }
 
   // ── assessment ───────────────────────────────────────────────────────────
   // The panel used to be a flat dump of every column, leaving the reader to hold
@@ -1363,13 +1386,13 @@ PAGE_JS = r"""
     else if (impact === "MODERATE") out.push(["", "Moderate-impact change (" + csq + ")."]);
     else if (!absent(impact)) out.push(["", esc(impact.toLowerCase()) + "-impact change (" + csq + ")."]);
 
-    var f = infoFields(col("bioinfo_params")[i]), z = zygosity(f);
+    var f = infoFields(col("bioinfo_params")[i]), z = sampleZygosity(i, f);
     if (z === "homozygous" || z === "hemizygous") {
       out.push(["hit", "Called " + z + ": no wild-type allele in this sample."]);
     } else if (z) {
       out.push(["", "Called heterozygous."]);
     }
-    var dp = parseFloat(f.DP);
+    var dp = parseFloat(has("Sample_DP") ? col("Sample_DP")[i] : f.DP);
     if (!isNaN(dp) && dp < 20) {
       out.push(["warn", "Only " + dp + " reads at this position; the call is weakly supported."]);
     }
@@ -1492,10 +1515,10 @@ PAGE_JS = r"""
       return '<dd class="plain refs">' + html + "</dd>";
     }
     if (k === "bioinfo_params") {
-      var f = infoFields(v), z = zygosity(f);
+      var f = infoFields(v), z = has("Zygosity") ? "" : zygosity(f);
       var rows = [];
       if (z) rows.push(["Zygosity", z + (f.AC && f.AN ? " (" + f.AC + " of " + f.AN + " alleles)" : "")]);
-      if (f.DP) rows.push(["Read depth", f.DP + "×"]);
+      if (f.DP) rows.push([has("Sample_DP") ? "Read depth (site)" : "Read depth", f.DP + "×"]);
       if (f.QD) rows.push(["Quality by depth", f.QD]);
       if (f.MQ) rows.push(["Mapping quality", f.MQ]);
       if (f.FS) rows.push(["Strand bias (FS)", f.FS]);
@@ -1977,7 +2000,7 @@ def _finding_tags(df, i):
     if get("IMPACT").upper() == "HIGH":
         tags.append(('<span class="tag on">high impact</span>'))
 
-    z = zygosity(get("bioinfo_params"))
+    z = row_zygosity(df, i)
     if z in ("homozygous", "hemizygous"):
         tags.append(f'<span class="tag on">{z}</span>')
 

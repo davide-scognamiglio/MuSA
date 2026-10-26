@@ -1046,6 +1046,15 @@ sources:
     kind: computed
     provider: musa
     columns: [QUAL, FILTER, bioinfo_params, FORMAT_FIELDS, FORMAT_VALUES, INFO, FORMAT, '{sample}']
+  - id: sample_genotype
+    name: Sample genotype
+    what: "The sample's own call: zygosity, genotype, read depth, genotype quality, allele depths and alternate allele fraction"
+    level: format
+    category: Call information
+    kind: computed
+    provider: musa
+    columns: [Zygosity, 'Sample_.*']
+    note: "From the sample's FORMAT values (SAMPLE_GENOTYPES), not INFO: in a joint-called VCF, INFO's AC/AN/DP count every sample."
   - id: maf_format
     name: MAF format (vcf2maf)
     what: Standard MAF columns, genomic coordinates, picked-transcript fields
