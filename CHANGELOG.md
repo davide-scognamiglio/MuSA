@@ -5,6 +5,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.3.0 - 2026-10-06
 
+> Updated in place on 2026-10-26: ClinVar PS1/PM5 evidence no longer changes from run to run.
+> ClinVar names every gene a variant overlaps ("LDLR;MIR6886"), and the residue index treated that
+> list as a gene of its own, so one residue was split in two and each run used one half at random.
+> Each record now joins every gene it names (fixed in 1.5.0, backported); no setup is needed.
+
 A smaller default install, offline phenotype matching, ClinVar evidence at the variant's residue
 and every annotation source listed and checked. New VEP plugins come in 1.4.
 
