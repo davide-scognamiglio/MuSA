@@ -3,6 +3,7 @@
 
     group_genotypes.py --maf in.maf --members members.tsv --mode family|cohort --output out.maf
                        [--sidecar genotypes.tsv.gz] [--max-member-columns 10]
+                       [--genes genes.tsv] [--rare-af 0.01]
                        [--dn-min-dp 10] [--dn-min-gq 20] [--dn-max-parent-alt 0]
 
 members.tsv: sample, role, sex, affected, family per line, in the VCF's column order (the order
@@ -31,7 +32,12 @@ Family mode (a proband, its parents, possibly siblings and relatives):
 Cohort mode (cases, mostly unrelated):
   Cohort_called_n, Cohort_carriers_n, Cohort_het_n, Cohort_hom_n, Cohort_AF,
   Cohort_carrier_families_n (relatives counted once, via the samplesheet `family` column),
-  Cohort_affected_carriers_n, Cohort_unaffected_carriers_n, Cohort_carriers (up to 50 names)
+  Cohort_affected_carriers_n, Cohort_unaffected_carriers_n, Cohort_carriers (up to 50 names);
+  a hemizygous carrier counts in Cohort_het_n.
+  --genes: one line per gene, members and families carrying its variants, overall and for rare
+  (MAX_AF below --rare-af, or absent from the population databases) HIGH / MODERATE impact
+  variants, split by affected status. Counts over every variant of the group, before the run's
+  panel and HPO filters; no statistic is computed.
 
 These are facts about genotypes, not ACMG criteria. Parentage is assumed. chrX outside the
 pseudoautosomal regions in a male proband can only be maternal or de novo, chrY only paternal or
@@ -218,6 +224,50 @@ def label(row, col):
     return f"{gene}:{change}" if gene not in ("", MISSING) else change
 
 
+GENE_COLUMNS = ["gene", "variants", "carriers", "carrier_families",
+                "rare_high_carriers", "rare_moderate_carriers",
+                "rare_high_or_moderate_carriers", "rare_high_or_moderate_families",
+                "rare_high_or_moderate_affected", "rare_high_or_moderate_unaffected"]
+
+
+def write_genes(args, rows, calls_by_row, col, members):
+    """Cohort gene table: who carries each gene's variants, overall and rare HIGH/MODERATE."""
+    gene_i, impact_i, af_i = col.get("Hugo_Symbol"), col.get("IMPACT"), col.get("MAX_AF")
+    sets = defaultdict(lambda: defaultdict(set))
+    n_variants = defaultdict(int)
+    for r, calls in zip(rows, calls_by_row):
+        gene = r[gene_i] if gene_i is not None else ""
+        if gene in ("", MISSING):
+            continue
+        carriers = {i for i, c in enumerate(calls) if c.carrier}
+        g = sets[gene]
+        n_variants[gene] += 1
+        g["any"] |= carriers
+        impact = r[impact_i] if impact_i is not None else ""
+        try:
+            af = float(r[af_i]) if af_i is not None else None
+        except ValueError:
+            af = None
+        if af is None or af < args.rare_af:
+            if impact == "HIGH":
+                g["high"] |= carriers
+            elif impact == "MODERATE":
+                g["moderate"] |= carriers
+    fam = lambda idx: len({members[i]["family"] for i in idx})
+    out = []
+    for gene, g in sets.items():
+        hm = g["high"] | g["moderate"]
+        out.append([gene, n_variants[gene], len(g["any"]), fam(g["any"]), len(g["high"]),
+                    len(g["moderate"]), len(hm), fam(hm),
+                    sum(affected_status(members[i]) == "yes" for i in hm),
+                    sum(affected_status(members[i]) == "no" for i in hm)])
+    out.sort(key=lambda x: (-x[7], -x[6], -x[3], x[0]))
+    with open(args.genes, "w") as fh:
+        fh.write("\t".join(GENE_COLUMNS) + "\n")
+        for line in out:
+            fh.write("\t".join(map(str, line)) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--maf", required=True)
@@ -229,6 +279,8 @@ def main():
     ap.add_argument("--dn-min-dp", type=float, default=10)
     ap.add_argument("--dn-min-gq", type=float, default=20)
     ap.add_argument("--dn-max-parent-alt", type=float, default=0)
+    ap.add_argument("--genes")
+    ap.add_argument("--rare-af", type=float, default=0.01)
     args = ap.parse_args()
 
     members = read_members(args.members)
@@ -325,6 +377,9 @@ def main():
                 for s, c in zip(samples, calls):
                     if c.carrier:
                         side.write("\t".join(key + [s] + c.columns()) + "\n")
+
+    if args.mode == "cohort" and args.genes:
+        write_genes(args, rows, calls_by_row, col, members)
 
     if args.mode == "family":
         counts = defaultdict(int)

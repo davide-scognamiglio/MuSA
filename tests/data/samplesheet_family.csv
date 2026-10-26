@@ -1,0 +1,4 @@
+patient,sample_type,sample_file,hpo,group,sample,role,sex,affected,family
+FAM_P,blood,https://raw.githubusercontent.com/davide-scognamiglio/test-datasets/main/family/family_fixture.vcf.gz,Seizure,FAM,P1,proband,male,yes,
+FAM_M,blood,https://raw.githubusercontent.com/davide-scognamiglio/test-datasets/main/family/family_fixture.vcf.gz,,FAM,M1,mother,female,no,
+FAM_F,blood,https://raw.githubusercontent.com/davide-scognamiglio/test-datasets/main/family/family_fixture.vcf.gz,,FAM,F1,father,male,no,

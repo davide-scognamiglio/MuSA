@@ -163,6 +163,14 @@
                     "description": "Family mode: maximum alternate-allele reads in a parent for a de novo call.",
                     "fa_icon": "fas fa-users"
                 },
+                "cohort_rare_af": {
+                    "type": "number",
+                    "default": 0.01,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Cohort mode: in <group>.genes.tsv, a variant is rare when MAX_AF is below this, or absent from the population databases.",
+                    "fa_icon": "fas fa-users"
+                },
                 "max_freq": {
                     "type": "number",
                     "description": "Maximum allele frequency to retain a variant (e.g., 0.05). Unset by default, i.e. no frequency filtering is applied.",
