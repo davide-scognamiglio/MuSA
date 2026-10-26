@@ -104,6 +104,7 @@ process CLEAN_COLUMNS {
     # UTRAnnotator writes 5UTR_annotation as key=value pairs in Perl hash order, which changes from
     # run to run ("type=uORF:KozakContext=..." one time, "KozakContext=...:type=uORF" the next), so
     # two runs of the same VCF differed. The pairs are sorted by key, inside each '&'-joined item.
+    # NearestExonJB lists exons at the same distance in the same run-dependent order; sorted too.
 
     # gnomADe41_status (extended mode), written after gnomADe41_FILTER: "found" when the gnomAD v4.1
     # exomes file has the variant (its AN is filled), "not_found" when the variant's chromosome was
@@ -126,6 +127,17 @@ process CLEAN_COLUMNS {
         for (i = 1; i <= m; i++) drop_orig[arr2[i]] = 1
     }
     function empty(v) { return v == "" || v == "." || v == "NA" || v == "nan" }
+    function sort_items(v,   items, n, j, k, t, out) {
+        n = split(v, items, ",")
+        for (j = 2; j <= n; j++) {
+            t = items[j]
+            for (k = j - 1; k >= 1 && items[k] > t; k--) items[k + 1] = items[k]
+            items[k + 1] = t
+        }
+        out = items[1]
+        for (j = 2; j <= n; j++) out = out "," items[j]
+        return out
+    }
     function sort_pairs(v,   items, n, i, out, pairs, m, j, k, t) {
         n = split(v, items, "&")
         out = ""
@@ -153,6 +165,7 @@ process CLEAN_COLUMNS {
             if (name == "HGVSp"               && !vep_p)    vep_p    = i
             if (name == "HGVSp_VEP")                        dbnsfp_p = i
             if (name == "5UTR_annotation")                  utr5     = i
+            if (name == "NearestExonJB"     && !nearest)    nearest  = i
             if (name == "gnomADe41_AN"        && !gn_an)    gn_an    = i
             if (name == "gnomADe41_FILTER"    && !gn_flt)   gn_flt   = i
             if ((name == "Chromosome" || name == "CHROM") && !chrom_i) chrom_i = i
@@ -204,6 +217,7 @@ process CLEAN_COLUMNS {
     {
         gsub(/\r/, "")
         if (utr5 && NR > 1 && !empty(\$utr5)) \$utr5 = sort_pairs(\$utr5)
+        if (nearest && NR > 1 && !empty(\$nearest)) \$nearest = sort_items(\$nearest)
         if (vep_p && NR > 1) {
             p = \$vep_p
             sub(/^[^:]*:/, "", p)
