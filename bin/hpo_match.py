@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """Compare the patient's HPO terms with each variant's gene, using HPO's own release.
 
-    hpo_match.py --maf in.maf --hpo "HP:0001250;HP:0004322" --hpo-dir /data/hpo --output out.maf
+    hpo_match.py --maf in.maf --hpo "HP:0001250;Microcephaly" --hpo-dir /data/hpo --output out.maf
+    hpo_match.py --resolve patients.tsv --hpo-dir /data/hpo --output resolved.tsv
+
+The patient's terms are ';'-separated HPO codes or exact primary names, in any case and mixed
+("HP:0001250;microcephaly"). Codes may also be ','-separated, as before 1.6; a name never is,
+since 57 names contain a comma. Obsolete and alternative codes map to their current term. A
+synonym is refused (976 synonyms equal another term's primary name) and so is anything not
+found, with the closest primary names suggested: a wrong term would silently change the match.
+--resolve checks a whole samplesheet at once (patient<TAB>terms per line) and writes the
+resolved codes, so a typo stops the run before annotation starts.
 
 Reads the ontology (hp.obo) and the gene and disease annotations of the same release
 (genes_to_phenotype.txt, phenotype.hpoa) and appends six columns:
@@ -41,7 +50,9 @@ annotations give for a single phenotypic feature.
 """
 
 import argparse
+import difflib
 import math
+import re
 import sys
 from collections import defaultdict
 
@@ -59,15 +70,21 @@ COLUMNS = MATCH_COLUMNS + ["HPO_onset"]
 class Ontology:
     def __init__(self, obo_path):
         self.name, self.parents, self.alias = {}, defaultdict(set), {}
+        self.obsolete, self.by_name, self.synonym_of = set(), {}, {}
         self.version = ""
-        term, obsolete, replaced, alts, in_term = None, False, None, [], False
+        term, obsolete, replaced, alts, synonyms, in_term = None, False, None, [], [], False
 
         def close():
             if term is None:
                 return
             if obsolete:
+                self.obsolete.add(term)
                 if replaced:
                     self.alias[term] = replaced
+            else:
+                self.by_name[" ".join(self.name.get(term, "").lower().split())] = term
+                for syn in synonyms:
+                    self.synonym_of.setdefault(" ".join(syn.lower().split()), term)
             for a in alts:
                 self.alias[a] = term
 
@@ -78,7 +95,7 @@ class Ontology:
                     self.version = line.split(":", 1)[1].strip()
                 if line.startswith("["):
                     close()
-                    term, obsolete, replaced, alts = None, False, None, []
+                    term, obsolete, replaced, alts, synonyms = None, False, None, [], []
                     in_term = line == "[Term]"
                     continue
                 if not in_term or ":" not in line:
@@ -97,6 +114,8 @@ class Ontology:
                     obsolete = True
                 elif key == "replaced_by":
                     replaced = val
+                elif key == "synonym" and '"' in val:
+                    synonyms.append(val.split('"')[1])
         close()
         self._anc = {}
 
@@ -283,29 +302,81 @@ def gene_columns(gene, gene_terms, gene_diseases, disease_names, disease_terms, 
 
 
 # ── main ──────────────────────────────────────────────────────────────────────────────────────────
-def parse_patient_terms(raw, onto):
-    terms, notes = [], []
-    for t in (raw or "").replace(",", ";").split(";"):
-        t = t.strip().upper()
-        if not t or t in ("NULL", "NA", "."):
-            continue
-        cur = onto.resolve(t)
-        if cur is None:
-            notes.append(f"{t} is not an HPO term in this release; ignored")
-        elif not onto.is_phenotype(cur):
-            notes.append(f"{t} ({onto.name[cur]}) is not under Phenotypic abnormality; ignored")
+CODE = re.compile(r"^HP:\d{7}$")
+
+
+def split_terms(raw):
+    """The samplesheet field as a list of items: ';'-separated; ',' too, but only between codes."""
+    items = []
+    for part in (raw or "").split(";"):
+        part = part.strip()
+        pieces = [p.strip() for p in part.split(",")]
+        items += pieces if len(pieces) > 1 and all(CODE.match(p.upper()) for p in pieces) else [part]
+    return [i for i in items if i and i.upper() not in ("NULL", "NA", ".")]
+
+
+def resolve_terms(raw, onto):
+    """Patient terms as current HPO codes. Returns (terms, notes, errors)."""
+    terms, notes, errors = [], [], []
+    for item in split_terms(raw):
+        if CODE.match(item.upper()):
+            code = item.upper()
+            cur = onto.resolve(code)
+            if cur is None or cur in onto.obsolete:
+                errors.append(f"{item}: " + ("obsolete, with no replacement term"
+                                             if code in onto.obsolete else
+                                             "not an HPO term in this release"))
+                continue
+            if cur != code:
+                notes.append(f"{code} is now {onto.label(cur)}")
         else:
-            if cur != t:
-                notes.append(f"{t} is now {cur} ({onto.name[cur]})")
-            if cur not in terms:
-                terms.append(cur)
-    return terms, notes
+            key = " ".join(item.lower().split())
+            cur = onto.by_name.get(key)
+            if cur is None:
+                syn = onto.synonym_of.get(key)
+                if syn:
+                    errors.append(f'"{item}": a synonym of {onto.label(syn)}; give that name or '
+                                  f"the code")
+                else:
+                    close = difflib.get_close_matches(key, onto.by_name, n=3, cutoff=0.75)
+                    errors.append(f'"{item}": no HPO term has this name'
+                                  + (f"; closest: {', '.join(onto.label(onto.by_name[c]) for c in close)}"
+                                     if close else ""))
+                continue
+            notes.append(f'"{item}" is {onto.label(cur)}')
+        if not onto.is_phenotype(cur):
+            notes.append(f"{onto.label(cur)} is not under Phenotypic abnormality; ignored")
+        elif cur not in terms:
+            terms.append(cur)
+    return terms, notes, errors
+
+
+def resolve_samplesheet(path, onto, output):
+    """--resolve: every patient's terms checked at once, resolved codes written out."""
+    failed = False
+    with open(path, encoding="utf-8") as fin, open(output, "w", encoding="utf-8") as fout:
+        for line in fin:
+            if not line.strip():
+                continue
+            patient, _, raw = line.rstrip("\n").partition("\t")
+            terms, notes, errors = resolve_terms(raw, onto)
+            for n in notes:
+                print(f"{patient}: {n}", file=sys.stderr)
+            for e in errors:
+                print(f"{patient}: ERROR {e}", file=sys.stderr)
+            failed |= bool(errors)
+            fout.write(f"{patient}\t{';'.join(terms)}\n")
+    if failed:
+        sys.exit(f"Samplesheet HPO terms that cannot be used (HPO {onto.version}); give each as an "
+                 "HP: code or as its exact primary name.")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--maf", required=True)
-    ap.add_argument("--hpo", default="", help="the patient's HPO terms, ';'-separated")
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--maf")
+    mode.add_argument("--resolve", metavar="TSV", help="patient<TAB>terms per line")
+    ap.add_argument("--hpo", default="", help="the patient's HPO terms (codes or names), ';'-separated")
     ap.add_argument("--hpo-dir", required=True)
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
@@ -316,6 +387,9 @@ def main():
     except FileNotFoundError:
         sys.exit(f"{obo} not found: this data directory predates HPO support. Run "
                  "`--workflow setup --update_db_only true` once to add the HPO files.")
+    if args.resolve:
+        resolve_samplesheet(args.resolve, onto, args.output)
+        return
     gene_terms, gene_diseases, by_id = load_gene_annotations(
         f"{args.hpo_dir}/genes_to_phenotype.txt", onto)
     disease_onsets = load_disease_onsets(f"{args.hpo_dir}/phenotype.hpoa", onto)
@@ -325,7 +399,9 @@ def main():
         patient, notes = [], []
         print("HPO: no patient terms in the samplesheet", file=sys.stderr)
     else:
-        patient, notes = parse_patient_terms(raw, onto)
+        patient, notes, errors = resolve_terms(raw, onto)
+        if errors:
+            sys.exit("HPO terms that cannot be used: " + "; ".join(errors))
         print(f"HPO {onto.version}: {len(patient)} patient term(s) "
               f"{', '.join(onto.label(p) for p in patient) or '(none)'}", file=sys.stderr)
         for n in notes:

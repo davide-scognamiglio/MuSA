@@ -86,9 +86,28 @@ patient,sample_type,sample_file,hpo
 | `patient` | yes | Patient identifier. Names the output directory and every output file. |
 | `sample_type` | yes | Free-text sample source, e.g. `blood`, `saliva`. |
 | `sample_file` | yes | Path to the VCF. Must end `.vcf` or `.vcf.gz`. |
-| `hpo` | no | `;`-separated HPO term IDs, e.g. `HP:0002650;HP:0000926`. Drives phenotype-based gene-panel filtering; leave empty to skip it for that patient. |
+| `hpo` | no | `;`-separated HPO terms, as codes or exact primary names in any case, mixed if you like: `HP:0002650;scoliosis`. Drives phenotype-based gene-panel filtering; leave empty to skip it for that patient. See [HPO terms](#hpo-terms). |
 
 One row per patient.
+
+### HPO terms
+
+Each term is an HPO code (`HP:0001250`) or a term's exact primary name (`Seizure`), in any case;
+codes and names can be mixed. Before any annotation runs, MuSA resolves every patient's terms
+against the HPO release in `--data_dir` and stops if one cannot be used:
+
+| Given | Result |
+|---|---|
+| a current code, or an alternative code | that term |
+| an obsolete code | the term that replaced it, noted in the log; an error if HPO gives no replacement |
+| an exact primary name, any case | that term |
+| a synonym (`Epilepsy`), a misspelling, anything else | an error naming the closest primary names |
+
+Synonyms are not accepted: about a thousand HPO synonyms are another term's primary name, so a
+synonym can point at the wrong term. Terms outside *Phenotypic abnormality* (modes of
+inheritance, onset) are ignored with a note. A name that contains a comma (`Ambiguous genitalia,
+male`) needs the field quoted, as CSV requires: `"HP:0001250;Ambiguous genitalia, male"`. Codes
+may still be separated by commas, as before 1.6.
 
 ## Running the pipeline
 
