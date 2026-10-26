@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `NearestExonJB` listed exons at the same distance in a different order from run to run; the list
   is now sorted (3 NA12878 variants).
+- **`setup --update_db_only` forgot the checksums of everything it did not download again** (since
+  1.3): the setup report showed files an earlier setup had verified as PENDING. A checksum is now
+  carried over from the data directory's manifest when the entry's URL and expected checksum are
+  unchanged. Checksums already lost are recomputed the next time their entry changes.
 
 ## v1.6.0 - unreleased
 
