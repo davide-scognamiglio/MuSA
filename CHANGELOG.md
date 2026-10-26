@@ -5,6 +5,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.4.0 - 2026-10-06
 
+> Updated in place on 2026-10-26: the database manifest is pinned to the test-datasets commit this
+> release was built for (`094afe6`), now that test-datasets `main` carries MuSA 1.5's entries; and
+> ClinVar PS1/PM5 evidence no longer changes from run to run. ClinVar names every gene a variant
+> overlaps ("LDLR;MIR6886"), and the residue index treated that list as a gene of its own, so one
+> residue was split in two and each run used one half at random. Each record now joins every gene
+> it names (fixed in 1.5.0, backported); no setup is needed.
+
 Eleven new VEP plugins in extended mode.
 
 ### `Added`

@@ -135,20 +135,25 @@ class Residues:
         footprint = {}
         with gzip.open(path, "rt") as fh:
             for r in csv.DictReader(fh, delimiter="\t"):
-                gkey = (r["gene"], int(r["aa_pos"]), r["aa_ref"])
                 rec = (int(r["stars"]), int(r["low_penetrance"]), r["chrom"], int(r["pos"]),
                        r["ref"], r["alt"])
-                groups.setdefault(gkey, {}).setdefault(r["aa_alt"], []).append(rec)
-                footprint.setdefault((r["chrom"], int(r["pos"])), set()).add(gkey)
+                # ClinVar names every overlapping gene ("LDLR;MIR6886"): the record joins each
+                # gene's residue, or LDLR D492 would be split in two depending on the record.
+                for gene in r["gene"].split(";"):
+                    gkey = (gene, int(r["aa_pos"]), r["aa_ref"])
+                    groups.setdefault(gkey, {}).setdefault(r["aa_alt"], []).append(rec)
+                    footprint.setdefault((r["chrom"], int(r["pos"])), set()).add(gkey)
         self.groups = groups
         self.footprint = footprint
 
     def residue(self, chrom, pos, gene, aa_pos, aa_ref):
         """The ClinVar residue group this variant falls in, or None."""
-        candidates = [g for g in self.footprint.get((chrom, pos), ()) if g[2] == aa_ref]
-        if candidates:
-            # Overlapping residues (two genes, rare): the one with the best-reviewed record.
-            return self.groups[max(candidates, key=lambda g: best_stars(self.groups[g]))]
+        candidates = sorted(g for g in self.footprint.get((chrom, pos), ()) if g[2] == aa_ref)
+        own = [g for g in candidates if g[0] == gene]
+        if own or candidates:
+            # The variant's own gene first; otherwise (overlapping genes, rare) the residue with
+            # the best-reviewed record. Sorted, so a tie resolves the same way on every run.
+            return self.groups[max(own or candidates, key=lambda g: best_stars(self.groups[g]))]
         # Fallback: same gene, position and reference amino acid, but only if a ClinVar variant of
         # that residue lies within the query's codon (2 bp). Without that check, a protein
         # position read on another transcript matched an unrelated residue: on NA12878, VEP's
