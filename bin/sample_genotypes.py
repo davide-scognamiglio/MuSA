@@ -13,8 +13,9 @@ FORMAT_VALUES ("0/1:12,9:21:99"), from the VCF that VEP annotated. This step rea
   Sample_AD    allele depths, reference first ("12,9")
   Sample_VAF   alternate reads / all reads, from AD (two decimals)
 
-Missing FORMAT fields give ".". The INFO field is not used: in a joint-called VCF its AC, AN and
-DP describe every sample of the call set together, not this one.
+Missing FORMAT fields give ".". In cohort mode (--blank) every column is ".": no member is the
+sample, and each member's genotype is in GT_<sample> or the genotype sidecar. The INFO field is
+not used: in a joint-called VCF its AC, AN and DP describe every sample of the call set together.
 """
 
 import argparse
@@ -59,6 +60,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--maf", required=True)
     ap.add_argument("--output", required=True)
+    ap.add_argument("--blank", action="store_true", help="cohort mode: every column '.'")
     args = ap.parse_args()
 
     with open(args.maf, newline="\n") as fin, open(args.output, "w", newline="\n") as fout:
@@ -73,7 +75,7 @@ def main():
         counts = {}
         for line in fin:
             r = line.rstrip("\n").split("\t")
-            g = genotype(r[i_f], r[i_v])
+            g = [MISSING] * len(COLUMNS) if args.blank else genotype(r[i_f], r[i_v])
             counts[g[0]] = counts.get(g[0], 0) + 1
             fout.write("\t".join(r + g) + "\n")
     print(f"{args.output}: " + ", ".join(f"{k} {v}" for k, v in sorted(counts.items())),

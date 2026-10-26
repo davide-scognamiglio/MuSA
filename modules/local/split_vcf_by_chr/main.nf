@@ -40,14 +40,19 @@ process SPLIT_VCF_BY_CHR {
 
     # Buffer the header, then append each record to its chromosome's shard, opening that shard with the
     # full header the first time the chromosome is seen. \$1 is CHROM.
-    awk -v prefix="shards/${meta.patient}." -v keep="${keep}" '
+    #
+    # Shards are sites-only, INFO emptied: dbNSFP annotates the variant, not a sample, and its copy of
+    # the VCF columns used to reach the MAF as a partial duplicate (INFO, FORMAT and the sample column,
+    # filled only where dbNSFP had a record); a cohort VCF would carry every member through it.
+    awk -F'\\t' -v OFS='\\t' -v prefix="shards/${meta.patient}." -v keep="${keep}" '
         BEGIN { n = split(keep, a, " "); for (i = 1; i <= n; i++) ok[a[i]] = 1 }
-        /^#/  { header = header \$0 "\\n"; next }
+        /^##/ { header = header \$0 "\\n"; next }
+        /^#/  { header = header \$1 OFS \$2 OFS \$3 OFS \$4 OFS \$5 OFS \$6 OFS \$7 OFS \$8 "\\n"; next }
         !(\$1 in ok) { next }
         {
             out = prefix \$1 ".shard.vcf"
             if (!(out in started)) { printf "%s", header > out; started[out] = 1 }
-            print >> out
+            print \$1, \$2, \$3, \$4, \$5, \$6, \$7, "." >> out
         }
     ' ${vcf}
 
@@ -56,7 +61,7 @@ process SPLIT_VCF_BY_CHR {
     # per-chromosome `bcftools view` did for chromosomes it found nothing on.
     if [ -z "\$(ls -A shards)" ]; then
         first=\$(echo "${keep}" | awk '{print \$1}')
-        grep '^#' ${vcf} > "shards/${meta.patient}.\${first}.shard.vcf" || true
+        grep '^#' ${vcf} | cut -f1-8 > "shards/${meta.patient}.\${first}.shard.vcf" || true
     fi
     """
 }

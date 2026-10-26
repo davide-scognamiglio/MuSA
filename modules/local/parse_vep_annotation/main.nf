@@ -26,7 +26,7 @@ process PARSE_VEP_ANNOTATION {
 
     # POSIX awk only: the helper image ships mawk, and so does a stock Ubuntu host. gawk extensions
     # such as match() with a capture array fail there with a syntax error.
-    awk '
+    awk -v prefer="${meta.mode == 'family' ? meta.members[0].sample : ''}" '
     BEGIN {
         FS="\\t"; OFS="\\t"
         csq_format_found = 0
@@ -69,7 +69,16 @@ process PARSE_VEP_ANNOTATION {
         # Additional INFO fields (AFTER CSQ only)
         for (j=1; j<=n_info; j++) printf "\\t%s", info_fields[j]
 
-        printf "\\tFORMAT_FIELDS\\tFORMAT_VALUES\\n"
+        # A family or cohort VCF (SELECT_MEMBERS, proband first) has several sample columns.
+        # FORMAT_VALUES stays the first sample; GROUP_FORMAT_VALUES holds the values of every member, in
+        # column order and space-separated (FORMAT values contain no spaces), so SAMPLE_GENOTYPES
+        # can expand them without one MAF column per member travelling through every step.
+        n_samples = NF - 9
+        for (i=1; i<=n_csq; i++) {
+            if (csq_fields[i] == "IND") i_ind = i
+            if (csq_fields[i] == "ZYG") i_zyg = i
+        }
+        printf "\\tFORMAT_FIELDS\\tFORMAT_VALUES%s\\n", (n_samples > 1 ? "\\tGROUP_FORMAT_VALUES" : "")
         next
     }
 
@@ -125,23 +134,40 @@ process PARSE_VEP_ANNOTATION {
         val_str = sample
         gsub(/\\t/, "|", val_str)
 
-        # Print row
-        printf "%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s", chrom, pos, id, ref, alt, qual, filter, bioinfo_params
+        # In a family or cohort VCF, G2P switches on VEP per-individual output: one record per member
+        # carrying the variant, identical apart from IND and ZYG. One row per variant is kept, the
+        # proband copy when there is one; IND and ZYG are blanked when they describe someone else
+        # (Zygosity and Sample_* hold the proband call).
+        if (n_samples > 1 && (i_ind in csq_data) && csq_data[i_ind] != prefer) {
+            csq_data[i_ind] = ""
+            if (i_zyg in csq_data) csq_data[i_zyg] = ""
+        }
+        is_pref = (n_samples > 1 && prefer != "" && (i_ind in csq_data) && csq_data[i_ind] == prefer)
 
+        row = chrom "\\t" pos "\\t" id "\\t" ref "\\t" alt "\\t" qual "\\t" filter "\\t" bioinfo_params
         if (csq_format_found)
-            for (i=1; i<=n_csq; i++) {
-                val = (i in csq_data) ? csq_data[i] : ""
-                printf "\\t%s", val
-            }
-
+            for (i=1; i<=n_csq; i++) row = row "\\t" ((i in csq_data) ? csq_data[i] : "")
         for (j=1; j<=n_info; j++) {
             key = info_fields[j]
-            val = (key in info_pairs) ? info_pairs[key] : ""
-            printf "\\t%s", val
+            row = row "\\t" ((key in info_pairs) ? info_pairs[key] : "")
+        }
+        row = row "\\t" fmt_str "\\t" val_str
+        if (n_samples > 1) {
+            group_str = \$10
+            for (k = 11; k <= NF; k++) group_str = group_str " " \$k
+            row = row "\\t" group_str
         }
 
-        printf "\\t%s\\t%s\\n", fmt_str, val_str
+        site = chrom SUBSEP pos SUBSEP ref SUBSEP alt
+        if (n_samples > 1 && site == pending_site) {
+            if (is_pref && !pending_pref) { pending = row; pending_pref = 1 }
+            next
+        }
+        if (pending_site != "") print pending
+        pending = row; pending_site = site; pending_pref = is_pref
     }
+
+    END { if (pending_site != "") print pending }
     ' "\$input" > "\$output"
     """
 }

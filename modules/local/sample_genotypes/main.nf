@@ -21,6 +21,6 @@ process SAMPLE_GENOTYPES {
 
     script:
         """
-        sample_genotypes.py --maf ${maf} --output ${meta.patient}.genotypes.maf
+        sample_genotypes.py --maf ${maf} --output ${meta.patient}.genotypes.maf ${meta.mode == 'cohort' ? '--blank' : ''}
         """
 }

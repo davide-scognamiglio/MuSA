@@ -1045,7 +1045,7 @@ sources:
     category: Call information
     kind: computed
     provider: musa
-    columns: [QUAL, FILTER, bioinfo_params, FORMAT_FIELDS, FORMAT_VALUES, INFO, FORMAT, '{sample}']
+    columns: [QUAL, FILTER, bioinfo_params, FORMAT_FIELDS, FORMAT_VALUES]
   - id: sample_genotype
     name: Sample genotype
     what: "The sample's own call: zygosity, genotype, read depth, genotype quality, allele depths and alternate allele fraction"

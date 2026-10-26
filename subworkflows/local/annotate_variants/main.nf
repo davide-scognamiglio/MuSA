@@ -12,6 +12,7 @@ include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
 include {CLEAN_COLUMNS} from '../../../modules/local/clean_columns'
 include {PUBTATOR3_LINKS} from '../../../modules/local/pubtator3_links'
 include {SAMPLE_GENOTYPES} from '../../../modules/local/sample_genotypes'
+include {GROUP_GENOTYPES} from '../../../modules/local/group_genotypes'
 include {chrom_list} from '../../../lib/annot_utils.nf'
 
 /*
@@ -28,6 +29,8 @@ include {chrom_list} from '../../../lib/annot_utils.nf'
  *   PUBTATOR3_LINKS          PubMed articles mentioning the variant (PubTator3, ClinVar and dbSNP
  *                            citations)
  *   SAMPLE_GENOTYPES         the sample's own genotype: zygosity, depth, allele depths, VAF
+ *   GROUP_GENOTYPES          family or cohort: every member's genotype, then inheritance,
+ *                            segregation and compound heterozygosity, or cohort carrier counts
  *
  * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
  * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops. Eight of its
@@ -97,7 +100,11 @@ workflow ANNOTATE_VARIANTS {
         // running as a branch of its own.
         merged_tsv = MERGE_ANNOTATIONS(joined)
         cleaned = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
-        merged = SAMPLE_GENOTYPES(PUBTATOR3_LINKS(cleaned))
+        genotyped = SAMPLE_GENOTYPES(PUBTATOR3_LINKS(cleaned)).branch { meta, _maf ->
+            group:  meta.mode in ['family', 'cohort']
+            single: true
+        }
+        merged = genotyped.single.mix(GROUP_GENOTYPES(genotyped.group).maf)
 
     emit:
         merged

@@ -22,10 +22,85 @@ def extract_csv(csv_file) {
                 sample_type : row.sample_type,
                 sample_file : row.sample_file,
                 hpo         : row.hpo,
-                panel       : row.panel
+                panel       : row.panel,
+                // Family and cohort modes (1.6): rows sharing a `group` are one joint-called VCF.
+                group       : (row.group ?: '').trim(),
+                sample      : (row.sample ?: '').trim(),
+                role        : (row.role ?: '').trim().toLowerCase(),
+                sex         : (row.sex ?: '').trim().toLowerCase(),
+                affected    : (row.affected ?: '').trim().toLowerCase(),
+                family      : (row.family ?: '').trim()
             ]
             [meta, row.sample_file]
         }
+}
+
+/*
+ * Family and cohort modes. Rows with an empty `group` pass through unchanged (one patient, one
+ * VCF, as before 1.6). Rows sharing a `group` become ONE item: the group's joint-called VCF, with
+ * meta.patient = the group name (it names the output directory and files, as a patient does) and
+ * meta.members = the rows, proband first. The mode is a family when any member is a proband,
+ * mother or father, a cohort when every member is a `case`.
+ *
+ * Checks that would otherwise surface as a wrong answer much later: every member names its VCF
+ * column (`sample`), all rows of a group point at the same VCF, a family has exactly one proband,
+ * sexes and affected statuses are spelled as documented.
+ */
+def group_samples(ch_rows) {
+    def FAMILY_ROLES = ['proband', 'mother', 'father', 'sibling', 'relative']
+    def ROLES        = FAMILY_ROLES + ['case']
+    def SEXES        = ['male', 'female', '', '.']
+    def AFFECTED     = ['yes', 'no', '', '.']
+
+    def singles = ch_rows.filter { meta, _vcf -> !meta.group }
+    def grouped = ch_rows
+        .filter { meta, _vcf -> meta.group }
+        .map { meta, vcf -> [meta.group, meta, vcf] }
+        .groupTuple()
+        .map { group, metas, vcfs ->
+            def where = "samplesheet group '${group}'"
+            if (vcfs.unique(false).size() != 1) {
+                error "${where}: every member must point at the same joint-called VCF (found ${vcfs.unique(false).join(', ')})"
+            }
+            metas.each { m ->
+                if (!m.sample) error "${where}: member '${m.patient}' has no `sample` (its column name in the VCF)"
+                if (!(m.role in ROLES)) error "${where}: member '${m.patient}' has role '${m.role}'; expected one of ${ROLES.join(', ')}"
+                if (!(m.sex in SEXES)) error "${where}: member '${m.patient}' has sex '${m.sex}'; expected male, female or empty"
+                if (!(m.affected in AFFECTED)) error "${where}: member '${m.patient}' has affected '${m.affected}'; expected yes, no or empty"
+            }
+            def samples = metas.collect { m -> m.sample }
+            if (samples.unique(false).size() != samples.size()) error "${where}: a VCF sample is listed twice"
+            def roles = metas.collect { m -> m.role }
+            def is_family = roles.any { r -> r in FAMILY_ROLES }
+            if (is_family && roles.contains('case')) error "${where}: mixes family roles and `case`; a group is either a family or a cohort"
+            if (is_family && roles.count('proband') != 1) error "${where}: a family needs exactly one proband (found ${roles.count('proband')})"
+            if (roles.count('mother') > 1 || roles.count('father') > 1) error "${where}: more than one mother or father"
+            if (is_family && metas.find { m -> m.role == 'proband' }.sex in ['', '.']) {
+                error "${where}: the proband's sex is needed for chrX and chrY inheritance"
+            }
+            // Proband first: the VCF is subset in this order, so the proband's genotype is the
+            // one every single-sample step and column (Sample_*, Zygosity, the report) reads.
+            def members = is_family ? metas.sort(false) { m -> m.role == 'proband' ? 0 : 1 } : metas
+            // The phenotype searched for: every affected member's terms (family), every case's
+            // terms (cohort); duplicates removed, order kept.
+            def hpo = members
+                .findAll { m -> is_family ? m.affected == 'yes' || m.role == 'proband' : true }
+                .collectMany { m -> (m.hpo ?: '').tokenize(';') }
+                .unique()
+                .join(';')
+            def meta = [
+                patient     : group,
+                group       : group,
+                mode        : is_family ? 'family' : 'cohort',
+                sample_type : members[0].sample_type,
+                sample_file : members[0].sample_file,
+                hpo         : hpo,
+                panel       : members[0].panel,
+                members     : members.collect { m -> m.subMap(['patient', 'sample', 'role', 'sex', 'affected', 'family', 'hpo']) }
+            ]
+            [meta, vcfs[0]]
+        }
+    return singles.map { meta, vcf -> [meta + [mode: 'single', members: []], vcf] }.mix(grouped)
 }
 
 def chrom_list(fai_path) {
