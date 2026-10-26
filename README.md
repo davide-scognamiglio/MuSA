@@ -35,7 +35,7 @@ WES-like benchmark VCF (see [Benchmark](#benchmark)). Nothing in it is mocked up
 | | |
 |---|---|
 | **Genome build** | GRCh38/hg38 only. |
-| **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF). MuSA annotates and ranks; it does not call variants. |
+| **Input** | Germline VCFs already called elsewhere (nf-core/sarek, GATK, or any standard multi-caller VCF): one per patient, or one joint-called VCF for a family or a cohort. MuSA annotates and ranks; it does not call variants. |
 | **Compute** | Docker, Singularity or Apptainer. No manual tool installation. |
 | **Storage, one-time** | ~30 GB for basic annotation, ~215 GB for extended (dbNSFP, RENOVO 1.5, gnomAD exomes and 32 VEP plugins). Downloaded once by the `setup` workflow, reused by every `annotate` run. |
 | **dbNSFP (extended mode)** | **Academic / non-commercial use only**, and distributed only to registered users: [register at dbnsfp.org](https://www.dbnsfp.org/download) (institutional email) to get your download link before running `setup --extended true`. Basic mode does not need it. |

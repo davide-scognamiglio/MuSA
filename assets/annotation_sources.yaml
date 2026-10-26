@@ -1055,6 +1055,17 @@ sources:
     provider: musa
     columns: [Zygosity, 'Sample_.*']
     note: "From the sample's FORMAT values (SAMPLE_GENOTYPES), not INFO: in a joint-called VCF, INFO's AC/AN/DP count every sample."
+  - id: family_genotypes
+    name: Family and cohort genotypes
+    mode: group
+    what: "Each member's genotype (family and cohort modes), then where the proband's allele comes from, who in the family carries it and which other variants of the gene sit on the other parental haplotype; or, in a cohort, how many members and families carry it"
+    level: format
+    category: Call information
+    kind: computed
+    provider: musa
+    columns: ['(GT|DP|GQ|AD|VAF)_.+', 'Inheritance.*', 'Segregation_.*', 'Comphet_.*', 'Cohort_.*']
+    note: "GROUP_GENOTYPES, from the joint-called VCF of a samplesheet group. Above --max_member_columns members the genotypes are in <group>.genotypes.tsv.gz; a cohort also gets <group>.genes.tsv."
+
   - id: maf_format
     name: MAF format (vcf2maf)
     what: Standard MAF columns, genomic coordinates, picked-transcript fields
@@ -1072,7 +1083,9 @@ sources:
               BAM_File, Sequencer, Tumor_Sample_UUID, Matched_Norm_Sample_UUID, Transcript_ID,
               t_depth, t_ref_count, t_alt_count, n_depth, n_ref_count, n_alt_count, all_effects,
               ALLELE_NUM, RefSeq, ASN_AF, AA_AF, EA_AF, PICK, MINIMISED, flanking_bps, vcf_id,
-              vcf_ref, vcf_alt]
+              vcf_ref, vcf_alt,
+              Fusion, Method, Frame, CONSENSUS]
+    note: "Fusion, Method, Frame and CONSENSUS appear only when the VCF holds structural variants (vcf2maf's SV columns)."
   - id: musa_context
     name: "MuSA sequence context"
     what: "Genome change notation and reference sequence context"

@@ -95,8 +95,32 @@ changes what the row says:
 | `PubTator3_pmids`, `PubTator3_source`, `ClinVar_SCV_func_pmids`, `PUBMED`, `Existing_variation`, `MaveDB_score` (VEP plugin) | `,` | `41892021,40730740` |
 | `Consequence` and other VEP multi-value fields | `,` (VEP's `&`) | `missense_variant,splice_region_variant` |
 | `HPO_matched_terms`, `ClinVar_PM5` | `; ` | `R978H 3★; R978S 1★` |
+| `Comphet_trans`, `Comphet_cis_or_unknown` | `;` | `TTN:p.Arg100Cys;TTN:p.Gly2Ser` |
+| `Cohort_carriers` | `,` | `HG00097,HG00157` |
 | `Sample_AD` | `,`, reference first | `12,9` |
 
+
+### Family and cohort columns
+
+Written in [family and cohort modes](usage.md#family-and-cohort-modes) only.
+
+| Column | Values | Meaning |
+|---|---|---|
+| `GT_`, `DP_`, `GQ_`, `AD_`, `VAF_<sample>` | as in `Sample_*` | each member's call, members in samplesheet order (proband first); in `<group>.genotypes.tsv.gz` instead above `--max_member_columns` members |
+| `Inheritance` | `de_novo`, `maternal`, `paternal`, `biparental`, `not_in_proband`, `unknown` | where the proband's alternate allele comes from, from the parents' genotypes; `biparental`: a homozygous proband, one allele from each parent |
+| `Inheritance_check` | `pass`; `unchecked`; `parent_missing`, `parent_no_call`, `parent_low_depth`, `parent_low_gq`, `parent_alt_reads`; `proband_no_call`, `proband_low_gq`, `proband_allele_balance`; `both_parents_carry`; `mendelian_error` | why `Inheritance` is what it is: `unchecked` is a de novo call from a VCF without DP, GQ or AD; `both_parents_carry` is a heterozygous proband whose parents both carry the variant, so either could have passed it on |
+| `Segregation_affected`, `Segregation_unaffected` | `k/n` | members carrying the variant / members with a call, among the affected and the unaffected |
+| `Comphet_trans` | `GENE:p.change;...` | the proband's other heterozygous variants in the same gene that come from the other parent (in trans) |
+| `Comphet_cis_or_unknown` | `GENE:p.change;...` | its other heterozygous variants in the gene whose phase the parents do not establish |
+| `Cohort_called_n`, `Cohort_carriers_n`, `Cohort_het_n`, `Cohort_hom_n` | counts | members with a call, carrying it, heterozygous (hemizygous included), homozygous |
+| `Cohort_AF` | 0 to 1 | alternate allele frequency among the called members |
+| `Cohort_carrier_families_n` | count | carriers counted once per samplesheet `family` |
+| `Cohort_affected_carriers_n`, `Cohort_unaffected_carriers_n` | counts | carriers by affected status |
+| `Cohort_carriers` | names | carrier samples, up to 50 |
+
+`Zygosity` and `Sample_*` describe the proband in family mode and are `.` in cohort mode. Group
+outputs, next to the MAFs: `<group>.genotypes.tsv.gz` (more members than `--max_member_columns`) and,
+for a cohort, `<group>.genes.tsv`.
 
 ## Setup workflow
 

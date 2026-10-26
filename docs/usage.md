@@ -109,6 +109,59 @@ inheritance, onset) are ignored with a note. A name that contains a comma (`Ambi
 male`) needs the field quoted, as CSV requires: `"HP:0001250;Ambiguous genitalia, male"`. Codes
 may still be separated by commas, as before 1.6.
 
+### Family and cohort modes
+
+A joint-called VCF (GATK `GenotypeGVCFs`, nf-core/sarek joint germline, DeepVariant + GLnexus)
+can be annotated as one **family** or one **cohort**: each variant is annotated once for the
+group instead of once per person, and the group's own facts are added. Give one row per member,
+all pointing at the same VCF, and these extra columns:
+
+```csv title="samplesheet.csv"
+patient,sample_type,sample_file,hpo,group,sample,role,sex,affected,family
+FAM01_P,blood,/data/vcf/fam01.joint.vcf.gz,Seizure;HP:0001263,FAM01,P1,proband,male,yes,
+FAM01_M,blood,/data/vcf/fam01.joint.vcf.gz,,FAM01,M1,mother,female,no,
+FAM01_F,blood,/data/vcf/fam01.joint.vcf.gz,,FAM01,F1,father,male,no,
+5510,blood,/data/vcf/5510.vcf.gz,HP:0002650,,,,,,
+```
+
+| Column | Description |
+|---|---|
+| `group` | Group name: names the output directory and files, as `patient` does for one person. Empty: the row is a single patient, annotated as before 1.6. |
+| `sample` | The member's column name in the VCF. A single patient may also give it, to pick one sample out of a multi-sample VCF. |
+| `role` | Family: `proband` (exactly one), `mother`, `father`, `sibling`, `relative`. Cohort: `case` for every member. |
+| `sex` | `male`, `female` or empty. Required for the proband: chrX and chrY inheritance depend on it. |
+| `affected` | `yes`, `no` or empty (unknown). A proband with no status counts as affected. |
+| `family` | Cohort only, optional: members sharing it are relatives, counted once in `Cohort_carrier_families_n`. |
+
+A group with a proband, mother or father is a **family**; a group of `case` members is a
+**cohort**. Groups and single patients can share one samplesheet. The VCF may hold more samples
+than the group (a whole cohort's joint call): MuSA keeps only the members, and only the sites and
+alleles they carry. Parentage is assumed, not checked.
+
+**Family mode** writes one MAF per family, centred on the proband: `Zygosity`, `Sample_*` and the
+report describe the proband, every member's genotype is in `GT_`, `DP_`, `GQ_`, `AD_` and
+`VAF_<sample>`, and these columns are added ([output](output.md#family-and-cohort-columns)):
+`Inheritance` (`de_novo`, `maternal`, `paternal`, `biparental`, `not_in_proband`, `unknown`),
+`Inheritance_check`, `Segregation_affected`, `Segregation_unaffected`, `Comphet_trans` and
+`Comphet_cis_or_unknown`. The raw MAF holds every variant of the family; the filtered MAF and the
+report keep those the proband carries.
+
+A de novo call needs the proband to carry the allele and both parents to be called homozygous
+reference, each with enough reads (`--dn_min_dp`, default 10), genotype quality (`--dn_min_gq`,
+default 20, also for the proband) and no alternate reads (`--dn_max_parent_alt`, default 0); a
+proband heterozygote must also have an allele fraction between 0.25 and 0.75. A call that fails a
+condition is `unknown`, with the condition in `Inheritance_check`; a VCF without DP, GQ or AD
+gives `de_novo` with `Inheritance_check` = `unchecked`. On chrX outside the pseudoautosomal regions
+a male proband's allele can only be maternal or de novo, on chrY only paternal or de novo.
+
+**Cohort mode** writes one MAF for the cohort, one row per variant any member carries, with carrier
+counts (`Cohort_*`), and `<group>.genes.tsv`: per gene, how many members and families carry its
+variants, and how many carry a rare (`MAX_AF` below `--cohort_rare_af`, default 0.01, or absent)
+HIGH or MODERATE impact one, by affected status. These are counts, not an association test. With
+more than `--max_member_columns` members (default 10), member genotypes go to
+`<group>.genotypes.tsv.gz` (one line per carrier) instead of MAF columns. The HPO match uses the
+union of the cases' terms (family: of the affected members' terms).
+
 ## Running the pipeline
 
 ```bash

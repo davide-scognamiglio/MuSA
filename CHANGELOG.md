@@ -5,14 +5,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.6.0 - unreleased
 
+Families and cohorts: a joint-called VCF annotated once for the whole group, with where the
+proband's variants come from, who in the family carries them and which pairs sit in trans; or, for
+a cohort, how many members and families carry each variant and gene.
+
 ### `Added`
 
+- **Family and cohort modes.** Samplesheet rows sharing a `group` (new optional columns `group`,
+  `sample`, `role`, `sex`, `affected`, `family`) point at one joint-called VCF and are annotated
+  once, on the group's union of variants (1.4 times the proband's own on the test trio) instead
+  of once per member. Each member's genotype
+  (`GT_`, `DP_`, `GQ_`, `AD_`, `VAF_<sample>`, or `<group>.genotypes.tsv.gz` for large groups).
+  - Family: `Inheritance` (`de_novo`, `maternal`, `paternal`, `biparental`, `not_in_proband`,
+    `unknown`) with `Inheritance_check` (de novo calls need parental depth, genotype quality and no
+    alternate reads: `--dn_min_dp`, `--dn_min_gq`, `--dn_max_parent_alt`), chrX and chrY by the
+    proband's sex, `Segregation_affected` / `_unaffected`, and `Comphet_trans` /
+    `_cis_or_unknown` for compound heterozygosity. The filtered MAF and the report keep the
+    proband's variants; the report adds de novo and compound-heterozygous groups and the family's
+    genotypes. Parentage is assumed, not checked.
+  - Cohort: `Cohort_*` carrier counts, cohort allele frequency, carriers counted once per family,
+    and `<group>.genes.tsv` with members and families carrying each gene's rare HIGH or MODERATE
+    variants (`--cohort_rare_af`), by affected status.
+  - `-profile test_family`: a trio covering every inheritance outcome, chrX and PAR1.
 - **HPO terms by name.** The samplesheet's `hpo` field takes HPO codes or exact primary names, in
   any case and mixed (`HP:0001250;microcephaly`). Every patient's terms are resolved before
   annotation starts; a synonym, a misspelling or an obsolete code with no replacement stops the
   run in seconds with the closest primary names, instead of being dropped silently.
 - **The sample's own genotype** (`Zygosity`, `Sample_GT`, `Sample_DP`, `Sample_GQ`, `Sample_AD`,
   `Sample_VAF`), read from its FORMAT values on every row.
+
+### `Changed`
+
+- dbNSFP annotates a sites-only copy of the VCF. Its duplicate of the `INFO`, `FORMAT` and sample
+  columns, filled only where dbNSFP had a record (12,126 of 22,597 NA12878 rows were empty), is no
+  longer in the MAF: `bioinfo_params`, `FORMAT_FIELDS` and `FORMAT_VALUES` hold the same data on
+  every row.
 
 ### `Fixed`
 

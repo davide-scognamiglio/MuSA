@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check and render MuSA's annotation-source catalogue (assets/annotation_sources.yaml).
 
-    musa_sources.py check  --maf NA12878.raw.maf --sample HG001 [--extended] [--online]
+    musa_sources.py check  --maf NA12878.raw.maf --sample HG001 [--extended] [--online] [--group]
     musa_sources.py render [--docs docs/sources.md] [--readme README.md]
 
 `check` is what keeps the catalogue honest: every column of a real MAF must belong to exactly one
@@ -53,9 +53,10 @@ def is_counted(source):
     return source["kind"] == "resource" and source["level"] != "format"
 
 
-def active(source, extended, online):
+def active(source, extended, online, group=False):
+    """Whether a run of this mode must have the source's columns ("group": family and cohort)."""
     return {"basic": True, "extended": extended, "online": online,
-            "extended+online": extended and online}[source["mode"]]
+            "extended+online": extended and online, "group": group}[source["mode"]]
 
 
 # ── check ─────────────────────────────────────────────────────────────────────────────────────────
@@ -80,7 +81,8 @@ def check(args):
             owners.setdefault(hits[0], []).append(col)
 
     missing = [s["id"] for s in sources
-               if s["columns"] and active(s, args.extended, args.online) and s["id"] not in owners]
+               if s["columns"] and active(s, args.extended, args.online, args.group)
+               and s["id"] not in owners]
 
     mode = "extended" if args.extended else "basic"
     mode += ", online" if args.online else ", offline"
@@ -208,6 +210,7 @@ def main():
     c.add_argument("--sample", required=True, help="the patient's genotype column name")
     c.add_argument("--extended", action="store_true")
     c.add_argument("--online", action="store_true")
+    c.add_argument("--group", action="store_true", help="a family or cohort MAF")
     r = sub.add_parser("render")
     r.add_argument("--docs")
     r.add_argument("--readme")
