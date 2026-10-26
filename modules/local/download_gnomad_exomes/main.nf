@@ -44,15 +44,21 @@ process DOWNLOAD_GNOMAD_EXOMES {
     # time, then record each SHA-256 one by one (write_computed_sha256 edits the manifest in place,
     # so it must not run concurrently). A checksum that differs from the manifest is not fatal: the
     # setup report marks it MISMATCH. A failed download is.
+    # parse_manifest names its variables in lower case (gnomad_exomes_chrx_url for chrX). Every
+    # entry is checked before the first download, so a manifest without one fails in seconds.
     for key in ${keys}; do
-        url_var="\${key}_url"; method_var="\${key}_method"; out_var="\${key}_out"
+        v="\${key,,}"; url_var="\${v}_url"
+        [ -n "\${!url_var:-}" ] || { echo "[ERROR] manifest has no \${key} entry" >&2; exit 1; }
+    done
+    for key in ${keys}; do
+        v="\${key,,}"; url_var="\${v}_url"; method_var="\${v}_method"; out_var="\${v}_out"
         ( download_and_compute_sha "\${!url_var}" "\${!method_var}" "\${!out_var}" > "\${key}.sha" \
             || rm -f "\${key}.sha" ) &
         while [ "\$(jobs -rp | wc -l)" -ge 6 ]; do wait -n || true; done
     done
     wait || true
     for key in ${keys}; do
-        out_var="\${key}_out"
+        v="\${key,,}"; out_var="\${v}_out"
         if [ ! -s "\${key}.sha" ]; then
             echo "[ERROR] \${!out_var}: download failed" >&2
             exit 1
