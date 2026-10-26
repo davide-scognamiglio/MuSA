@@ -17,9 +17,7 @@ process FILTER_VARIANTS {
         tuple val(meta), file(maf)
 
     output:
-        val(meta)
-        file("${meta.patient}.filtered.maf")
-        file("${meta.patient}.raw.maf")
+        tuple val(meta), file("${meta.patient}.filtered.maf"), file("${meta.patient}.raw.maf")
 
     script:
         """

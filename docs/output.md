@@ -40,6 +40,16 @@ results/
   - The same table after the three-tier filter: gene panel (`--panel`), HPO phenotype panel
     (from the samplesheet's `hpo` column, see the `HPO_*` columns in [usage](usage.md#filtering)), and allele frequency (`--max_freq`), plus
     `--drop_benign` if set. This is the file to hand to a reviewer.
+- `<patient>.transcripts.tsv.gz`
+  - Every transcript VEP reports for each variant, one line per variant and transcript, keyed like
+    the MAF (`Chromosome`, `Start_Position`, `Reference_Allele`, `Tumor_Seq_Allele2`) and ordered
+    MANE Select, MANE Plus Clinical, the MAF's transcript, Ensembl canonical, then by impact.
+    `MuSA_pick` is `yes` on the transcript the MAF row reports. Columns: `Feature`, `SYMBOL`,
+    `Gene`, `BIOTYPE`, `Consequence`, `IMPACT`, `HGVSc`, `HGVSp`, `EXON`, `INTRON`,
+    `cDNA_position`, `CDS_position`, `Protein_position`, `Amino_acids`, `Codons`, `STRAND`,
+    `FLAGS`, `CANONICAL`, `MANE_SELECT`, `MANE_PLUS_CLINICAL`, `TSL`, `APPRIS`, `CCDS`, `ENSP`,
+    `SWISSPROT`, `SIFT`, `PolyPhen` (multi-value fields `,`-separated). An intergenic variant has no
+    line. About 0.5 MB per 1,000 variants.
 - `<patient>_maf_dashboard.html`
   - Self-contained interactive report: a summary panel plus a sortable, searchable table of the
     filtered variants, showing gene, HGVS nomenclature, consequence, ClinVar significance and
@@ -58,7 +68,8 @@ hundreds of heterogeneous annotations without nesting, and carries a sample iden
 per-patient MAFs can be concatenated into a cohort table and read directly by tools such as
 [maftools](https://bioconductor.org/packages/maftools/).
 
-The transcript is VEP's `--pick` choice, ordered by consequence severity first (`--pick_order
+The transcript is VEP's `--pick` choice (every other transcript is in `<patient>.transcripts.tsv.gz`
+and in the report's transcript selector), ordered by consequence severity first (`--pick_order
 rank,mane_select,...`): a variant is reported with its most severe consequence on any transcript,
 which is not always the MANE Select one. On the ClinGen Evidence Repository, 342 of the 11,714
 variants that overlap a MANE transcript (2.9%) are reported on another transcript, for example a

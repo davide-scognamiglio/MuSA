@@ -3,6 +3,24 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.7.0 - unreleased
+
+### `Added`
+
+- **Every transcript of every variant.** The MAF keeps one row per variant on VEP's pick;
+  `<patient>.transcripts.tsv.gz`, next to it, lists all the transcripts, keyed like the MAF and
+  ordered MANE Select first: consequence, impact, HGVS, exon or intron, MANE, canonical, APPRIS
+  and TSL flags, SIFT and PolyPhen, and `MuSA_pick` marking the one the MAF row reports. The
+  report's variant panel gets a transcript selector (MANE Select first; protein-coding
+  transcripts, MANE and the MAF's own). It comes from a second, light VEP pass (the cache only, no
+  plugins: about a minute on NA12878; `--flag_pick` on the main run took 8 min instead of 3 and
+  wrote 16 times the output), so the MAF itself is unchanged.
+
+### `Fixed`
+
+- `NearestExonJB` listed exons at the same distance in a different order from run to run; the list
+  is now sorted (3 NA12878 variants).
+
 ## v1.6.0 - unreleased
 
 Families and cohorts: a joint-called VCF annotated once for the whole group, with where the
