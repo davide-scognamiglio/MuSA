@@ -30,10 +30,11 @@ results/
 
 - `<patient>.raw.maf`
   - Every variant that survived preprocessing, annotated and merged into one table, one row per
-    variant. Basic mode (VEP with ClinVar and ClinGen, vcf2maf, ClinGen gene curations, HPO match,
-    ClinVar PS1/PM5 evidence): 168 columns. Extended mode adds dbNSFP's variant and gene columns, the VEP plugins and RENOVO's
-    `RENOVO_Class` / `PL_score`: 887 columns as of this version.
-    This number changes as annotation sources change -- treat it as approximate rather than a
+    variant. Basic mode (VEP with ClinVar and ClinGen, vcf2maf, ClinGen gene curations, HPO match
+    and onset, ClinVar PS1/PM5 evidence and submission comments, PubTator3 literature links): 185
+    columns. Extended mode adds dbNSFP's variant and gene columns, the VEP plugins, gnomAD v4.1
+    exomes counts and RENOVO's `RENOVO_Class` / `PL_score`: 951 columns as of this version.
+    This number changes as annotation sources change: treat it as approximate rather than a
     stable interface.
 - `<patient>.filtered.maf`
   - The same table after the three-tier filter: gene panel (`--panel`), HPO phenotype panel
@@ -57,9 +58,43 @@ hundreds of heterogeneous annotations without nesting, and carries a sample iden
 per-patient MAFs can be concatenated into a cohort table and read directly by tools such as
 [maftools](https://bioconductor.org/packages/maftools/).
 
+The transcript is VEP's `--pick` choice, ordered by consequence severity first (`--pick_order
+rank,mane_select,...`): a variant is reported with its most severe consequence on any transcript,
+which is not always the MANE Select one. On the ClinGen Evidence Repository, 342 of the 11,714
+variants that overlap a MANE transcript (2.9%) are reported on another transcript, for example a
+`stop_gained` on an NMD transcript that is missense on MANE. `MANE_SELECT` is empty on those rows.
+dbNSFP lists only non-synonymous changes, so a variant reported as missense on another transcript
+but synonymous or intronic on MANE can have no dbNSFP values at all.
+
 Both MAFs are tab-separated with a single header line. Missing values are written as `.`: the
 pipeline normalises `NA`, empty cells and `.` to that one spelling, so a missing value tests the
 same way in every column.
+
+#### When "missing" carries meaning
+
+A few columns distinguish *looked up and absent* from *not looked up*, because the difference
+changes what the row says:
+
+| Value | Columns | Meaning |
+|---|---|---|
+| `.` | all | no value: not annotated, or the source has nothing for the variant |
+| `not_found` | `gnomADe41_status` | the variant's chromosome was queried in gnomAD v4.1 exomes and gnomAD has no record of the variant |
+| `found` | `gnomADe41_status` | gnomAD v4.1 exomes has the variant (the `gnomADe41_*` counts are filled) |
+| `not_requested` | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` | the samplesheet gave no HPO terms, so no comparison was made (`none` means compared, nothing matched) |
+| `unannotated` | `HPO_match`, `HPO_onset` | HPO has no phenotype (or disease) annotation for the gene |
+| `0` | `ClinVar_SCV_*_n` | the variant is in ClinVar and no counted submission says that; `.` means no ClinVar record |
+
+#### Columns holding several values
+
+| Columns | Separator | Example |
+|---|---|---|
+| `HPO_onset` | `;` between diseases, `,` between one disease's onsets | `OMIM:615681=Juvenile onset (HP:0003621),Childhood onset (HP:0011463)` |
+| `ClinVar_SCV_PS3_codes`, `ClinVar_SCV_BS3_codes` | `;` between codes, `:` before the count | `PS3:4;PS3_Moderate:1` |
+| `ClinVar_EP_codes` | `; ` between expert-panel submissions, `,` between codes | `Pathogenic: PS3,PM2_Supporting [ClinGen ... VCEP]` |
+| `PubTator3_pmids`, `PubTator3_source`, `ClinVar_SCV_func_pmids`, `PUBMED`, `Existing_variation`, `MaveDB_score` (VEP plugin) | `,` | `41892021,40730740` |
+| `Consequence` and other VEP multi-value fields | `,` (VEP's `&`) | `missense_variant,splice_region_variant` |
+| `HPO_matched_terms`, `ClinVar_PM5` | `; ` | `R978H 3★; R978S 1★` |
+
 
 ## Setup workflow
 

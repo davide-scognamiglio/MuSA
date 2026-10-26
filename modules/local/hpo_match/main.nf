@@ -4,7 +4,7 @@
  * Purpose: Compare the patient's HPO terms (samplesheet `hpo` column) with each variant's gene,
  *          using the HPO release installed by setup (hp.obo + gene and disease annotations).
  *
- * Adds HPO_match, HPO_match_score, HPO_matched_terms, HPO_best_disease and HPO_panel; see
+ * Adds HPO_match, HPO_match_score, HPO_matched_terms, HPO_best_disease, HPO_panel and HPO_onset; see
  * bin/hpo_match.py. FILTER_VARIANTS reads HPO_panel, so phenotype filtering needs no network.
  */
 

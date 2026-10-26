@@ -84,12 +84,14 @@ process CLEAN_COLUMNS {
     # DEAD — zero coverage in this file (MAF-standard fields never populated by pipeline)
     DEAD="gnomad_exomes_af,gnomad_genomes_af,Exon_Number,Entrez_Gene_Id,HGVSp_Short"
 
-    DROP="\${ORIG},\${T1},\${T2},\${DEAD}"
+    # gnomADe41 is the bare id column of the gnomAD exomes --custom file (extended mode): always ".".
+    DROP="\${ORIG},\${T1},\${T2},\${DEAD},gnomADe41"
 
-    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below): the
-    # bare custom ClinVar id column. The self-managed ClinVar VCF (VEP --custom: ClinVar_CLNSIG/
-    # CLNREVSTAT/CLNDN) is the single ClinVar source.
-    DROP_ORIG="ClinVar"
+    # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below). None
+    # at present: the bare custom ClinVar id column, dropped up to 1.4, is the ClinVar VariationID and
+    # is kept as ClinVar_VariationID, the key CLINVAR_SUBMISSIONS joins on. The self-managed ClinVar
+    # VCF (VEP --custom: ClinVar_CLNSIG/CLNREVSTAT/CLNDN) is the single ClinVar source.
+    DROP_ORIG=""
 
     # The protein change: HGVSp_VEP comes from dbNSFP (read on the MANE transcript), and VEP's own
     # HGVSp is dropped above as its pre-merge twin. Basic mode has no dbNSFP, so there VEP's HGVSp
@@ -100,6 +102,12 @@ process CLEAN_COLUMNS {
     # UTRAnnotator writes 5UTR_annotation as key=value pairs in Perl hash order, which changes from
     # run to run ("type=uORF:KozakContext=..." one time, "KozakContext=...:type=uORF" the next), so
     # two runs of the same VCF differed. The pairs are sorted by key, inside each '&'-joined item.
+
+    # gnomADe41_status (extended mode), written after gnomADe41_FILTER: "found" when the gnomAD v4.1
+    # exomes file has the variant (its AN is filled), "not_found" when the variant's chromosome was
+    # queried and gnomAD has no record of it, "." when no file covers the chromosome (chrM, alt
+    # contigs). Absent from gnomAD is a fact about the variant; absence of a lookup is not, and both
+    # were "." before.
 
     # AlphaMissense has two copies: dbNSFP's (per transcript, read on the MANE transcript) and the
     # VEP plugin's (extended mode; DeepMind's canonical-transcript file, matched by position). They
@@ -143,7 +151,11 @@ process CLEAN_COLUMNS {
             if (name == "HGVSp"               && !vep_p)    vep_p    = i
             if (name == "HGVSp_VEP")                        dbnsfp_p = i
             if (name == "5UTR_annotation")                  utr5     = i
+            if (name == "gnomADe41_AN"        && !gn_an)    gn_an    = i
+            if (name == "gnomADe41_FILTER"    && !gn_flt)   gn_flt   = i
+            if ((name == "Chromosome" || name == "CHROM") && !chrom_i) chrom_i = i
         }
+        gn_after = gn_flt ? gn_flt : gn_an
         if (dbnsfp_p) vep_p = 0
         am_after = am_pred ? am_pred : am_score
         am_code["likely_benign"] = "LB"; am_code["ambiguous"] = "A"; am_code["likely_pathogenic"] = "LP"
@@ -151,8 +163,8 @@ process CLEAN_COLUMNS {
             col = \$i
             gsub(/\r/, "", col)
 
-            # Drop by ORIGINAL name first, so the bare ClinVar id column goes before the custom
-            # ClinVar_* fields are renamed to their canonical names just below.
+            # Drop by ORIGINAL name first, before the custom ClinVar_* fields are renamed to their
+            # canonical names just below.
             if (col in drop_orig) {
                 keep[i] = 0
                 \$i = col
@@ -162,6 +174,7 @@ process CLEAN_COLUMNS {
             # Rename to canonical MAF names
             if (i == vep_p)                            col = "HGVSp_VEP"
             else if (col == "SYMBOL")                  col = "Hugo_Symbol"
+            else if (col == "ClinVar")                 col = "ClinVar_VariationID"
             else if (col == "ClinVar_CLNSIG")          col = "CLNSIG"
             else if (col == "ClinVar_CLNREVSTAT")      col = "CLNREVSTAT"
             else if (col == "ClinVar_CLNDN")           col = "CLNDN"
@@ -195,6 +208,17 @@ process CLEAN_COLUMNS {
             gsub(/%3D/, "=", p)
             \$vep_p = p
         }
+        if (gn_after) {
+            if (NR == 1) {
+                gn_status = "gnomADe41_status"
+            } else if (!empty(\$gn_an)) {
+                gn_status = "found"
+            } else {
+                c = chrom_i ? \$chrom_i : ""
+                sub(/^chr/, "", c)
+                gn_status = (c ~ /^([1-9]|1[0-9]|2[0-2]|X|Y)\$/) ? "not_found" : "."
+            }
+        }
         if (am_after) {
             if (NR == 1) {
                 am_src = "AlphaMissense_source"
@@ -217,6 +241,10 @@ process CLEAN_COLUMNS {
             }
             if (i == am_after) {
                 out = out sep am_src
+                sep = OFS
+            }
+            if (i == gn_after) {
+                out = out sep gn_status
                 sep = OFS
             }
         }

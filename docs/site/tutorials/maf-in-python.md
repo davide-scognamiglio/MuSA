@@ -7,8 +7,8 @@ order: 2
 # The MAF in Python
 
 MuSA's raw MAF is a plain tab-separated table: one row per variant, one transcript per variant
-(MANE Select), one column per annotation. 168 columns in basic mode, 887 in extended mode. The
-output below comes from NA12878 in basic mode (22,572 variants).
+(VEP's pick, see [Output](../../docs/output/)), one column per annotation. 185 columns in basic mode,
+951 in extended mode. The output below comes from NA12878 in basic mode (22,597 variants).
 
 ## Load it
 
@@ -17,7 +17,7 @@ import pandas as pd
 
 maf = pd.read_csv("results/<date>/NA12878/NA12878.raw.maf", sep="\t", low_memory=False)
 maf.shape
-# (22572, 168)
+# (22597, 185)
 ```
 
 `low_memory=False` lets pandas read each column's type from the whole file, which matters for
@@ -27,15 +27,15 @@ sparse columns.
 
 ```python
 maf["IMPACT"].value_counts()
-# MODERATE    11652
-# LOW         10307
-# HIGH          560
+# MODERATE    11672
+# LOW         10311
+# HIGH          561
 # MODIFIER       53
 
 maf["HPO_match"].value_counts()   # how each gene matched the patient's HPO terms
-# unannotated    15300
-# none            4434
-# exact           2159
+# unannotated    15307
+# none            4446
+# exact           2165
 # narrower         426
 # broader          253
 ```
@@ -44,8 +44,8 @@ maf["HPO_match"].value_counts()   # how each gene matched the patient's HPO term
 
 ```python
 maf["Consequence"].str.split(",").str[0].value_counts().head(3)
-# missense_variant         11354
-# synonymous_variant        9937
+# missense_variant         11363
+# synonymous_variant        9941
 # splice_region_variant      290
 ```
 
@@ -56,9 +56,9 @@ ClinVar pathogenic or likely pathogenic:
 ```python
 plp = maf[maf["CLNSIG"].isin(["Pathogenic", "Likely_pathogenic", "Pathogenic/Likely_pathogenic"])]
 plp[["Hugo_Symbol", "HGVSp_VEP", "CLNSIG", "gnomADe_AF", "HPO_match"]]
-#       Hugo_Symbol    HGVSp_VEP      CLNSIG  gnomADe_AF HPO_match
-# 3682          PAH  p.Tyr414Cys  Pathogenic   0.0003646     exact
-# 18739         PLG   p.Lys38Glu  Pathogenic    0.005207      none
+#       Hugo_Symbol    HGVSp_VEP                        CLNSIG gnomADe_AF HPO_match
+# 3684          PAH  p.Tyr414Cys                    Pathogenic  0.0003646     exact
+# 18751         PLG   p.Lys38Glu  Pathogenic/Likely_pathogenic   0.005207      none
 ```
 
 Rare variants (gnomAD exomes below 0.1%; absent counts as rare):

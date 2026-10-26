@@ -2,7 +2,7 @@
 
 <!-- Generated from assets/annotation_sources.yaml by bin/musa_sources.py render. Edit the catalogue, not this file. -->
 
-MuSA annotates every variant from **103 sources**: 72 at variant level, 29 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
+MuSA annotates every variant from **106 sources**: 74 at variant level, 30 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
 
 When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, and the report's **Annotation sources** view records what that run actually used.
 
@@ -30,20 +30,23 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 |---|---|---|---|---|
 | dbSNP | rsIDs and other known-variant identifiers (COSMIC, HGMD public) at the same position | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `Existing_variation`, `rs_dbSNP` |
 | Ensembl variation phenotypes and literature | Phenotype associations of the variant and gene, somatic status, PubMed IDs | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `GENE_PHENO`, `PHENO`, `SOMATIC`, `PUBMED` |
+| PubTator3 | PubMed and PMC articles that mention the variant (NCBI text mining), with the articles ClinVar and dbSNP cite *Matched on rsID, gene + protein change and gene + cDNA change; up to 50 PMIDs listed, ClinVar-cited first, PubTator3_n counts all.* | PubTator3 (NCBI mutation2pubtator3) (`PUBTATOR3_LINKS`) | basic | `PubTator3_.*` |
 | GWAS Catalog | Published genome-wide associations of the variant (study, trait, p-value, effect) and of the gene *Gene-level traits from dbNSFP's gene file, variant-level GWAS_* columns from the VEP GWAS plugin.* | dbNSFP gene file (`DBNSFP_GENE_ANNOTATE_MAF`) | extended | `GWAS_.*`, `Trait_association\(GWAS\)` |
 
 ### Clinical assertions
 
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
-| ClinVar | Clinical significance, review status, condition, conflicting submissions, cross-references | ClinVar (`VEP_ANNOTATE_VCF (--custom)`) | basic | `CLNSIG`, `CLNREVSTAT`, `CLNDN`, `CLNSIGCONF`, `CLNDISDB`, `CLNHGVS`, `GENEINFO`, `ALLELEID`, `ClinVar_RS`, `MC`, `encoded_CLNSIG`, `encoded_CLNREVSTAT`, `clinvar_id`, `clinvar_hgvs`, `clinvar_var_source`, `clinvar_MedGen_id`, `clinvar_OMIM_id`, `clinvar_Orphanet_id` |
+| ClinVar | Clinical significance, review status, condition, conflicting submissions, cross-references | ClinVar (`VEP_ANNOTATE_VCF (--custom)`) | basic | `CLNSIG`, `CLNREVSTAT`, `CLNDN`, `CLNSIGCONF`, `CLNDISDB`, `CLNHGVS`, `GENEINFO`, `ALLELEID`, `ClinVar_VariationID`, `ClinVar_RS`, `MC`, `encoded_CLNSIG`, `encoded_CLNREVSTAT`, `clinvar_id`, `clinvar_hgvs`, `clinvar_var_source`, `clinvar_MedGen_id`, `clinvar_OMIM_id`, `clinvar_Orphanet_id` |
 | ClinGen expert-panel classifications | Variant classifications by ClinGen Variant Curation Expert Panels, with ACMG evidence codes | ClinGen Evidence Repository (`VEP_ANNOTATE_VCF (--custom)`) | basic | `ClinGenVCEP`, `ClinGen_Variant_.*` |
+| ClinVar submissions (submitters' comments) | What individual ClinVar submitters wrote: ACMG codes they name (PS3/BS3), functional studies they describe and with what result, cited PMIDs; the expert panel's own codes kept apart *Rule-based reading of the submission comments (bin/clinvar_submissions.py); expert-panel and practice-guideline submissions never enter the counts. Facts only: a submission naming PS3 is not a PS3 call.* | ClinVar submission summary (`CLINVAR_SUBMISSIONS`) | basic | `ClinVar_SCV_.*`, `ClinVar_EP_codes` |
 
 ### Population frequency
 
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
 | gnomAD v4.1 | Exome, genome and joint allele frequencies by ancestry group; the maximum population frequency | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `gnomADe_.*`, `gnomADg_.*`, `gnomAD4\.1_joint.*`, `MAX_AF`, `MAX_AF_POPS` |
+| gnomAD v4.1 exomes (allele counts) ⁽ʳ⁾ | AC, AN, AF and homozygote counts overall and by ancestry group, grpmax and gnomAD's FAF95/FAF99, for SNVs and indels; whether the variant was found *Ensembl's trimmed gnomAD v4.1 exomes VCFs through VEP --custom. gnomADe41_status: found / not_found (queried, absent) / . (no file for the chromosome).* | gnomAD v4.1 exomes (Ensembl trimmed VCFs) (`VEP_ANNOTATE_VCF (--custom)`) | extended | `gnomADe41_.*` |
 | gnomAD v2.1.1 | Exome frequencies in the controls, non-cancer and non-neuro subsets | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | extended | `gnomAD2\.1\.1_exomes_.*` |
 | 1000 Genomes phase 3 | Allele frequencies in five continental groups | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `AF`, `AFR_AF`, `AMR_AF`, `EAS_AF`, `EUR_AF`, `SAS_AF`, `1000Gp3_.*` |
 | TOPMed (freeze 8) | Allele frequencies from the NHLBI TOPMed programme | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | extended | `TOPMed_frz8_.*` |
@@ -186,7 +189,8 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 
 | Source | What it adds | Brought in by | Mode | Columns |
 |---|---|---|---|---|
-| Human Phenotype Ontology (ontology and annotations) | The patient's HPO terms against the gene's: exact, narrower or broader match, similarity score, best-matching OMIM/Orphanet disease, and the phenotype gene panel the filtered MAF uses *Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms.* | Human Phenotype Ontology (`HPO_MATCH`) | basic | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` |
+| Human Phenotype Ontology (ontology and annotations) | The patient's HPO terms against the gene's: exact, narrower or broader match, similarity score, best-matching OMIM/Orphanet disease, and the phenotype gene panel the filtered MAF uses *Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms, "not_requested" otherwise.* | Human Phenotype Ontology (`HPO_MATCH`) | basic | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` |
+| Human Phenotype Ontology (age of onset) | Age of onset HPO records for each of the gene's diseases *Disease-level clinical-course annotations under Onset (HP:0003674) in phenotype.hpoa; filled for every run.* | Human Phenotype Ontology (`HPO_MATCH`) | basic | `HPO_onset` |
 
 ## Scores and classification
 

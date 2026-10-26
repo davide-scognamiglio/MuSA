@@ -5,7 +5,8 @@
 # =========================
 # The static panel (--panel) is a gene list. The phenotype panel is no longer looked up online:
 # HPO_MATCH has already marked each row HPO_panel = yes/no from the patient's HPO terms and the
-# installed HPO release (bin/hpo_match.py), and "." when no term is specific enough to filter on.
+# installed HPO release (bin/hpo_match.py), "." when no term is specific enough to filter on, and
+# "not_requested" when the samplesheet gave no terms. Only yes/no values switch the filter on.
 read_static_panel <- function(panel_file = NULL) {
   if (is.null(panel_file)) return(character(0))
   panel_df <- read.csv(panel_file, header = TRUE, stringsAsFactors = FALSE)
@@ -38,7 +39,7 @@ filter_maf <- function(maf,
   # Panel filter: a row stays if its gene is in the static panel or HPO_MATCH put it in the
   # phenotype panel. Either panel on its own filters; with neither, nothing is dropped here.
   use_static <- length(panel_genes) > 0 && "Hugo_Symbol" %in% colnames(filtered)
-  use_hpo    <- "HPO_panel" %in% colnames(filtered) && any(!is.na(filtered$HPO_panel))
+  use_hpo    <- "HPO_panel" %in% colnames(filtered) && any(filtered$HPO_panel %in% c("yes", "no"))
   if (use_static || use_hpo) {
     keep <- rep(FALSE, nrow(filtered))
     if (use_static) keep <- keep | (!is.na(filtered$Hugo_Symbol) & filtered$Hugo_Symbol %in% panel_genes)

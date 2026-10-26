@@ -103,6 +103,6 @@ results/<date>/PATIENT_01/
 ## Next
 
 - **Pin a version** for reproducible runs: `-r v1.4.0`.
-- **Extended mode** (dbNSFP, 32 VEP plugins, RENOVO 1.5, ~200 GB): run `setup` again with
+- **Extended mode** (dbNSFP, gnomAD exomes, 32 VEP plugins, RENOVO 1.5, ~215 GB): run `setup` again with
   `--extended true` and your dbNSFP download, then `annotate --extended true`. Details in
   [Usage](../../docs/usage/).

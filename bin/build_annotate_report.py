@@ -85,6 +85,7 @@ DETAIL_COLUMNS = [
     ("gnomAD_LOEUF",         "gnomAD LOEUF"),
     ("PL_score",             "ReNOVo pathogenicity score"),
     ("PUBMED",               "PubMed"),
+    ("PubTator3_pmids",      "PubMed (PubTator3)"),
     ("ref_context",          "Reference context"),
     ("bioinfo_params",       "Call quality"),
     ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
@@ -92,11 +93,13 @@ DETAIL_COLUMNS = [
     # Present only when GeneBe ran (online mode). renovo_adj_acmg_score is not GeneBe's:
     # RENOVO_ADJUST_ACMG pushes GeneBe's score past 5 or below 0 for missense variants
     # by PL_score, so it is labelled as MuSA's and shown next to the original.
-    # Present when the samplesheet gave HPO terms (HPO_MATCH, bin/hpo_match.py).
+    # From HPO_MATCH (bin/hpo_match.py): the match columns carry data only when the samplesheet
+    # gave HPO terms ("not_requested" otherwise); HPO_onset is always filled.
     ("HPO_match",              "Match with the patient's phenotype"),
     ("HPO_match_score",        "Phenotype similarity (0-1)"),
     ("HPO_matched_terms",      "Matched HPO terms"),
     ("HPO_best_disease",       "Best-matching disease"),
+    ("HPO_onset",              "Age of onset (HPO)"),
     ("acmg_criteria",          "GeneBe ACMG criteria"),
     ("acmg_score",             "GeneBe ACMG score"),
     ("renovo_adj_acmg_score",  "ACMG score, ReNOVo-adjusted (missense)"),
@@ -112,7 +115,7 @@ DETAIL_SECTIONS = [
     ("Disease",        ["CLNDN", "encoded_CLNREVSTAT", "ClinVar_PS1", "ClinVar_PM5",
                         "ClinGen_GeneDisease_Disease",
                         "ClinGen_GeneDisease_MOI", "ClinGen_GeneDisease_Classification",
-                        "MIM_disease", "Orphanet_disorder"]),
+                        "MIM_disease", "Orphanet_disorder", "HPO_onset"]),
     ("Patient phenotype", ["HPO_match", "HPO_match_score", "HPO_matched_terms",
                            "HPO_best_disease"]),
     ("Gene constraint", ["gnomAD_pLI", "gnomAD_LOEUF"]),
@@ -1024,7 +1027,10 @@ PAGE_JS = r"""
     return cache[key];
   }
 
-  function absent(v) { return !v || v === "." || v === "nan" || v === "None"; }
+  // "not_requested": HPO matching without patient terms (bin/hpo_match.py), shown as no data.
+  function absent(v) {
+    return !v || v === "." || v === "nan" || v === "None" || v === "not_requested";
+  }
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
@@ -1263,8 +1269,8 @@ PAGE_JS = r"""
       .concat(grab(/OMIM:(\d+)/g, col("CLNDISDB")[i] || ""))
       .concat(grab(/\[MIM:(\d+)\]/g, col("MIM_disease")[i] || "")));
   }
-  function pubmedIds(i) {
-    return uniq(grab(/(\d{5,8})/g, col("PUBMED")[i] || ""));
+  function pubmedIds(i, key) {
+    return uniq(grab(/(\d{5,9})/g, col(key || "PUBMED")[i] || ""));
   }
   function rsIds(i) {
     return uniq(grab(/(rs\d+)/g, (col("ClinVar_RS")[i] || "") + " " + (col("Existing_variation")[i] || ""))
@@ -1453,8 +1459,8 @@ PAGE_JS = r"""
     if (k === "MAX_AF") return "<dd>" + afCell(v) + "</dd>";
     if (k === "MAX_AF_POPS") return '<dd class="plain">' + esc(String(v).replace(/_/g, " ")) + "</dd>";
     if (k === "IMPACT") return '<dd class="plain">' + esc(String(v).toLowerCase()) + "</dd>";
-    if (k === "PUBMED") {
-      return '<dd class="plain refs">' + pubmedIds(i).map(function (id) {
+    if (k === "PUBMED" || k === "PubTator3_pmids") {
+      return '<dd class="plain refs">' + pubmedIds(i, k).map(function (id) {
         return link("https://pubmed.ncbi.nlm.nih.gov/" + id + "/", id);
       }).join(" ") + "</dd>";
     }

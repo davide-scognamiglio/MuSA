@@ -95,6 +95,24 @@ providers:
     mode: basic
     manifest: clinvar_variant_summary
     url: https://www.ncbi.nlm.nih.gov/clinvar/
+  gnomad_exomes:
+    name: gnomAD v4.1 exomes (Ensembl trimmed VCFs)
+    step: VEP_ANNOTATE_VCF (--custom)
+    mode: extended
+    manifest: gnomad_exomes_chr1
+    url: https://gnomad.broadinstitute.org/
+  pubtator3:
+    name: PubTator3 (NCBI mutation2pubtator3)
+    step: PUBTATOR3_LINKS
+    mode: basic
+    manifest: pubtator3
+    url: https://www.ncbi.nlm.nih.gov/research/pubtator3/
+  clinvar_submissions:
+    name: ClinVar submission summary
+    step: CLINVAR_SUBMISSIONS
+    mode: basic
+    manifest: clinvar_submission_summary
+    url: https://www.ncbi.nlm.nih.gov/clinvar/
   renovo:
     name: renovo-rebuild
     step: RENOVO_SCORE
@@ -182,6 +200,14 @@ sources:
     category: Known variants and literature
     provider: vep_cache
     columns: [GENE_PHENO, PHENO, SOMATIC, PUBMED]
+  - id: pubtator3
+    name: PubTator3
+    what: "PubMed and PMC articles that mention the variant (NCBI text mining), with the articles ClinVar and dbSNP cite"
+    level: variant
+    category: Known variants and literature
+    provider: pubtator3
+    columns: ['PubTator3_.*']
+    note: "Matched on rsID, gene + protein change and gene + cDNA change; up to 50 PMIDs listed, ClinVar-cited first, PubTator3_n counts all."
   - id: gwas_catalog
     name: GWAS Catalog
     what: Published genome-wide associations of the variant (study, trait, p-value, effect) and of the gene
@@ -199,7 +225,7 @@ sources:
     category: Clinical assertions
     provider: clinvar
     columns: [CLNSIG, CLNREVSTAT, CLNDN, CLNSIGCONF, CLNDISDB, CLNHGVS, GENEINFO, ALLELEID,
-              ClinVar_RS, MC, encoded_CLNSIG, encoded_CLNREVSTAT, clinvar_id, clinvar_hgvs,
+              ClinVar_VariationID, ClinVar_RS, MC, encoded_CLNSIG, encoded_CLNREVSTAT, clinvar_id, clinvar_hgvs,
               clinvar_var_source, clinvar_MedGen_id, clinvar_OMIM_id, clinvar_Orphanet_id]
   - id: clingen_vcep
     name: ClinGen expert-panel classifications
@@ -217,6 +243,15 @@ sources:
     category: Population frequency
     provider: vep_cache
     columns: ['gnomADe_.*', 'gnomADg_.*', 'gnomAD4\.1_joint.*', MAX_AF, MAX_AF_POPS]
+  - id: gnomad41_exomes_counts
+    name: "gnomAD v4.1 exomes (allele counts)"
+    what: "AC, AN, AF and homozygote counts overall and by ancestry group, grpmax and gnomAD's FAF95/FAF99, for SNVs and indels; whether the variant was found"
+    level: variant
+    category: Population frequency
+    kind: copy
+    provider: gnomad_exomes
+    columns: ['gnomADe41_.*']
+    note: "Ensembl's trimmed gnomAD v4.1 exomes VCFs through VEP --custom. gnomADe41_status: found / not_found (queried, absent) / . (no file for the chromosome)."
   - id: gnomad211
     name: gnomAD v2.1.1
     what: Exome frequencies in the controls, non-cancer and non-neuro subsets
@@ -975,6 +1010,14 @@ sources:
     kind: computed
     provider: clinvar_residues
     columns: [ClinVar_PS1, ClinVar_PM5]
+  - id: clinvar_submissions
+    name: "ClinVar submissions (submitters' comments)"
+    what: "What individual ClinVar submitters wrote: ACMG codes they name (PS3/BS3), functional studies they describe and with what result, cited PMIDs; the expert panel's own codes kept apart"
+    level: variant
+    category: "Clinical assertions"
+    provider: clinvar_submissions
+    columns: ['ClinVar_SCV_.*', ClinVar_EP_codes]
+    note: "Rule-based reading of the submission comments (bin/clinvar_submissions.py); expert-panel and practice-guideline submissions never enter the counts. Facts only: a submission naming PS3 is not a PS3 call."
 
   # ── Patient phenotype ───────────────────────────────────────────────────────────────────────────
   - id: hpo_match
@@ -984,7 +1027,15 @@ sources:
     category: "Patient phenotype"
     provider: hpo
     columns: [HPO_match, HPO_match_score, HPO_matched_terms, HPO_best_disease, HPO_panel]
-    note: "Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms."
+    note: "Native HPO release (hp.obo, genes_to_phenotype.txt, phenotype.hpoa); filled only when the samplesheet gives HPO terms, \"not_requested\" otherwise."
+  - id: hpo_onset
+    name: "Human Phenotype Ontology (age of onset)"
+    what: "Age of onset HPO records for each of the gene's diseases"
+    level: gene
+    category: "Patient phenotype"
+    provider: hpo
+    columns: [HPO_onset]
+    note: "Disease-level clinical-course annotations under Onset (HP:0003674) in phenotype.hpoa; filled for every run."
 
   # ── MAF format and call information ─────────────────────────────────────────────────────────────
   - id: input_vcf

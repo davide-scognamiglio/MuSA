@@ -6,6 +6,8 @@ include { DOWNLOAD_CLINVAR } from '../../../modules/local/download_clinvar'
 include { DOWNLOAD_CLINGEN } from '../../../modules/local/download_clingen'
 include { DOWNLOAD_HPO } from '../../../modules/local/download_hpo'
 include { DOWNLOAD_CLINVAR_RESIDUES } from '../../../modules/local/download_clinvar_residues'
+include { DOWNLOAD_CLINVAR_SUBMISSIONS } from '../../../modules/local/download_clinvar_submissions'
+include { DOWNLOAD_PUBTATOR3 } from '../../../modules/local/download_pubtator3'
 include { MERGE_YAML as MERGE_BASIC_YAML } from '../../../modules/local/merge_yaml'
 
 workflow BASIC_SETUP {
@@ -38,8 +40,10 @@ workflow BASIC_SETUP {
         clingen_ch = DOWNLOAD_CLINGEN(manifest_ch, changed_entries_ch)
         hpo_ch     = DOWNLOAD_HPO(manifest_ch, changed_entries_ch)
         residues_ch = DOWNLOAD_CLINVAR_RESIDUES(manifest_ch, changed_entries_ch)
+        submissions_ch = DOWNLOAD_CLINVAR_SUBMISSIONS(manifest_ch, changed_entries_ch)
+        pubtator3_ch = DOWNLOAD_PUBTATOR3(manifest_ch, changed_entries_ch)
         merged_input = vep_ch
-            .mix(refgen_ch, clinvar_ch, clingen_ch, hpo_ch, residues_ch)
+            .mix(refgen_ch, clinvar_ch, clingen_ch, hpo_ch, residues_ch, submissions_ch, pubtator3_ch)
             .collect()
 
         merged_yaml = MERGE_BASIC_YAML(merged_input)
