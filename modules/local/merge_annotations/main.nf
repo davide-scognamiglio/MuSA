@@ -16,7 +16,8 @@ process MERGE_ANNOTATIONS {
     tuple val(meta), file(vep), file(dbnsfp), file(maf)
 
     output:
-    tuple val(meta), file("${meta.patient}.merged_annotations.tsv")
+    tuple val(meta), file("${meta.patient}.merged_annotations.tsv"), emit: merged
+    tuple val(meta), file("${meta.patient}.dbnsfp_transcripts.tsv.gz"), emit: dbnsfp_transcripts
 
     script:
     """
@@ -45,6 +46,8 @@ process MERGE_ANNOTATIONS {
 
     # dbNSFP is extended mode only: in basic mode ANNOTATE_VARIANTS passes the NO_FILE placeholder,
     # and the merge is VEP + MAF.
+    DBS_TX="${meta.patient}.dbnsfp_transcripts.tsv.gz"
+    printf '0_KEY\n' | gzip -c > "\$DBS_TX"
     if [[ "\$(basename "\$DBS_IN")" != "NO_FILE" ]]; then
 
     # --- 2. Normalize dbNSFP  (key: #CHROM | POS | REF | ALT) ---
@@ -72,6 +75,27 @@ process MERGE_ANNOTATIONS {
         print key, \$0
     }
     ' "\$DBS_IN" | sort -t\$'\\t' -k1,1 > "\$DBS_NORM"
+
+    # --- 2a. Per-transcript scores, for the transcripts table (TRANSCRIPTS_TABLE) ---
+    #
+    # The MAF keeps one value per score (2c below), and RENOVO and the AlphaMissense fill rely on
+    # that. Every transcript's own value goes to the transcripts table instead, so it is taken here,
+    # before the dedup and the collapse: every dbNSFP row (isoforms with a different amino-acid change
+    # included), Ensembl_transcriptid and the transcript-aligned columns that are a score or a
+    # prediction (*_score, *_pred). Rank scores are derived from the scores and stay in the MAF only.
+    awk -F'\t' -v OFS='\t' '
+    NR==FNR { if (\$1 ~ /_(score|pred)\$/) want[\$1] = 1; next }
+    FNR==1 {
+        n = 1; col[1] = 1
+        for (i=2; i<=NF; i++)
+            if ((\$i == "Ensembl_transcriptid" || (\$i in want)) && !seen[\$i]++) col[++n] = i
+    }
+    {
+        out = \$(col[1])
+        for (j=2; j<=n; j++) out = out OFS \$(col[j])
+        print out
+    }
+    ' "/data/dbNSFP/dbNSFP/dbnsfp_transcript_aligned_columns.txt" "\$DBS_NORM" | gzip -c > "\$DBS_TX"
 
     # --- 2b. Collapse dbNSFP to ONE row per key, keeping the isoform VEP actually picked ---
     #

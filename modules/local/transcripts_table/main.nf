@@ -2,7 +2,9 @@
  * MuSA
  * Module: TRANSCRIPTS_TABLE
  * Purpose: <patient>.transcripts.tsv.gz, every transcript of every variant keyed like the MAF,
- *          with the one the MAF reports marked (MuSA_pick). See bin/transcripts_table.py.
+ *          with the one the MAF reports marked (MuSA_pick) and each transcript's own dbNSFP scores
+ *          (MERGE_ANNOTATIONS' dbnsfp_transcripts; header only in basic mode). See
+ *          bin/transcripts_table.py.
  */
 
 process TRANSCRIPTS_TABLE {
@@ -14,13 +16,13 @@ process TRANSCRIPTS_TABLE {
     maxRetries 1
 
     input:
-        tuple val(meta), path(maf), path(vep_vcf)
+        tuple val(meta), path(maf), path(vep_vcf), path(dbnsfp)
 
     output:
         tuple val(meta), path("${meta.patient}.transcripts.tsv.gz")
 
     script:
         """
-        transcripts_table.py --vep ${vep_vcf} --maf ${maf} --output ${meta.patient}.transcripts.tsv.gz
+        transcripts_table.py --vep ${vep_vcf} --maf ${maf} --dbnsfp ${dbnsfp} --output ${meta.patient}.transcripts.tsv.gz
         """
 }

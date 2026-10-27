@@ -14,10 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   report's variant panel gets a transcript selector (MANE Select first; protein-coding
   transcripts, MANE and the MAF's own). It comes from a second, light VEP pass (the cache only, no
   plugins: about a minute on NA12878; `--flag_pick` on the main run took 8 min instead of 3 and
-  wrote 16 times the output), so the MAF itself is unchanged.
+  wrote 16 times the output), so the MAF itself is unchanged. In extended mode each line also
+  carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
+  named as in the MAF, where they stay one value per variant on the MANE transcript).
 
 ### `Fixed`
 
+- **`--dbnsfp_transcript_scores all` changed RENOVO and lost AlphaMissense values** (since 1.5):
+  RENOVO read the per-transcript lists and scored the most damaging transcript (on a chr22 test,
+  53 of 543 scores and 2 classes changed against `mane`, one LP Benign to LP Pathogenic), and the
+  AlphaMissense fill from the VEP plugin never ran on a list (23 of 543 variants left without a
+  value). The run now warns; use the default `mane` and read per-transcript scores from the
+  transcripts table.
 - `NearestExonJB` listed exons at the same distance in a different order from run to run; the list
   is now sorted (3 NA12878 variants).
 - **`setup --update_db_only` forgot the checksums of everything it did not download again** (since

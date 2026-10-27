@@ -48,8 +48,13 @@ results/
     `Gene`, `BIOTYPE`, `Consequence`, `IMPACT`, `HGVSc`, `HGVSp`, `EXON`, `INTRON`,
     `cDNA_position`, `CDS_position`, `Protein_position`, `Amino_acids`, `Codons`, `STRAND`,
     `FLAGS`, `CANONICAL`, `MANE_SELECT`, `MANE_PLUS_CLINICAL`, `TSL`, `APPRIS`, `CCDS`, `ENSP`,
-    `SWISSPROT`, `SIFT`, `PolyPhen` (multi-value fields `,`-separated). An intergenic variant has no
-    line. About 0.5 MB per 1,000 variants.
+    `SWISSPROT`, `SIFT`, `PolyPhen` (multi-value fields `,`-separated). In extended mode these are
+    followed by each transcript's own dbNSFP scores and predictions, every transcript-aligned
+    `*_score` and `*_pred` column (41 with dbNSFP 5.3: `SIFT_score`, `REVEL_score`,
+    `AlphaMissense_score`, ...), named as in the MAF and written as dbNSFP writes them; `.` where
+    dbNSFP has no record for the transcript (it covers non-synonymous changes only). In the MAF
+    the same columns hold one value, for the MANE transcript (see `--dbnsfp_transcript_scores` in
+    [usage](usage.md)). An intergenic variant has no line. About 0.6 MB per 1,000 variants.
 - `<patient>_maf_dashboard.html`
   - Self-contained interactive report: a summary panel plus a sortable, searchable table of the
     filtered variants, showing gene, HGVS nomenclature, consequence, ClinVar significance and

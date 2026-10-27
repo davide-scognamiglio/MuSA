@@ -34,7 +34,8 @@ include {chrom_list} from '../../../lib/annot_utils.nf'
  *   GROUP_GENOTYPES          family or cohort: every member's genotype, then inheritance,
  *                            segregation and compound heterozygosity, or cohort carrier counts
  *   VEP_TRANSCRIPTS,         every transcript of every variant (a light VEP pass, cache only),
- *   TRANSCRIPTS_TABLE        as <patient>.transcripts.tsv.gz keyed like the MAF
+ *   TRANSCRIPTS_TABLE        as <patient>.transcripts.tsv.gz keyed like the MAF, with each
+ *                            transcript's own dbNSFP scores (extended mode)
  *
  * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
  * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops. Eight of its
@@ -102,7 +103,8 @@ workflow ANNOTATE_VARIANTS {
 
         // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
         // running as a branch of its own.
-        merged_tsv = MERGE_ANNOTATIONS(joined)
+        MERGE_ANNOTATIONS(joined)
+        merged_tsv = MERGE_ANNOTATIONS.out.merged
         cleaned = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
         genotyped = SAMPLE_GENOTYPES(PUBTATOR3_LINKS(cleaned)).branch { meta, _maf ->
             group:  meta.mode in ['family', 'cohort']
@@ -114,7 +116,8 @@ workflow ANNOTATE_VARIANTS {
         transcripts = TRANSCRIPTS_TABLE(
             merged.map { meta, annotated -> [meta.patient, meta, annotated] }
                 .join(VEP_TRANSCRIPTS(vcf).map { meta, tx -> [meta.patient, tx] })
-                .map { _patient, meta, annotated, tx -> [meta, annotated, tx] })
+                .join(MERGE_ANNOTATIONS.out.dbnsfp_transcripts.map { meta, scores -> [meta.patient, scores] })
+                .map { _patient, meta, annotated, tx, scores -> [meta, annotated, tx, scores] })
 
     emit:
         maf         = merged

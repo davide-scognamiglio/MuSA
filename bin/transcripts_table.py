@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Every transcript of every variant, as a table next to the MAF.
 
-    transcripts_table.py --vep transcripts.vep.vcf --maf patient.maf --output patient.transcripts.tsv.gz
+    transcripts_table.py --vep transcripts.vep.vcf --maf patient.maf [--dbnsfp dbnsfp_transcripts.tsv.gz]
+                         --output patient.transcripts.tsv.gz
 
 The MAF reports each variant on one transcript (VEP's pick). This table lists all of them, keyed
 like the MAF (Chromosome, Start_Position, Reference_Allele, Tumor_Seq_Allele2), so a reader, the
@@ -9,6 +10,12 @@ report or SIDEVAR can show the variant on the transcript they want, MANE Select 
 
   MuSA_pick        yes for the transcript the MAF row reports, else no
   Feature ... PolyPhen   VEP's transcript-level fields (see VEP_TRANSCRIPTS)
+  SIFT_score ...         with --dbnsfp, dbNSFP's scores and predictions for that transcript, named as
+                         in the MAF (where they are one value per variant, on the MANE transcript)
+
+dbNSFP keeps a transcript's values as one element of ';'-separated lists aligned with
+Ensembl_transcriptid; the element at the transcript's position is written on its line, "." when
+dbNSFP has no record for the transcript (dbNSFP covers non-synonymous changes only).
 
 Transcripts are ordered: MANE Select, MANE Plus Clinical, the MAF's pick, Ensembl canonical, then
 by impact. Only transcript features are kept (no regulatory or motif features).
@@ -42,10 +49,36 @@ def maf_key(chrom, pos, ref, alt):
     return (chrom, str(pos), ref or "-", alt or "-")
 
 
+def load_dbnsfp(path):
+    """(score columns, {VCF key: {transcript: [value per column]}}) from MERGE_ANNOTATIONS."""
+    values = {}
+    with gzip.open(path, "rt") as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+        if "Ensembl_transcriptid" not in header:     # basic mode: no dbNSFP, header only
+            return [], values
+        tid = header.index("Ensembl_transcriptid")
+        cols = [i for i in range(1, len(header)) if i != tid]
+        for line in fh:
+            r = line.rstrip("\n").split("\t")
+            tx = r[tid].split(";")
+            lists = []
+            for i in cols:
+                items = r[i].split(";")
+                # A list shorter or longer than the transcript list cannot be indexed by it.
+                lists.append(items if len(items) == len(tx) else [MISSING] * len(tx))
+            per_tx = values.setdefault(r[0], {})
+            for j, t in enumerate(tx):
+                if t and t != MISSING and t not in per_tx:
+                    per_tx[t] = [(lst[j] or MISSING) for lst in lists]
+    return [header[i] for i in cols], values
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--vep", required=True)
     ap.add_argument("--maf", required=True)
+    ap.add_argument("--dbnsfp", help="MERGE_ANNOTATIONS' dbnsfp_transcripts.tsv.gz: VCF key, "
+                    "Ensembl_transcriptid and per-transcript score lists")
     ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
@@ -59,6 +92,8 @@ def main():
             r = line.rstrip("\n").split("\t")
             picks[tuple(r[col[k]] for k in MAF_KEY)] = r[col["Feature"]] if "Feature" in col else ""
 
+    db_fields, db_values = load_dbnsfp(args.dbnsfp) if args.dbnsfp else ([], {})
+
     csq = None
     rows, unmatched, n_records = [], [], 0
     with open(args.vep) as fh:
@@ -71,6 +106,8 @@ def main():
             n_records += 1
             f = line.rstrip("\n").split("\t")
             key = maf_key(f[0], f[1], f[3], f[4])
+            scores = db_values.get("|".join(f[:2] + f[3:5]), {})
+            no_scores = [MISSING] * len(db_fields)
             if key not in picks:
                 unmatched.append(":".join(f[:2] + f[3:5]))
                 continue
@@ -93,7 +130,8 @@ def main():
                 # synonymous HGVSp, decoded in the MAF too (CLEAN_COLUMNS).
                 rows.append(list(key) + [v["MuSA_pick"]] +
                             [(v.get(k, "") or MISSING).replace("&", ",").replace("%3D", "=")
-                             for k in OUT_FIELDS])
+                             for k in OUT_FIELDS] +
+                            scores.get(v.get("Feature", ""), no_scores))
 
     if csq is None:
         sys.exit(f"{args.vep}: no CSQ header")
@@ -102,12 +140,14 @@ def main():
                  f"coordinates, e.g. {', '.join(unmatched[:5])}")
 
     with gzip.open(args.output, "wt") as out:
-        out.write("\t".join(MAF_KEY + ["MuSA_pick"] + OUT_FIELDS) + "\n")
+        out.write("\t".join(MAF_KEY + ["MuSA_pick"] + OUT_FIELDS + db_fields) + "\n")
         for r in rows:
             out.write("\t".join(r) + "\n")
+    with_scores = sum(any(x != MISSING for x in r[len(r) - len(db_fields):]) for r in rows) \
+        if db_fields else 0
     with_pick = len({tuple(r[:4]) for r in rows if r[4] == "yes"})
     print(f"{args.output}: {len(rows)} transcripts for {n_records} variants; the MAF's transcript "
-          f"found for {with_pick}", file=sys.stderr)
+          f"found for {with_pick}; dbNSFP scores on {with_scores} transcripts", file=sys.stderr)
 
 
 if __name__ == "__main__":
