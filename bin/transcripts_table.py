@@ -89,8 +89,11 @@ def main():
                                         v.get("CANONICAL", "") != "YES",
                                         min(IMPACT_RANK.get(i, 4) for i in v.get("IMPACT", "").split("&"))))
             for v in entries:
+                # "&" joins a field's values in VEP output; "%3D" is VEP's URL-encoded "=" in a
+                # synonymous HGVSp, decoded in the MAF too (CLEAN_COLUMNS).
                 rows.append(list(key) + [v["MuSA_pick"]] +
-                            [(v.get(k, "") or MISSING).replace("&", ",") for k in OUT_FIELDS])
+                            [(v.get(k, "") or MISSING).replace("&", ",").replace("%3D", "=")
+                             for k in OUT_FIELDS])
 
     if csq is None:
         sys.exit(f"{args.vep}: no CSQ header")
