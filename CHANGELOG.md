@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Fixed`
 
+- **Family and cohort genotypes went to the wrong members on the Sarek path** (dev builds of 1.6):
+  GATK's hard filter sorts the sample columns by name, and the VEP parser read the members by
+  position, so whenever the samplesheet order was not alphabetical every member could get another's
+  genotypes, the proband's own `Zygosity` and `Sample_*` included, and with them `Inheritance`,
+  segregation, compound heterozygosity, cohort carriers and the genotypes sidecar. Members are now
+  read by name (a member missing from the VCF stops the run), and the hard filter restores the
+  input's column order. New `-profile test_family_sarek` and `tests/check_family_fixture.py`.
 - **`--dbnsfp_transcript_scores all` changed RENOVO and lost AlphaMissense values** (since 1.5):
   RENOVO read the per-transcript lists and scored the most damaging transcript (on a chr22 test,
   53 of 543 scores and 2 classes changed against `mane`, one LP Benign to LP Pathogenic), and the
