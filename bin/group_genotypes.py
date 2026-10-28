@@ -6,9 +6,10 @@
                        [--genes genes.tsv] [--rare-af 0.01]
                        [--dn-min-dp 10] [--dn-min-gq 20] [--dn-max-parent-alt 0]
 
-members.tsv: sample, role, sex, affected, family per line, in the VCF's column order (the order
-SELECT_MEMBERS wrote, proband first). The MAF's GROUP_FORMAT_VALUES column (from
-PARSE_VEP_ANNOTATION) holds every member's FORMAT values on each row; it is read and dropped.
+members.tsv: sample, role, sex, affected, family per line, in meta.members order (samplesheet
+order, proband first). The MAF's GROUP_FORMAT_VALUES column (from PARSE_VEP_ANNOTATION) holds every
+member's FORMAT values on each row in that same order, picked from the VCF by sample name (the VCF's
+own column order is not relied on: GATK sorts it); it is read and dropped.
 
 Every mode:
   GT_<sample>, DP_<sample>, GQ_<sample>, AD_<sample>, VAF_<sample>  for each member, or, with more

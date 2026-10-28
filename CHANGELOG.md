@@ -43,6 +43,12 @@ a cohort, how many members and families carry each variant and gene.
 
 ### `Fixed`
 
+- **Members are read from the VCF by sample name.** GATK's hard filter (`--vcf_format sarek`) sorts
+  the sample columns by name, so reading members by position gave each member another's genotypes
+  whenever the samplesheet order was not alphabetical (the proband's `Zygosity` and `Sample_*`
+  included). A member missing from the VCF stops the run, and the hard filter restores the input's
+  column order. New `-profile test_family_sarek` and `tests/check_family_fixture.py`.
+
 - **The report's zygosity and read-depth warning came from INFO** (`AC`/`AN`/`DP`). Those describe
   every sample of a joint-called VCF, and many VCFs have no `AC`/`AN` at all: on GIAB's NA12878 the
   report showed no zygosity for any variant. Both now come from the sample's own call.

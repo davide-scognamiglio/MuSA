@@ -5,9 +5,10 @@
  *          first), and only the sites and alternate alleles at least one of them carries.
  *
  * A joint VCF often holds a whole cohort; a family is annotated on its own members' variants.
- * The column order matters downstream: every single-sample step (VEP's FORMAT_VALUES, Sample_*,
- * the report) reads the FIRST sample column, so the proband must be first. bcftools 1.2 keeps
- * the file's sample order under `-s`, hence the explicit reorder.
+ * Proband first is the order every later step expects. PARSE_VEP_ANNOTATION reads the members by
+ * name, which survives any step that reorders the columns (GATK sorts them by name;
+ * GATK_VARIANTFILTRATION_HARDFILTER puts them back). bcftools 1.2 keeps the file's sample order
+ * under `-s`, hence the explicit reorder here.
  *
  * Also used for a single patient whose samplesheet row names a `sample` in a multi-sample VCF.
  */
