@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Fixed`
 
+- **`work/` could not be deleted without sudo.** The docker profile ran every task as root
+  (`--user root`), so task folders were root-owned. Tasks now run as the launching user
+  (`docker.runOptions = '-u $(id -u):$(id -g)'`, as in nf-core and Sarek). Folders left by
+  earlier runs stay root-owned.
 - **Family and cohort genotypes went to the wrong members on the Sarek path** (dev builds of 1.6):
   GATK's hard filter sorts the sample columns by name, and the VEP parser read the members by
   position, so whenever the samplesheet order was not alphabetical every member could get another's

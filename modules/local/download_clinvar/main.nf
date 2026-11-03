@@ -6,7 +6,7 @@
  *          curated via the manifest (entries: `clinvar` = vcf.gz, `clinvar_tbi` = index).
  *
  * NOTE ON INSTALL: the data_dir is bind-mounted rw at /data (see nextflow.config docker/podman/
- * singularity containerOptions, --user root). We install straight into /data — NOT via publishDir —
+ * singularity containerOptions). We install straight into /data — NOT via publishDir —
  * because publishDir with a nested-path pattern silently fails to publish the tree (the vep_cache
  * module hit exactly that, leaving the download stranded in the work dir).
  */

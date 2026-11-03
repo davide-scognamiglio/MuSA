@@ -202,11 +202,11 @@ install_files_into_data() {
 # match_data_dir_owner <path>...
 #
 # Give each path, and any directory created between it and /data, to the owner of the data
-# dir. The docker and podman profiles run tasks as root (--user root), so anything a task
-# installs under /data is otherwise owned by root on the host: the user cannot update or
-# delete it without sudo, and Nextflow, which publishes as the launching user, fails with
-# "Failed to publish file" when a later step (GEN_DBNSFP_ALIGNED_COLUMNS) writes into it.
-# No-op under singularity, where tasks already run as the user.
+# dir. The podman profile runs tasks as root (--user root), and the docker profile did before
+# MuSA 1.7, so anything a task installs under /data could be owned by root on the host: the user
+# cannot update or delete it without sudo, and Nextflow, which publishes as the launching user,
+# fails with "Failed to publish file" when a later step (GEN_DBNSFP_ALIGNED_COLUMNS) writes into
+# it. No-op when tasks already run as the data dir's owner (docker since 1.7, singularity).
 # ---------------------------------------------------------------------------------------
 match_data_dir_owner() {
     local owner path dir
