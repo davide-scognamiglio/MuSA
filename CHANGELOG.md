@@ -43,6 +43,15 @@ a cohort, how many members and families carry each variant and gene.
 
 ### `Fixed`
 
+- **Memory on large exome MAFs.** `PUBTATOR3_LINKS` and `GROUP_GENOTYPES` held the whole MAF in
+  memory and were killed on joint-called clinical exomes (75,000-100,000 rows, 0.4-0.55 GB MAFs).
+  They now read the MAF in two passes, with byte-identical output: peak memory on a 101,075-row
+  family MAF went from 6.3 to 0.05 GB (PubTator3) and from 6.5 to 0.28 GB (group genotypes). The
+  per-MAF helpers that retried once (`GROUP_GENOTYPES`, `HPO_MATCH`, `SAMPLE_GENOTYPES`,
+  `SELECT_MEMBERS`) now retry twice.
+- **`HPO_matched_terms` changed from run to run**: of several gene terms equally specific under a
+  patient term, the one named depended on Python's per-run string hashing. The highest-IC term is
+  still named, with ties now going to the lowest HPO ID.
 - **Members are read from the VCF by sample name.** GATK's hard filter (`--vcf_format sarek`) sorts
   the sample columns by name, so reading members by position gave each member another's genotypes
   whenever the samplesheet order was not alphabetical (the proband's `Zygosity` and `Sample_*`
