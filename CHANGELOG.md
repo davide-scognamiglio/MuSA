@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `Fixed`
 
+- **Memory on large exome MAFs.** `PUBTATOR3_LINKS`, `GROUP_GENOTYPES` and `TRANSCRIPTS_TABLE`
+  held the whole MAF (or the whole transcripts table) in memory and were killed on joint-called
+  clinical exomes (75,000-100,000 rows, 0.4-0.55 GB MAFs). They now read the MAF in two passes and
+  write as they go, with byte-identical output: peak memory on a 101,075-row family MAF went from
+  6.3 to 0.05 GB (PubTator3), 6.5 to 0.28 GB (group genotypes), and from 2.6 to 0.12 GB for a
+  74,560-row singleton's transcripts table. The other per-MAF helpers already streamed (at most
+  0.11 GB); `RENOVO_SCORE` peaks at 0.5 GB on the same family. The per-MAF helpers that retried
+  once now retry twice. A pipeline that raised these modules' memory in a config override (e.g.
+  SIDEVAR's `withName: '.*(GROUP_GENOTYPES|...|TRANSCRIPTS_TABLE)'` at 16 GB) no longer needs to.
+- **`HPO_matched_terms` changed from run to run**: of several gene terms equally specific under a
+  patient term, the one named depended on Python's per-run string hashing. The highest-IC term is
+  still named, with ties now going to the lowest HPO ID.
 - **`work/` could not be deleted without sudo.** The docker profile ran every task as root
   (`--user root`), so task folders were root-owned. Tasks now run as the launching user
   (`docker.runOptions = '-u $(id -u):$(id -g)'`, as in nf-core and Sarek). Folders left by

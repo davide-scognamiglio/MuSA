@@ -254,18 +254,24 @@ class Matcher:
         return sum(vals) / len(vals) if vals else 0.0, covered
 
     def relations(self, annotated, covered):
-        """Per patient term: (relation, the gene term that shows it)."""
+        """Per patient term: (relation, the gene term that shows it).
+
+        Of several gene terms that show it, the most specific (highest IC) is named, and on equal
+        IC the lowest HPO ID: `annotated` is a set, whose order changes from run to run with
+        Python's string hashing, so max() alone named a different term on every run.
+        """
+        best = lambda terms: min(terms, key=lambda t: (-self._ic(t), t))
         out = {}
         for p in self.patient:
             if p in annotated:
                 out[p] = ("exact", p)
             elif p in covered:
                 below = [t for t in annotated if p in self.onto.ancestors(t)]
-                out[p] = ("narrower", max(below, key=self._ic))
+                out[p] = ("narrower", best(below))
             else:
                 above = [t for t in annotated
                          if t in self.onto.ancestors(p) and t not in self.too_general]
-                out[p] = ("broader", max(above, key=self._ic)) if above else ("none", None)
+                out[p] = ("broader", best(above)) if above else ("none", None)
         return out
 
 

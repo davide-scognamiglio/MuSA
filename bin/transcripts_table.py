@@ -27,6 +27,7 @@ one does not, rather than writing a table nobody can join.
 
 import argparse
 import gzip
+import os
 import sys
 
 MAF_KEY = ["Chromosome", "Start_Position", "Reference_Allele", "Tumor_Seq_Allele2"]
@@ -94,9 +95,14 @@ def main():
 
     db_fields, db_values = load_dbnsfp(args.dbnsfp) if args.dbnsfp else ([], {})
 
+    # Lines are written as they are made (about 25 per variant: 2 million for an exome), into a
+    # temporary file renamed at the end, so a run that stops on an unmatched variant leaves no table.
+    tmp = args.output + ".partial"
     csq = None
-    rows, unmatched, n_records = [], [], 0
-    with open(args.vep) as fh:
+    unmatched, n_records, n_rows, with_scores = [], 0, 0, 0
+    with_pick = set()
+    with open(args.vep) as fh, gzip.open(tmp, "wt") as out:
+        out.write("\t".join(MAF_KEY + ["MuSA_pick"] + OUT_FIELDS + db_fields) + "\n")
         for line in fh:
             if line.startswith("##INFO=<ID=CSQ"):
                 csq = line.split("Format: ")[1].rstrip('">\n').split("|")
@@ -128,27 +134,26 @@ def main():
             for v in entries:
                 # "&" joins a field's values in VEP output; "%3D" is VEP's URL-encoded "=" in a
                 # synonymous HGVSp, decoded in the MAF too (CLEAN_COLUMNS).
-                rows.append(list(key) + [v["MuSA_pick"]] +
-                            [(v.get(k, "") or MISSING).replace("&", ",").replace("%3D", "=")
-                             for k in OUT_FIELDS] +
-                            scores.get(v.get("Feature", ""), no_scores))
+                tx_scores = scores.get(v.get("Feature", ""), no_scores)
+                out.write("\t".join(list(key) + [v["MuSA_pick"]] +
+                                     [(v.get(k, "") or MISSING).replace("&", ",").replace("%3D", "=")
+                                      for k in OUT_FIELDS] + tx_scores) + "\n")
+                n_rows += 1
+                with_scores += any(x != MISSING for x in tx_scores)
+                if v["MuSA_pick"] == "yes":
+                    with_pick.add(key)
 
+    if csq is None or unmatched:
+        os.remove(tmp)
     if csq is None:
         sys.exit(f"{args.vep}: no CSQ header")
     if unmatched:
         sys.exit(f"{len(unmatched)} of {n_records} variants have no MAF row under vcf2maf "
                  f"coordinates, e.g. {', '.join(unmatched[:5])}")
 
-    with gzip.open(args.output, "wt") as out:
-        out.write("\t".join(MAF_KEY + ["MuSA_pick"] + OUT_FIELDS + db_fields) + "\n")
-        for r in rows:
-            out.write("\t".join(r) + "\n")
-    with_scores = sum(any(x != MISSING for x in r[len(r) - len(db_fields):]) for r in rows) \
-        if db_fields else 0
-    with_pick = len({tuple(r[:4]) for r in rows if r[4] == "yes"})
-    print(f"{args.output}: {len(rows)} transcripts for {n_records} variants; the MAF's transcript "
-          f"found for {with_pick}; dbNSFP scores on {with_scores} transcripts", file=sys.stderr)
-
+    os.replace(tmp, args.output)
+    print(f"{args.output}: {n_rows} transcripts for {n_records} variants; the MAF's transcript "
+          f"found for {len(with_pick)}; dbNSFP scores on {with_scores} transcripts", file=sys.stderr)
 
 if __name__ == "__main__":
     main()

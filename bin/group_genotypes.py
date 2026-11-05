@@ -225,6 +225,10 @@ def label(row, col):
     return f"{gene}:{change}" if gene not in ("", MISSING) else change
 
 
+# Columns the facts read, besides FORMAT_FIELDS, GROUP_FORMAT_VALUES and the MAF key: kept for the
+# first pass (label, region, the cohort gene table).
+SLIM_COLUMNS = ["Hugo_Symbol", "HGVSp_VEP", "HGVSc", "IMPACT", "MAX_AF"]
+
 GENE_COLUMNS = ["gene", "variants", "carriers", "carrier_families",
                 "rare_high_carriers", "rare_moderate_carriers",
                 "rare_high_or_moderate_carriers", "rare_high_or_moderate_families",
@@ -290,15 +294,26 @@ def main():
     if not wide and not args.sidecar:
         sys.exit(f"{len(members)} members exceed --max-member-columns; give --sidecar")
 
+    # Two passes over the MAF, so memory does not grow with its width: the first keeps, per row,
+    # only the columns the facts are computed from; the second copies every row through with the
+    # member columns and facts added. A joint-called family exome MAF (100,000 rows x 900 columns,
+    # 0.5 GB) held whole took 6.5 GB.
     with open(args.maf, newline="\n") as fin:
         header = fin.readline().rstrip("\n").split("\t")
-        rows = [line.rstrip("\n").split("\t") for line in fin]
-    col = {}
-    for i, name in enumerate(header):
-        col.setdefault(name, i)
-    for need in ["FORMAT_FIELDS", "GROUP_FORMAT_VALUES"] + MAF_KEY:
-        if need not in col:
-            sys.exit(f"{args.maf}: no {need} column")
+        full = {}
+        for i, name in enumerate(header):
+            full.setdefault(name, i)
+        for need in ["FORMAT_FIELDS", "GROUP_FORMAT_VALUES"] + MAF_KEY:
+            if need not in full:
+                sys.exit(f"{args.maf}: no {need} column")
+        used = [n for n in dict.fromkeys(["FORMAT_FIELDS", "GROUP_FORMAT_VALUES"] + MAF_KEY + SLIM_COLUMNS)
+                if n in full]
+        col = {n: j for j, n in enumerate(used)}
+        idx = [full[n] for n in used]
+        rows = []
+        for line in fin:
+            f = line.rstrip("\n").split("\t")
+            rows.append([f[i] for i in idx])
     i_fmt, i_grp = col["FORMAT_FIELDS"], col["GROUP_FORMAT_VALUES"]
 
     calls_by_row = []
@@ -364,9 +379,11 @@ def main():
 
     keep = [i for i, name in enumerate(header) if name != "GROUP_FORMAT_VALUES"]
     member_cols = [f"{f}_{s}" for s in samples for f in MEMBER_FIELDS] if wide else []
-    with open(args.output, "w", newline="\n") as fout:
+    with open(args.maf, newline="\n") as fin, open(args.output, "w", newline="\n") as fout:
+        fin.readline()
         fout.write("\t".join([header[i] for i in keep] + member_cols + new_cols) + "\n")
-        for r, calls, fct in zip(rows, calls_by_row, facts):
+        for line, calls, fct in zip(fin, calls_by_row, facts):
+            r = line.rstrip("\n").split("\t")
             genos = [v for c in calls for v in c.columns()] if wide else []
             fout.write("\t".join([r[i] for i in keep] + genos + fct) + "\n")
 

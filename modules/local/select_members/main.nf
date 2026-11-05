@@ -18,7 +18,7 @@ process SELECT_MEMBERS {
     container "dsbioinfo/bcftools:1.2"
     memory { 2.GB * task.attempt }
     errorStrategy 'retry'
-    maxRetries 1
+    maxRetries 2
 
     input:
         tuple val(meta), path(vcf)

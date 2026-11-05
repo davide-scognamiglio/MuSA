@@ -11,7 +11,7 @@ process SAMPLE_GENOTYPES {
     container "dsbioinfo/musa-helper:rebuild"
     memory { 1.GB * task.attempt }
     errorStrategy 'retry'
-    maxRetries 1
+    maxRetries 2
 
     input:
         tuple val(meta), path(maf)
