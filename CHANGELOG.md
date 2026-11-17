@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
   named as in the MAF, where they stay one value per variant on the MANE transcript).
 
+- **Setup keeps ClinVar's raw tables.** `variant_summary` and `submission_summary` are installed
+  next to the indexes built from them (`clinvar_residues/`, `clinvar_submissions/`, named as the
+  manifest entries' `out`) instead of being deleted, for ARGUS's setup step. About 0.8 GB more in
+  the data directory. An existing data directory gets them the next time either entry changes;
+  remove the two directories and run `--workflow setup --update_db_only true` to get them now.
+
 ### `Fixed`
 
 - **Memory on large exome MAFs.** `PUBTATOR3_LINKS`, `GROUP_GENOTYPES` and `TRANSCRIPTS_TABLE`
