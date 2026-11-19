@@ -43,7 +43,7 @@ process VEP_ANNOTATE_VCF {
                 --offline \\
                 --assembly GRCh38 \\
                 --mane --pick \\
-                --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
+                --pick_order ${params.vep_pick_order} \\
                 --everything --fork ${params.n_core} \\
                 --no_stats \\
                 --custom file="/data/vep_data/ClinVar/clinvar.vcf.gz",short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN%CLNSIGCONF%CLNDISDB%CLNHGVS%GENEINFO%ALLELEID%RS%MC \\
@@ -93,7 +93,7 @@ process VEP_ANNOTATE_VCF {
                 --offline \\
                 --assembly GRCh38 \\
                 --mane --pick \\
-                --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
+                --pick_order ${params.vep_pick_order} \\
                 --everything --fork ${params.n_core} \\
                 --no_stats \\
                 --custom file="/data/vep_data/ClinVar/clinvar.vcf.gz",short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN%CLNSIGCONF%CLNDISDB%CLNHGVS%GENEINFO%ALLELEID%RS%MC \\

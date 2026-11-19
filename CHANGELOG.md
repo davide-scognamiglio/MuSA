@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
   named as in the MAF, where they stay one value per variant on the MANE transcript).
 
+- **`--vep_pick_order`**: VEP's `--pick_order`, i.e. which transcript each MAF row reports. The
+  default is the order used so far (`rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length`,
+  severity first), so runs that do not set it are unchanged. Start it with `mane_select` to report
+  the MANE Select transcript whenever there is one.
 - **Setup keeps ClinVar's raw tables.** `variant_summary` and `submission_summary` are installed
   next to the indexes built from them (`clinvar_residues/`, `clinvar_submissions/`, named as the
   manifest entries' `out`) instead of being deleted, for ARGUS's setup step. About 0.8 GB more in

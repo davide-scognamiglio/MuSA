@@ -82,6 +82,16 @@ variants that overlap a MANE transcript (2.9%) are reported on another transcrip
 dbNSFP lists only non-synonymous changes, so a variant reported as missense on another transcript
 but synonymous or intronic on MANE can have no dbNSFP values at all.
 
+`--vep_pick_order` sets this order. Starting it with `mane_select` (for example
+`mane_select,mane_plus_clinical,rank,canonical,appris,tsl,biotype,ccds,length`) reports a variant
+on a MANE Select transcript whenever VEP gives it any consequence on one, and the rest by severity.
+"Any consequence" includes upstream, downstream and intronic ones, in any gene: when a variant's
+damaging effect is on a transcript that is not MANE and it lies near another gene's MANE
+transcript, the row moves to that other gene. On NA12878 chr22 (543 variants) a MANE-first order
+moved 98 rows to another transcript, 4 of them to another gene, each hiding a HIGH or MODERATE
+consequence (a TUBA8 `stop_gained` reported as USP18 `upstream_gene_variant`). Check
+`Hugo_Symbol` and the transcripts table before reading such a row as benign.
+
 Both MAFs are tab-separated with a single header line. Missing values are written as `.`: the
 pipeline normalises `NA`, empty cells and `.` to that one spelling, so a missing value tests the
 same way in every column.

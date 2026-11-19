@@ -85,6 +85,14 @@
                     ],
                     "default": "mane"
                 },
+                "vep_pick_order": {
+                    "type": "string",
+                    "description": "VEP --pick_order: which transcript each MAF row reports",
+                    "help_text": "Comma-separated VEP pick criteria, applied in order to choose the one transcript the MAF row describes (Feature, Consequence, HGVSc/HGVSp, EXON, ...). The default ranks consequence severity first, so a variant is reported with its most severe consequence on any transcript, which is not always the MANE Select one; MANE Select breaks ties. Put mane_select first (e.g. 'mane_select,mane_plus_clinical,rank,canonical,appris,tsl,biotype,ccds,length') to report the MANE Select transcript whenever there is one. Every transcript is in <patient>.transcripts.tsv.gz whatever the order. Changes variant-level output.",
+                    "fa_icon": "fas fa-sort-amount-down",
+                    "pattern": "^(mane_select|mane_plus_clinical|canonical|appris|tsl|biotype|ccds|rank|length|ensembl|refseq)(,(mane_select|mane_plus_clinical|canonical|appris|tsl|biotype|ccds|rank|length|ensembl|refseq))*$",
+                    "default": "rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length"
+                },
                 "offline": {
                     "type": "boolean",
                     "description": "Run in offline mode",
