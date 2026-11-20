@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
   named as in the MAF, where they stay one value per variant on the MANE transcript).
 
+- **`Repeat_region`**: the repeats a variant overlaps, from UCSC RepeatMasker (`Simple_repeat`,
+  `Low_complexity`, `Satellite`; interspersed repeats left out) and Tandem Repeats Finder (`TRF`),
+  `;`-separated, `.` for none. The variant's span is the MAF's `Start_Position`..`End_Position`
+  (an insertion's two flanking bases). It is the fact behind the repeat clause of ACMG PM4 and BP3.
+  Basic mode. New manifest entries `ucsc_rmsk` and `ucsc_simple_repeat` (UCSC files dated
+  2022-10-19), built at setup into `repeat_regions/repeat_regions.bed.gz` (1.86 million intervals,
+  13 MB); an existing data directory needs `--workflow setup --update_db_only true` once.
 - **`--vep_pick_order`**: VEP's `--pick_order`, i.e. which transcript each MAF row reports. The
   default is the order used so far (`rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length`,
   severity first), so runs that do not set it are unchanged. Start it with `mane_select` to report

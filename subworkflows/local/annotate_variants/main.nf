@@ -11,6 +11,7 @@ include {ADD_GENOME_CHANGE} from '../../../modules/local/add_genome_change'
 include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
 include {CLEAN_COLUMNS} from '../../../modules/local/clean_columns'
 include {PUBTATOR3_LINKS} from '../../../modules/local/pubtator3_links'
+include {REPEAT_REGIONS} from '../../../modules/local/repeat_regions'
 include {SAMPLE_GENOTYPES} from '../../../modules/local/sample_genotypes'
 include {GROUP_GENOTYPES} from '../../../modules/local/group_genotypes'
 include {VEP_TRANSCRIPTS} from '../../../modules/local/vep_transcripts'
@@ -30,6 +31,8 @@ include {chrom_list} from '../../../lib/annot_utils.nf'
  *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant (extended mode)
  *   PUBTATOR3_LINKS          PubMed articles mentioning the variant (PubTator3, ClinVar and dbSNP
  *                            citations)
+ *   REPEAT_REGIONS           the repeat regions the variant overlaps (UCSC RepeatMasker simple,
+ *                            low-complexity and satellite repeats; Tandem Repeats Finder)
  *   SAMPLE_GENOTYPES         the sample's own genotype: zygosity, depth, allele depths, VAF
  *   GROUP_GENOTYPES          family or cohort: every member's genotype, then inheritance,
  *                            segregation and compound heterozygosity, or cohort carrier counts
@@ -106,7 +109,7 @@ workflow ANNOTATE_VARIANTS {
         MERGE_ANNOTATIONS(joined)
         merged_tsv = MERGE_ANNOTATIONS.out.merged
         cleaned = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
-        genotyped = SAMPLE_GENOTYPES(PUBTATOR3_LINKS(cleaned)).branch { meta, _maf ->
+        genotyped = SAMPLE_GENOTYPES(REPEAT_REGIONS(PUBTATOR3_LINKS(cleaned))).branch { meta, _maf ->
             group:  meta.mode in ['family', 'cohort']
             single: true
         }

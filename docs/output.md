@@ -109,6 +109,7 @@ changes what the row says:
 | `not_requested` | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` | the samplesheet gave no HPO terms, so no comparison was made (`none` means compared, nothing matched) |
 | `unannotated` | `HPO_match`, `HPO_onset` | HPO has no phenotype (or disease) annotation for the gene |
 | `0` | `ClinVar_SCV_*_n` | the variant is in ClinVar and no counted submission says that; `.` means no ClinVar record |
+| `.` | `Repeat_region` | the variant overlaps none of the repeat intervals (RepeatMasker simple, low-complexity, satellite; Tandem Repeats Finder) |
 | `.` | `Zygosity` | the sample has no genotype call at the site (the other `Sample_*` columns are `.` too) |
 
 #### Columns holding several values
@@ -123,6 +124,7 @@ changes what the row says:
 | `HPO_matched_terms`, `ClinVar_PM5` | `; ` | `R978H 3★; R978S 1★` |
 | `Comphet_trans`, `Comphet_cis_or_unknown` | `;` | `TTN:p.Arg100Cys;TTN:p.Gly2Ser` |
 | `Cohort_carriers` | `,` | `HG00097,HG00157` |
+| `Repeat_region` | `;`, in the order `Simple_repeat`, `Low_complexity`, `Satellite`, `TRF` | `Simple_repeat;TRF` |
 | `Sample_AD` | `,`, reference first | `12,9` |
 
 
