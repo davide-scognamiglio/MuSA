@@ -23,6 +23,7 @@ import argparse
 import gzip
 import heapq
 import os
+import shutil
 import sys
 
 RMSK_CLASSES = ("Simple_repeat", "Low_complexity", "Satellite")
@@ -64,9 +65,15 @@ def intervals(path, wanted):
 
 
 def annotate(args):
+    # A data directory set up before MuSA 1.7 has no BED. The MAF then goes through without the
+    # column rather than with '.', which would claim the variant lies in no repeat: a reader can
+    # tell "not annotated" (no column) from "no repeat" ('.').
     if not os.path.isfile(args.bed):
-        sys.exit(f"{args.bed} not found: this data directory predates MuSA 1.7's repeat regions. "
-                 "Run `--workflow setup --update_db_only true` once to add them.")
+        print(f"[WARN] {args.bed} not found: this data directory predates MuSA 1.7's repeat "
+              "regions, so the MAF has no Repeat_region column. Run `--workflow setup "
+              "--update_db_only true` once to add them.", file=sys.stderr)
+        shutil.copyfile(args.maf, args.output)
+        return
 
     # Two passes over the MAF, so memory does not grow with it: the first keeps each row's span,
     # the second copies every row through with the new column added.
