@@ -149,7 +149,8 @@ sources:
     category: Consequence and transcript
     provider: vep_cache
     columns: [Consequence, IMPACT, Hugo_Symbol, Gene, Feature_type, Feature, BIOTYPE, EXON, INTRON,
-              HGVSc, cDNA_position, CDS_position, Protein_position, Amino_acids, Codons, DISTANCE,
+              HGVSc, cDNA_position, CDS_position, Protein_position, cDNA_length, CDS_length,
+              Protein_length, Amino_acids, Codons, DISTANCE,
               STRAND, FLAGS, VARIANT_CLASS, SYMBOL_SOURCE, HGNC_ID, CANONICAL, CCDS, ENSP, SOURCE,
               HGVS_OFFSET]
   - id: mane
@@ -1077,7 +1078,8 @@ sources:
     category: Call information
     kind: computed
     provider: musa
-    columns: ['(GT|DP|GQ|AD|VAF)_.+', 'Inheritance.*', 'Segregation_.*', 'Comphet_.*', 'Cohort_.*']
+    columns: ['(GT|DP|GQ|AD|VAF)_.+', 'Inheritance.*', 'Segregation_.*', 'Comphet_.*', 'Cohort_.*',
+              'Family_members']
     note: "GROUP_GENOTYPES, from the joint-called VCF of a samplesheet group. Above --max_member_columns members the genotypes are in <group>.genotypes.tsv.gz; a cohort also gets <group>.genes.tsv."
 
   - id: maf_format

@@ -38,6 +38,24 @@ OUT_FIELDS = ["Feature", "SYMBOL", "Gene", "BIOTYPE", "Consequence", "IMPACT", "
               "MANE_PLUS_CLINICAL", "TSL", "APPRIS", "CCDS", "ENSP", "SWISSPROT", "SIFT",
               "PolyPhen"]
 MISSING = "."
+# VEP --total_length writes these as position/length: the position stays in its column, the length
+# goes to a column of its own, after every other column.
+LENGTH_OF = {"cDNA_position": "cDNA_length", "CDS_position": "CDS_length",
+             "Protein_position": "Protein_length"}
+LENGTH_FIELDS = list(LENGTH_OF.values())
+
+
+def split_lengths(v):
+    """Move VEP's total lengths out of the position fields of one CSQ entry; return the lengths."""
+    lengths = []
+    for pos in LENGTH_OF:
+        parts = v.get(pos, "").split("/")
+        if len(parts) == 2:
+            v[pos] = "" if parts[0] == "-" else parts[0]
+            lengths.append(parts[1] or MISSING)
+        else:
+            lengths.append(MISSING)
+    return lengths
 
 
 def maf_key(chrom, pos, ref, alt):
@@ -102,7 +120,7 @@ def main():
     unmatched, n_records, n_rows, with_scores = [], 0, 0, 0
     with_pick = set()
     with open(args.vep) as fh, gzip.open(tmp, "wt") as out:
-        out.write("\t".join(MAF_KEY + ["MuSA_pick"] + OUT_FIELDS + db_fields) + "\n")
+        out.write("\t".join(MAF_KEY + ["MuSA_pick"] + OUT_FIELDS + db_fields + LENGTH_FIELDS) + "\n")
         for line in fh:
             if line.startswith("##INFO=<ID=CSQ"):
                 csq = line.split("Format: ")[1].rstrip('">\n').split("|")
@@ -135,9 +153,10 @@ def main():
                 # "&" joins a field's values in VEP output; "%3D" is VEP's URL-encoded "=" in a
                 # synonymous HGVSp, decoded in the MAF too (CLEAN_COLUMNS).
                 tx_scores = scores.get(v.get("Feature", ""), no_scores)
+                lengths = split_lengths(v)
                 out.write("\t".join(list(key) + [v["MuSA_pick"]] +
                                      [(v.get(k, "") or MISSING).replace("&", ",").replace("%3D", "=")
-                                      for k in OUT_FIELDS] + tx_scores) + "\n")
+                                      for k in OUT_FIELDS] + tx_scores + lengths) + "\n")
                 n_rows += 1
                 with_scores += any(x != MISSING for x in tx_scores)
                 if v["MuSA_pick"] == "yes":

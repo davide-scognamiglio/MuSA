@@ -43,6 +43,7 @@ process VEP_TRANSCRIPTS {
             --offline \\
             --assembly GRCh38 \\
             --symbol --biotype --numbers --hgvs --canonical --mane --appris --tsl --ccds \\
+            --total_length \\
             --protein --uniprot --sift b --polyphen b \\
             --fields "${fields}" \\
             --fork ${params.n_core} \\

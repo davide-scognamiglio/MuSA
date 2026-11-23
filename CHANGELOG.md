@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
   named as in the MAF, where they stay one value per variant on the MANE transcript).
 
+- **Transcript lengths**: `cDNA_length`, `CDS_length`, `Protein_length` (VEP `--total_length`) in
+  the MAF and, as the last columns, in the transcripts table: the length of the transcript the
+  row describes, e.g. for "removes more than 10% of the protein" (PVS1). VEP writes positions as
+  `position/length` with that flag; MuSA splits them, so `cDNA_position`, `CDS_position` and
+  `Protein_position` are unchanged (byte-identical on NA12878 chr22, transcripts table included).
+- **gnomAD v4.1 exomes XY counts** (extended mode): `gnomADe41_AC_XY`, `gnomADe41_AN_XY`,
+  `gnomADe41_AF_XY`, `gnomADe41_nhomalt_XY`, from the installed files (hemizygote counts on chrX).
+- **`Family_members`** (family mode): every member as `sample:role:sex:affected`, `;`-separated,
+  proband first, the same on every row, so the MAF alone says whose genotype each `GT_<sample>` is
+  and whether that person is affected (recessive segregation, PP1 / BS4).
 - **`Repeat_region`**: the repeats a variant overlaps, from UCSC RepeatMasker (`Simple_repeat`,
   `Low_complexity`, `Satellite`; interspersed repeats left out) and Tandem Repeats Finder (`TRF`),
   `;`-separated, `.` for none. The variant's span is the MAF's `Start_Position`..`End_Position`

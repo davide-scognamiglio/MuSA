@@ -48,7 +48,8 @@ results/
     `Gene`, `BIOTYPE`, `Consequence`, `IMPACT`, `HGVSc`, `HGVSp`, `EXON`, `INTRON`,
     `cDNA_position`, `CDS_position`, `Protein_position`, `Amino_acids`, `Codons`, `STRAND`,
     `FLAGS`, `CANONICAL`, `MANE_SELECT`, `MANE_PLUS_CLINICAL`, `TSL`, `APPRIS`, `CCDS`, `ENSP`,
-    `SWISSPROT`, `SIFT`, `PolyPhen` (multi-value fields `,`-separated). In extended mode these are
+    `SWISSPROT`, `SIFT`, `PolyPhen` (multi-value fields `,`-separated), and as the last columns
+    `cDNA_length`, `CDS_length`, `Protein_length` (the transcript's lengths). In extended mode these are
     followed by each transcript's own dbNSFP scores and predictions, every transcript-aligned
     `*_score` and `*_pred` column (41 with dbNSFP 5.3: `SIFT_score`, `REVEL_score`,
     `AlphaMissense_score`, ...), named as in the MAF and written as dbNSFP writes them; `.` where
@@ -145,6 +146,7 @@ Written in [family and cohort modes](usage.md#family-and-cohort-modes) only.
 | `Cohort_carrier_families_n` | count | carriers counted once per samplesheet `family` |
 | `Cohort_affected_carriers_n`, `Cohort_unaffected_carriers_n` | counts | carriers by affected status |
 | `Cohort_carriers` | names | carrier samples, up to 50 |
+| `Family_members` | `sample:role:sex:affected;...` | family mode: every member in samplesheet order (proband first), affected `yes` / `no` / `unknown`; the same on every row |
 
 `Zygosity` and `Sample_*` describe the proband in family mode and are `.` in cohort mode. Group
 outputs, next to the MAFs: `<group>.genotypes.tsv.gz` (more members than `--max_member_columns`) and,
