@@ -123,6 +123,10 @@ PAGE_CSS = """
 }
 .case-meta dt { color: var(--band-muted); }
 .case-meta dd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.notices { margin: 1rem 1.5rem; padding: .75rem 1rem; border: 1px solid var(--border); border-radius: 6px; }
+.notices h2 { margin: 0 0 .4rem; font-size: 1rem; }
+.notices ul { margin: 0; padding-left: 1.2rem; }
+.notices li { margin: .2rem 0; overflow-wrap: anywhere; }
 .case-note {
   margin-top: 0.9rem; max-width: 52ch;
   font-size: var(--step--1); color: var(--band-muted); text-wrap: pretty;
@@ -285,6 +289,7 @@ __PAGE_CSS__
   </div>
 </section>
 
+__NOTICES__
 <div class="controls no-print">
   <div class="controls-group" role="group" aria-label="Filter by verification state">
     __FILTERS__
@@ -321,6 +326,18 @@ __PAGE_CSS__
 """
 
 
+def notices_html(notes_path):
+    """Notes from setup steps that are not manifest entries (ARGUS's resource build), one per line."""
+    if not notes_path or os.path.basename(notes_path) == "NO_FILE" or not os.path.isfile(notes_path):
+        return ""
+    with open(notes_path, encoding="utf-8") as fh:
+        lines = [line.strip() for line in fh if line.strip()]
+    if not lines:
+        return ""
+    items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+    return f'<section class="notices" aria-label="Setup notices"><h2>Notices</h2><ul>{items}</ul></section>'
+
+
 ASSEMBLY_LABELS = {"grch38": "GRCh38", "grch37": "GRCh37", "hg38": "hg38", "hg19": "hg19"}
 
 
@@ -333,7 +350,7 @@ def _esc(v):
 
 
 def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
-                 pipeline_version="—"):
+                 pipeline_version="—", notes_path=None):
     data = parse_manifest(yaml_path)
     if not data:
         raise RuntimeError(f"No entries parsed from manifest: {yaml_path}")
@@ -431,6 +448,7 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
             .replace("__PAGE_JS__", PAGE_JS)
             .replace("__BAND_MEASURE_JS__", style.band_measure_js(
                 [(".band", "--band-h"), (".controls", "--controls-h")]))
+            .replace("__NOTICES__", notices_html(notes_path))
             .replace("__ROWS__", "".join(rows_html))
             .replace("__FILTERS__", "".join(filters))
             .replace("__KEYS__", keys_html)
@@ -453,10 +471,11 @@ def build_report(yaml_path, output_path="setup_report.html", logo_path=None,
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        sys.exit("Usage: build_setup_report.py <manifest.yaml> [output.html] [logo.png] [version]")
+        sys.exit("Usage: build_setup_report.py <manifest.yaml> [output.html] [logo.png] [version] [notes.txt]")
     build_report(
         sys.argv[1],
         sys.argv[2] if len(sys.argv) > 2 else "setup_report.html",
         sys.argv[3] if len(sys.argv) > 3 else None,
         sys.argv[4] if len(sys.argv) > 4 else "—",
+        sys.argv[5] if len(sys.argv) > 5 else None,
     )
