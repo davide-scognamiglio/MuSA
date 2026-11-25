@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugins: about a minute on NA12878; `--flag_pick` on the main run took 8 min instead of 3 and
   wrote 16 times the output), so the MAF itself is unchanged. In extended mode each line also
   carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
-  named as in the MAF, where they stay one value per variant on the MANE transcript).
-
+  named as in the MAF, where they stay one value per variant on the MANE transcript). The table
+  is written as it is built: 0.12 GB peak on a 74,560-row exome, so it needs no memory override.
 - **Transcript lengths**: `cDNA_length`, `CDS_length`, `Protein_length` (VEP `--total_length`) in
   the MAF and, as the last columns, in the transcripts table: the length of the transcript the
   row describes, e.g. for "removes more than 10% of the protein" (PVS1). VEP writes positions as
@@ -43,35 +43,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the MANE Select transcript whenever there is one.
 - **Setup keeps ClinVar's raw tables.** `variant_summary` and `submission_summary` are installed
   next to the indexes built from them (`clinvar_residues/`, `clinvar_submissions/`, named as the
-  manifest entries' `out`) instead of being deleted, for ARGUS's setup step. About 0.8 GB more in
-  the data directory. An existing data directory gets them the next time either entry changes;
+  manifest entries' `out`) instead of being deleted, for tools that build their own indexes
+  from them. About 0.8 GB more in the data directory. An existing data directory gets them the next time either entry changes;
   remove the two directories and run `--workflow setup --update_db_only true` to get them now.
 
 ### `Fixed`
 
-- **Memory on large exome MAFs.** `PUBTATOR3_LINKS`, `GROUP_GENOTYPES` and `TRANSCRIPTS_TABLE`
-  held the whole MAF (or the whole transcripts table) in memory and were killed on joint-called
-  clinical exomes (75,000-100,000 rows, 0.4-0.55 GB MAFs). They now read the MAF in two passes and
-  write as they go, with byte-identical output: peak memory on a 101,075-row family MAF went from
-  6.3 to 0.05 GB (PubTator3), 6.5 to 0.28 GB (group genotypes), and from 2.6 to 0.12 GB for a
-  74,560-row singleton's transcripts table. The other per-MAF helpers already streamed (at most
-  0.11 GB); `RENOVO_SCORE` peaks at 0.5 GB on the same family. The per-MAF helpers that retried
-  once now retry twice. A pipeline that raised these modules' memory in a config override (e.g.
-  SIDEVAR's `withName: '.*(GROUP_GENOTYPES|...|TRANSCRIPTS_TABLE)'` at 16 GB) no longer needs to.
-- **`HPO_matched_terms` changed from run to run**: of several gene terms equally specific under a
-  patient term, the one named depended on Python's per-run string hashing. The highest-IC term is
-  still named, with ties now going to the lowest HPO ID.
 - **`work/` could not be deleted without sudo.** The docker profile ran every task as root
   (`--user root`), so task folders were root-owned. Tasks now run as the launching user
   (`docker.runOptions = '-u $(id -u):$(id -g)'`, as in nf-core and Sarek). Folders left by
   earlier runs stay root-owned.
-- **Family and cohort genotypes went to the wrong members on the Sarek path** (dev builds of 1.6):
-  GATK's hard filter sorts the sample columns by name, and the VEP parser read the members by
-  position, so whenever the samplesheet order was not alphabetical every member could get another's
-  genotypes, the proband's own `Zygosity` and `Sample_*` included, and with them `Inheritance`,
-  segregation, compound heterozygosity, cohort carriers and the genotypes sidecar. Members are now
-  read by name (a member missing from the VCF stops the run), and the hard filter restores the
-  input's column order. New `-profile test_family_sarek` and `tests/check_family_fixture.py`.
 - **`--dbnsfp_transcript_scores all` changed RENOVO and lost AlphaMissense values** (since 1.5):
   RENOVO read the per-transcript lists and scored the most damaging transcript (on a chr22 test,
   53 of 543 scores and 2 classes changed against `mane`, one LP Benign to LP Pathogenic), and the
@@ -85,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carried over from the data directory's manifest when the entry's URL and expected checksum are
   unchanged. Checksums already lost are recomputed the next time their entry changes.
 
-## v1.6.0 - unreleased
+## v1.6.0 - 2026-11-25
 
 Families and cohorts: a joint-called VCF annotated once for the whole group, with where the
 proband's variants come from, who in the family carries them and which pairs sit in trans; or, for
@@ -122,14 +103,39 @@ a cohort, how many members and families carry each variant and gene.
   columns, filled only where dbNSFP had a record (12,126 of 22,597 NA12878 rows were empty), is no
   longer in the MAF: `bioinfo_params`, `FORMAT_FIELDS` and `FORMAT_VALUES` hold the same data on
   every row.
+- A basic MAF has 191 columns (185 in 1.5), an extended one 954 (951 in 1.5); family and cohort
+  modes add their own (212 on the basic test trio). The sources catalogue still lists 106 sources.
 
 ### `Fixed`
 
+- **Memory on large exome MAFs.** `PUBTATOR3_LINKS` and `GROUP_GENOTYPES` held the whole MAF in
+  memory and were killed on joint-called clinical exomes (75,000-100,000 rows, 0.4-0.55 GB MAFs).
+  They now read the MAF in two passes, with byte-identical output: peak memory on a 101,075-row
+  family MAF went from 6.3 to 0.05 GB (PubTator3) and from 6.5 to 0.28 GB (group genotypes). The
+  per-MAF helpers that retried once (`GROUP_GENOTYPES`, `HPO_MATCH`, `SAMPLE_GENOTYPES`,
+  `SELECT_MEMBERS`) now retry twice.
+- **`HPO_matched_terms` changed from run to run**: of several gene terms equally specific under a
+  patient term, the one named depended on Python's per-run string hashing. The highest-IC term is
+  still named, with ties now going to the lowest HPO ID.
+- **Members are read from the VCF by sample name.** GATK's hard filter (`--vcf_format sarek`) sorts
+  the sample columns by name, so reading members by position gave each member another's genotypes
+  whenever the samplesheet order was not alphabetical (the proband's `Zygosity` and `Sample_*`
+  included). A member missing from the VCF stops the run, and the hard filter restores the input's
+  column order. New `-profile test_family_sarek` and `tests/check_family_fixture.py`.
 - **The report's zygosity and read-depth warning came from INFO** (`AC`/`AN`/`DP`). Those describe
   every sample of a joint-called VCF, and many VCFs have no `AC`/`AN` at all: on GIAB's NA12878 the
   report showed no zygosity for any variant. Both now come from the sample's own call.
 
+### Upgrading from 1.5
+
+No setup is needed: 1.6 uses the databases 1.5 installed (the same manifest, pinned to
+test-datasets `e9d81ef`).
+
 ## v1.5.0 - 2026-10-26
+
+> Updated in place on 2026-11-25: the database manifest is pinned to the test-datasets commit this
+> release was built for (`0fcf848`), now that test-datasets `main` carries MuSA 1.7's entries. No
+> setup is needed.
 
 Facts for ACMG/AMP classification tools downstream of MuSA: what ClinVar submitters wrote, the
 literature that mentions the variant, gnomAD counts for indels, and the age of onset of the gene's
