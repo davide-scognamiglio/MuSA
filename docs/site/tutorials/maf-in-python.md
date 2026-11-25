@@ -7,8 +7,8 @@ order: 2
 # The MAF in Python
 
 MuSA's raw MAF is a plain tab-separated table: one row per variant, one transcript per variant
-(VEP's pick, see [Output](../../docs/output/)), one column per annotation. 185 columns in basic mode,
-951 in extended mode. The output below comes from NA12878 in basic mode (22,597 variants).
+(VEP's pick, see [Output](../../docs/output/)), one column per annotation. 191 columns in basic mode,
+954 in extended mode. The output below comes from NA12878 in basic mode (22,597 variants).
 
 ## Load it
 
@@ -17,7 +17,7 @@ import pandas as pd
 
 maf = pd.read_csv("results/<date>/NA12878/NA12878.raw.maf", sep="\t", low_memory=False)
 maf.shape
-# (22597, 185)
+# (22597, 191)
 ```
 
 `low_memory=False` lets pandas read each column's type from the whole file, which matters for

@@ -3,7 +3,7 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.6.0 - unreleased
+## v1.6.0 - 2026-11-25
 
 Families and cohorts: a joint-called VCF annotated once for the whole group, with where the
 proband's variants come from, who in the family carries them and which pairs sit in trans; or, for
@@ -40,6 +40,8 @@ a cohort, how many members and families carry each variant and gene.
   columns, filled only where dbNSFP had a record (12,126 of 22,597 NA12878 rows were empty), is no
   longer in the MAF: `bioinfo_params`, `FORMAT_FIELDS` and `FORMAT_VALUES` hold the same data on
   every row.
+- A basic MAF has 191 columns (185 in 1.5), an extended one 954 (951 in 1.5); family and cohort
+  modes add their own (212 on the basic test trio). The sources catalogue still lists 106 sources.
 
 ### `Fixed`
 
@@ -57,12 +59,20 @@ a cohort, how many members and families carry each variant and gene.
   whenever the samplesheet order was not alphabetical (the proband's `Zygosity` and `Sample_*`
   included). A member missing from the VCF stops the run, and the hard filter restores the input's
   column order. New `-profile test_family_sarek` and `tests/check_family_fixture.py`.
-
 - **The report's zygosity and read-depth warning came from INFO** (`AC`/`AN`/`DP`). Those describe
   every sample of a joint-called VCF, and many VCFs have no `AC`/`AN` at all: on GIAB's NA12878 the
   report showed no zygosity for any variant. Both now come from the sample's own call.
 
+### Upgrading from 1.5
+
+No setup is needed: 1.6 uses the databases 1.5 installed (the same manifest, pinned to
+test-datasets `e9d81ef`).
+
 ## v1.5.0 - 2026-10-26
+
+> Updated in place on 2026-11-25: the database manifest is pinned to the test-datasets commit this
+> release was built for (`0fcf848`), now that test-datasets `main` carries MuSA 1.7's entries. No
+> setup is needed.
 
 Facts for ACMG/AMP classification tools downstream of MuSA: what ClinVar submitters wrote, the
 literature that mentions the variant, gnomAD counts for indels, and the age of onset of the gene's
