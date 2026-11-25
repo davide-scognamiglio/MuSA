@@ -5,6 +5,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## v1.5.0 - 2026-10-26
 
+> Updated in place on 2026-11-25: the database manifest is pinned to the test-datasets commit this
+> release was built for (`0fcf848`), now that test-datasets `main` carries MuSA 1.7's entries. No
+> setup is needed.
+
 Facts for ACMG/AMP classification tools downstream of MuSA: what ClinVar submitters wrote, the
 literature that mentions the variant, gnomAD counts for indels, and the age of onset of the gene's
 diseases. MuSA still assigns no ACMG criterion itself.
