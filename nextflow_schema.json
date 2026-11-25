@@ -77,13 +77,21 @@
                 "dbnsfp_transcript_scores": {
                     "type": "string",
                     "description": "How dbNSFP's per-transcript score arrays reach the final MAF",
-                    "help_text": "dbNSFP reports transcript-specific fields as ';'-delimited arrays positionally aligned with Ensembl_transcriptid (e.g. SIFT_score '.;0.169;0.169;.'). Which element belongs to the clinically canonical isoform is encoded only in the MANE_dbNSFP array: the offset of 'Select' is the offset to read in every other array. 'mane' collapses every transcript-aligned column to that element, so each score column holds a single value and MANE_dbNSFP records whether a MANE transcript was found at all ('.' means the scores came from a fallback). 'all' leaves the arrays untouched for downstream tools that prefer to resolve them themselves; Ensembl_transcriptid and MANE_dbNSFP are retained in both modes.",
+                    "help_text": "dbNSFP reports transcript-specific fields as ';'-delimited arrays positionally aligned with Ensembl_transcriptid (e.g. SIFT_score '.;0.169;0.169;.'). Which element belongs to the clinically canonical isoform is encoded only in the MANE_dbNSFP array: the offset of 'Select' is the offset to read in every other array. 'mane' collapses every transcript-aligned column to that element, so each score column holds a single value and MANE_dbNSFP records whether a MANE transcript was found at all ('.' means the scores came from a fallback). 'all' leaves the arrays untouched for downstream tools that prefer to resolve them themselves; Ensembl_transcriptid and MANE_dbNSFP are retained in both modes. Under 'all', RENOVO scores on the most damaging transcript rather than the MANE one it was validated on, and an AlphaMissense value missing on MANE is not filled from the VEP plugin; every transcript's own scores are in <patient>.transcripts.tsv.gz under 'mane', the recommended setting.",
                     "fa_icon": "fas fa-code-branch",
                     "enum": [
                         "mane",
                         "all"
                     ],
                     "default": "mane"
+                },
+                "vep_pick_order": {
+                    "type": "string",
+                    "description": "VEP --pick_order: which transcript each MAF row reports",
+                    "help_text": "Comma-separated VEP pick criteria, applied in order to choose the one transcript the MAF row describes (Feature, Consequence, HGVSc/HGVSp, EXON, ...). The default ranks consequence severity first, so a variant is reported with its most severe consequence on any transcript, which is not always the MANE Select one; MANE Select breaks ties. Put mane_select first (e.g. 'mane_select,mane_plus_clinical,rank,canonical,appris,tsl,biotype,ccds,length') to report the MANE Select transcript whenever there is one. Every transcript is in <patient>.transcripts.tsv.gz whatever the order. Changes variant-level output.",
+                    "fa_icon": "fas fa-sort-amount-down",
+                    "pattern": "^(mane_select|mane_plus_clinical|canonical|appris|tsl|biotype|ccds|rank|length|ensembl|refseq)(,(mane_select|mane_plus_clinical|canonical|appris|tsl|biotype|ccds|rank|length|ensembl|refseq))*$",
+                    "default": "rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length"
                 },
                 "offline": {
                     "type": "boolean",

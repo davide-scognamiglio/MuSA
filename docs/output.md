@@ -32,15 +32,31 @@ results/
   - Every variant that survived preprocessing, annotated and merged into one table, one row per
     variant. Basic mode (VEP with ClinVar and ClinGen, vcf2maf, ClinGen gene curations, HPO match
     and onset, ClinVar PS1/PM5 evidence and submission comments, PubTator3 literature links, the
-    sample's own genotype): 191 columns. Extended mode adds dbNSFP's variant and gene columns, the
-    VEP plugins, gnomAD v4.1 exomes counts and RENOVO's `RENOVO_Class` / `PL_score`: 954 columns as
-    of this version.
+    sample's own genotype, transcript lengths, repeat regions): 195 columns. Extended mode adds
+    dbNSFP's variant and gene columns, the VEP plugins, gnomAD v4.1 exomes counts and RENOVO's
+    `RENOVO_Class` / `PL_score`: 962 columns as of this version.
     This number changes as annotation sources change: treat it as approximate rather than a
     stable interface.
 - `<patient>.filtered.maf`
   - The same table after the three-tier filter: gene panel (`--panel`), HPO phenotype panel
     (from the samplesheet's `hpo` column, see the `HPO_*` columns in [usage](usage.md#filtering)), and allele frequency (`--max_freq`), plus
     `--drop_benign` if set. This is the file to hand to a reviewer.
+- `<patient>.transcripts.tsv.gz`
+  - Every transcript VEP reports for each variant, one line per variant and transcript, keyed like
+    the MAF (`Chromosome`, `Start_Position`, `Reference_Allele`, `Tumor_Seq_Allele2`) and ordered
+    MANE Select, MANE Plus Clinical, the MAF's transcript, Ensembl canonical, then by impact.
+    `MuSA_pick` is `yes` on the transcript the MAF row reports. Columns: `Feature`, `SYMBOL`,
+    `Gene`, `BIOTYPE`, `Consequence`, `IMPACT`, `HGVSc`, `HGVSp`, `EXON`, `INTRON`,
+    `cDNA_position`, `CDS_position`, `Protein_position`, `Amino_acids`, `Codons`, `STRAND`,
+    `FLAGS`, `CANONICAL`, `MANE_SELECT`, `MANE_PLUS_CLINICAL`, `TSL`, `APPRIS`, `CCDS`, `ENSP`,
+    `SWISSPROT`, `SIFT`, `PolyPhen` (multi-value fields `,`-separated), and as the last columns
+    `cDNA_length`, `CDS_length`, `Protein_length` (the transcript's lengths). In extended mode these are
+    followed by each transcript's own dbNSFP scores and predictions, every transcript-aligned
+    `*_score` and `*_pred` column (41 with dbNSFP 5.3: `SIFT_score`, `REVEL_score`,
+    `AlphaMissense_score`, ...), named as in the MAF and written as dbNSFP writes them; `.` where
+    dbNSFP has no record for the transcript (it covers non-synonymous changes only). In the MAF
+    the same columns hold one value, for the MANE transcript (see `--dbnsfp_transcript_scores` in
+    [usage](usage.md)). An intergenic variant has no line. About 0.6 MB per 1,000 variants.
 - `<patient>_maf_dashboard.html`
   - Self-contained interactive report: a summary panel plus a sortable, searchable table of the
     filtered variants, showing gene, HGVS nomenclature, consequence, ClinVar significance and
@@ -59,13 +75,24 @@ hundreds of heterogeneous annotations without nesting, and carries a sample iden
 per-patient MAFs can be concatenated into a cohort table and read directly by tools such as
 [maftools](https://bioconductor.org/packages/maftools/).
 
-The transcript is VEP's `--pick` choice, ordered by consequence severity first (`--pick_order
+The transcript is VEP's `--pick` choice (every other transcript is in `<patient>.transcripts.tsv.gz`
+and in the report's transcript selector), ordered by consequence severity first (`--pick_order
 rank,mane_select,...`): a variant is reported with its most severe consequence on any transcript,
 which is not always the MANE Select one. On the ClinGen Evidence Repository, 342 of the 11,714
 variants that overlap a MANE transcript (2.9%) are reported on another transcript, for example a
 `stop_gained` on an NMD transcript that is missense on MANE. `MANE_SELECT` is empty on those rows.
 dbNSFP lists only non-synonymous changes, so a variant reported as missense on another transcript
 but synonymous or intronic on MANE can have no dbNSFP values at all.
+
+`--vep_pick_order` sets this order. Starting it with `mane_select` (for example
+`mane_select,mane_plus_clinical,rank,canonical,appris,tsl,biotype,ccds,length`) reports a variant
+on a MANE Select transcript whenever VEP gives it any consequence on one, and the rest by severity.
+"Any consequence" includes upstream, downstream and intronic ones, in any gene: when a variant's
+damaging effect is on a transcript that is not MANE and it lies near another gene's MANE
+transcript, the row moves to that other gene. On NA12878 chr22 (543 variants) a MANE-first order
+moved 98 rows to another transcript, 4 of them to another gene, each hiding a HIGH or MODERATE
+consequence (a TUBA8 `stop_gained` reported as USP18 `upstream_gene_variant`). Check
+`Hugo_Symbol` and the transcripts table before reading such a row as benign.
 
 Both MAFs are tab-separated with a single header line. Missing values are written as `.`: the
 pipeline normalises `NA`, empty cells and `.` to that one spelling, so a missing value tests the
@@ -84,6 +111,7 @@ changes what the row says:
 | `not_requested` | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` | the samplesheet gave no HPO terms, so no comparison was made (`none` means compared, nothing matched) |
 | `unannotated` | `HPO_match`, `HPO_onset` | HPO has no phenotype (or disease) annotation for the gene |
 | `0` | `ClinVar_SCV_*_n` | the variant is in ClinVar and no counted submission says that; `.` means no ClinVar record |
+| `.` | `Repeat_region` | the variant overlaps none of the repeat intervals (RepeatMasker simple, low-complexity, satellite; Tandem Repeats Finder) |
 | `.` | `Zygosity` | the sample has no genotype call at the site (the other `Sample_*` columns are `.` too) |
 
 #### Columns holding several values
@@ -98,6 +126,7 @@ changes what the row says:
 | `HPO_matched_terms`, `ClinVar_PM5` | `; ` | `R978H 3★; R978S 1★` |
 | `Comphet_trans`, `Comphet_cis_or_unknown` | `;` | `TTN:p.Arg100Cys;TTN:p.Gly2Ser` |
 | `Cohort_carriers` | `,` | `HG00097,HG00157` |
+| `Repeat_region` | `;`, in the order `Simple_repeat`, `Low_complexity`, `Satellite`, `TRF` | `Simple_repeat;TRF` |
 | `Sample_AD` | `,`, reference first | `12,9` |
 
 
@@ -118,6 +147,7 @@ Written in [family and cohort modes](usage.md#family-and-cohort-modes) only.
 | `Cohort_carrier_families_n` | count | carriers counted once per samplesheet `family` |
 | `Cohort_affected_carriers_n`, `Cohort_unaffected_carriers_n` | counts | carriers by affected status |
 | `Cohort_carriers` | names | carrier samples, up to 50 |
+| `Family_members` | `sample:role:sex:affected;...` | family mode: every member in samplesheet order (proband first), affected `yes` / `no` / `unknown`; the same on every row |
 
 `Zygosity` and `Sample_*` describe the proband in family mode and are `.` in cohort mode. Group
 outputs, next to the MAFs: `<group>.genotypes.tsv.gz` (more members than `--max_member_columns`) and,

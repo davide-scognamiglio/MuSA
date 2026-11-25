@@ -74,7 +74,7 @@ workflow ANNOTATE {
 
     preprocessed = PREPROCESS(ch_germline)
     variants     = ANNOTATE_VARIANTS(preprocessed)
-    genes        = ANNOTATE_GENES(variants)
+    genes        = ANNOTATE_GENES(variants.maf)
     classified   = CLASSIFY(genes)
-    FILTER_AND_REPORT(classified, sources_json, versions_yml)
+    FILTER_AND_REPORT(classified, variants.transcripts, sources_json, versions_yml)
 }

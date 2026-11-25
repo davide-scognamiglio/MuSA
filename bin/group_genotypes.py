@@ -55,7 +55,8 @@ MISSING = "."
 SPLIT_GT = re.compile(r"[/|]")
 MEMBER_FIELDS = ["GT", "DP", "GQ", "AD", "VAF"]
 FAMILY_COLUMNS = ["Inheritance", "Inheritance_check", "Segregation_affected",
-                  "Segregation_unaffected", "Comphet_trans", "Comphet_cis_or_unknown"]
+                  "Segregation_unaffected", "Comphet_trans", "Comphet_cis_or_unknown",
+                  "Family_members"]
 COHORT_COLUMNS = ["Cohort_called_n", "Cohort_carriers_n", "Cohort_het_n", "Cohort_hom_n",
                   "Cohort_AF", "Cohort_carrier_families_n", "Cohort_affected_carriers_n",
                   "Cohort_unaffected_carriers_n", "Cohort_carriers"]
@@ -358,8 +359,13 @@ def main():
                      .append(label(rows[j], col)))
                 partners[k] = (";".join(trans[:MAX_PARTNERS]) or MISSING,
                                ";".join(other[:MAX_PARTNERS]) or MISSING)
+        # Who each member is, the same on every row: sample:role:sex:affected, members in samplesheet
+        # order (proband first), so a reader of the MAF alone can weigh each GT_<sample> column.
+        family_members = ";".join(
+            f"{m['sample']}:{m['role'] or MISSING}:{m['sex'] or MISSING}:{affected_status(m)}"
+            for m in members)
         for k in range(len(rows)):
-            facts[k] += list(partners.get(k, (MISSING, MISSING)))
+            facts[k] += list(partners.get(k, (MISSING, MISSING))) + [family_members]
         new_cols = FAMILY_COLUMNS
     else:
         for r, calls in zip(rows, calls_by_row):

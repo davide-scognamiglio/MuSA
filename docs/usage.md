@@ -253,6 +253,7 @@ before MuSA 1.3 has no HPO files: run `setup --update_db_only true` once to add 
 | `--dbnsfp_zip` | `null` | `setup`: a dbNSFP zip already on disk, instead of `--dbnsfp_url`. |
 | `--dbnsfp_max_forks` | `16` | Concurrent dbNSFP per-chromosome shards. Lower it if memory is tight. |
 | `--dbnsfp_transcript_scores` | `mane` | How to resolve dbNSFP's per-transcript score arrays to one value per variant. |
+| `--vep_pick_order` | `rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length` | VEP `--pick_order`: which transcript each MAF row reports. Severity first by default; start with `mane_select` to report MANE Select whenever there is one (see [output](output.md#about-the-maf-format)). |
 
 The full list is in [`nextflow_schema.json`](../nextflow_schema.json), or run with `--help`.
 
@@ -287,7 +288,7 @@ annotation.
 | Value | Behaviour |
 |-------|-----------|
 | `mane` (default) | Every transcript-aligned column is rewritten to the single element at the MANE position, so each score column holds one value. When a variant has no MANE transcript the pipeline falls back, in order, to MANE Plus Clinical → the transcript VEP picked (`Feature`) → the first element. One index is chosen per row and applied to every column, so columns can never disagree. `MANE_dbNSFP` is collapsed along with the rest and doubles as a provenance flag: `.` means the scores on that row did **not** come from a MANE transcript. |
-| `all` | Arrays are left exactly as dbNSFP produced them. Use this if you would rather resolve transcripts yourself downstream: `Ensembl_transcriptid` and `MANE_dbNSFP` give you everything needed to do so. |
+| `all` | Arrays are left exactly as dbNSFP produced them: `Ensembl_transcriptid` and `MANE_dbNSFP` give you everything needed to resolve them. Not recommended: RENOVO then scores on the most damaging transcript rather than the MANE one it was validated on, and an AlphaMissense value missing on MANE is not filled from the VEP plugin. For every transcript's own scores, read `<patient>.transcripts.tsv.gz` (see [output](output.md)), written in either mode. |
 
 Which columns count as transcript-aligned comes from a fixed, committed list
 (`assets/dbnsfp_transcript_aligned_columns.txt`), not from inspecting each run's output. dbNSFP also

@@ -2,7 +2,7 @@
 
 <!-- Generated from assets/annotation_sources.yaml by bin/musa_sources.py render. Edit the catalogue, not this file. -->
 
-MuSA annotates every variant from **106 sources**: 74 at variant level, 30 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
+MuSA annotates every variant from **107 sources**: 75 at variant level, 30 at gene level, plus classification and filtering. Each row says what the source adds, which step brings it in, when it is active, and the MAF columns it fills (regular expressions).
 
 When a run starts, MuSA prints the same list with the versions installed in `--data_dir`, and the report's **Annotation sources** view records what that run actually used.
 
@@ -20,6 +20,7 @@ Modes: **basic** is always on; **extended** (dbNSFP, RENOVO 1.5 and the VEP plug
 | Protein domains (Pfam, PROSITE, SMART, …) | Protein domains and miRNA structures overlapped by the variant | Ensembl VEP cache (`VEP_ANNOTATE_VCF`) | basic | `DOMAINS`, `miRNA` |
 | InterPro | InterPro domain of the affected residue | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | extended | `Interpro_domain` |
 | dbNSFP transcript and coordinate fields ⁽ᶜ⁾ | Per-transcript IDs, HGVS (VEP and snpEff), codon details, GRCh37/hg18/T2T coordinates | dbNSFP (`DBNSFP_ANNOTATE_VCF_CHR`) | extended | `aaref`, `aaalt`, `aapos`, `hg19_chr`, `hg19_pos\(1-based\)`, `hg18_chr`, `hg18_pos\(1-based\)`, `hs1_chr`, `hs1_pos\(1-based\)`, `Ensembl_transcriptid`, `Uniprot_entry`, `HGVSc_snpEff`, `HGVSp_VEP`, `GENCODE_basic`, `MANE_dbNSFP`, `refcodon`, `codonpos`, `codon_degeneracy` |
+| Repeat regions | Repeats the variant overlaps: RepeatMasker simple, low-complexity and satellite repeats, and Tandem Repeats Finder *Classes Simple_repeat, Low_complexity, Satellite (RepeatMasker) and TRF, ';'-separated, '.' for none; the fact behind the repeat clause of ACMG PM4 and BP3. Interspersed repeats (SINE, LINE, LTR) are left out.* | UCSC RepeatMasker and Tandem Repeats Finder (`REPEAT_REGIONS`) | basic | `Repeat_region` |
 | GENCODE Ribo-seq ORFs | Consequence on translated ORFs outside the annotated coding sequence (uORFs, lncRNA ORFs) | VEP plugin RiboseqORFs (`VEP_ANNOTATE_VCF`) | extended | `RiboseqORFs_.*` |
 | Locus Reference Genomic (LRG) | LRG record of the transcript, the stable reference used in clinical reports | VEP plugin FlagLRG (`VEP_ANNOTATE_VCF`) | extended | `FlagLRG` |
 | VEP computed fields ⁽ᶜ⁾ | Downstream protein effect, NMD escape, splice region, TSS distance, intronic HGVS offsets, nearest exon junction, nearest gene of intergenic variants, BLOSUM62 substitution score (plugins Downstream, NMD, SpliceRegion, TSSDistance, HGVSIntronOffset, SingleLetterAA, NearestExonJB, NearestGene, Blosum62) | Ensembl VEP plugins (`VEP_ANNOTATE_VCF`) | extended | `DownstreamProtein`, `ProteinLengthChange`, `NMD`, `SpliceRegion`, `TSSDistance`, `HGVS_Intron.*`, `NearestExonJB`, `NearestGene`, `BLOSUM62` |

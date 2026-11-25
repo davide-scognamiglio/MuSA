@@ -43,12 +43,13 @@ process VEP_ANNOTATE_VCF {
                 --offline \\
                 --assembly GRCh38 \\
                 --mane --pick \\
-                --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
+                --pick_order ${params.vep_pick_order} \\
                 --everything --fork ${params.n_core} \\
+                --total_length \\
                 --no_stats \\
                 --custom file="/data/vep_data/ClinVar/clinvar.vcf.gz",short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN%CLNSIGCONF%CLNDISDB%CLNHGVS%GENEINFO%ALLELEID%RS%MC \\
                 --custom file="/data/vep_data/ClinGen/clingen_pathogenicity.vcf.gz",short_name=ClinGenVCEP,format=vcf,type=exact,coords=0,fields=Assertion%EvidenceCodes%Disease \\
-                --custom file="/data/vep_data/gnomAD_exomes/gnomad.exomes.v4.1.sites.###CHR###_trimmed.vcf.bgz",short_name=gnomADe41,format=vcf,type=exact,coords=0,fields=FILTER%AC%AN%AF%nhomalt%AC_afr%AN_afr%AF_afr%nhomalt_afr%AC_amr%AN_amr%AF_amr%nhomalt_amr%AC_asj%AN_asj%AF_asj%nhomalt_asj%AC_eas%AN_eas%AF_eas%nhomalt_eas%AC_fin%AN_fin%AF_fin%nhomalt_fin%AC_mid%AN_mid%AF_mid%nhomalt_mid%AC_nfe%AN_nfe%AF_nfe%nhomalt_nfe%AC_sas%AN_sas%AF_sas%nhomalt_sas%grpmax%AC_grpmax%AN_grpmax%AF_grpmax%nhomalt_grpmax%fafmax_faf95_max%fafmax_faf95_max_gen_anc%fafmax_faf99_max%fafmax_faf99_max_gen_anc \\
+                --custom file="/data/vep_data/gnomAD_exomes/gnomad.exomes.v4.1.sites.###CHR###_trimmed.vcf.bgz",short_name=gnomADe41,format=vcf,type=exact,coords=0,fields=FILTER%AC%AN%AF%nhomalt%AC_afr%AN_afr%AF_afr%nhomalt_afr%AC_amr%AN_amr%AF_amr%nhomalt_amr%AC_asj%AN_asj%AF_asj%nhomalt_asj%AC_eas%AN_eas%AF_eas%nhomalt_eas%AC_fin%AN_fin%AF_fin%nhomalt_fin%AC_mid%AN_mid%AF_mid%nhomalt_mid%AC_nfe%AN_nfe%AF_nfe%nhomalt_nfe%AC_sas%AN_sas%AF_sas%nhomalt_sas%grpmax%AC_grpmax%AN_grpmax%AF_grpmax%nhomalt_grpmax%fafmax_faf95_max%fafmax_faf95_max_gen_anc%fafmax_faf99_max%fafmax_faf99_max_gen_anc%AC_XY%AN_XY%AF_XY%nhomalt_XY \\
                 --plugin AlphaMissense,file="/data/vep_data/AlphaMissense/AlphaMissense_${params.build}.tsv.gz" \\
                 --plugin AncestralAllele,"/data/vep_data/AncestralAllele/homo_sapiens_ancestor_GRCh38.fa.gz" \\
                 --plugin Blosum62 \\
@@ -93,8 +94,9 @@ process VEP_ANNOTATE_VCF {
                 --offline \\
                 --assembly GRCh38 \\
                 --mane --pick \\
-                --pick_order rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length \\
+                --pick_order ${params.vep_pick_order} \\
                 --everything --fork ${params.n_core} \\
+                --total_length \\
                 --no_stats \\
                 --custom file="/data/vep_data/ClinVar/clinvar.vcf.gz",short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT%CLNDN%CLNSIGCONF%CLNDISDB%CLNHGVS%GENEINFO%ALLELEID%RS%MC \\
                 --custom file="/data/vep_data/ClinGen/clingen_pathogenicity.vcf.gz",short_name=ClinGenVCEP,format=vcf,type=exact,coords=0,fields=Assertion%EvidenceCodes%Disease

@@ -70,6 +70,20 @@ process PARSE_VEP_ANNOTATION {
         if (csq_format_found)
             for (i=1; i<=n_csq; i++) printf "\\t%s", csq_fields[i]
 
+        # VEP --total_length writes each position as position/length ("123-125/4567"). The
+        # position columns keep the position alone, as before; the lengths go to columns of their
+        # own (cDNA_length, CDS_length, Protein_length), after the CSQ columns.
+        n_len = 0
+        for (i=1; i<=n_csq; i++) {
+            if (csq_fields[i] == "cDNA_position" || csq_fields[i] == "CDS_position" || csq_fields[i] == "Protein_position") {
+                n_len++
+                len_src[n_len] = i
+                len_name[n_len] = csq_fields[i]
+                sub(/_position\$/, "_length", len_name[n_len])
+                printf "\\t%s", len_name[n_len]
+            }
+        }
+
         # Additional INFO fields (AFTER CSQ only)
         for (j=1; j<=n_info; j++) printf "\\t%s", info_fields[j]
 
@@ -137,6 +151,14 @@ process PARSE_VEP_ANNOTATION {
             split(csq_part, csq_data, "|")
             for (i in csq_data) gsub(/&/, ",", csq_data[i])
         }
+        for (j=1; j<=n_len; j++) {
+            i = len_src[j]
+            len_val[j] = ""
+            if ((i in csq_data) && split(csq_data[i], pl, "/") == 2) {
+                csq_data[i] = (pl[1] == "-") ? "" : pl[1]
+                len_val[j] = pl[2]
+            }
+        }
 
         # Parse annotation INFO pairs (AFTER CSQ)
         delete info_pairs
@@ -168,6 +190,7 @@ process PARSE_VEP_ANNOTATION {
         row = chrom "\\t" pos "\\t" id "\\t" ref "\\t" alt "\\t" qual "\\t" filter "\\t" bioinfo_params
         if (csq_format_found)
             for (i=1; i<=n_csq; i++) row = row "\\t" ((i in csq_data) ? csq_data[i] : "")
+        for (j=1; j<=n_len; j++) row = row "\\t" len_val[j]
         for (j=1; j<=n_info; j++) {
             key = info_fields[j]
             row = row "\\t" ((key in info_pairs) ? info_pairs[key] : "")

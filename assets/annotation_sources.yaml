@@ -107,6 +107,12 @@ providers:
     mode: basic
     manifest: pubtator3
     url: https://www.ncbi.nlm.nih.gov/research/pubtator3/
+  repeat_regions:
+    name: UCSC RepeatMasker and Tandem Repeats Finder
+    step: REPEAT_REGIONS
+    mode: basic
+    manifest: ucsc_rmsk
+    url: https://genome.ucsc.edu/cgi-bin/hgTrackUi?db=hg38&g=rmsk
   clinvar_submissions:
     name: ClinVar submission summary
     step: CLINVAR_SUBMISSIONS
@@ -143,7 +149,8 @@ sources:
     category: Consequence and transcript
     provider: vep_cache
     columns: [Consequence, IMPACT, Hugo_Symbol, Gene, Feature_type, Feature, BIOTYPE, EXON, INTRON,
-              HGVSc, cDNA_position, CDS_position, Protein_position, Amino_acids, Codons, DISTANCE,
+              HGVSc, cDNA_position, CDS_position, Protein_position, cDNA_length, CDS_length,
+              Protein_length, Amino_acids, Codons, DISTANCE,
               STRAND, FLAGS, VARIANT_CLASS, SYMBOL_SOURCE, HGNC_ID, CANONICAL, CCDS, ENSP, SOURCE,
               HGVS_OFFSET]
   - id: mane
@@ -208,6 +215,14 @@ sources:
     provider: pubtator3
     columns: ['PubTator3_.*']
     note: "Matched on rsID, gene + protein change and gene + cDNA change; up to 50 PMIDs listed, ClinVar-cited first, PubTator3_n counts all."
+  - id: repeat_regions
+    name: Repeat regions
+    what: "Repeats the variant overlaps: RepeatMasker simple, low-complexity and satellite repeats, and Tandem Repeats Finder"
+    level: variant
+    category: Consequence and transcript
+    provider: repeat_regions
+    columns: ['Repeat_region']
+    note: "Classes Simple_repeat, Low_complexity, Satellite (RepeatMasker) and TRF, ';'-separated, '.' for none; the fact behind the repeat clause of ACMG PM4 and BP3. Interspersed repeats (SINE, LINE, LTR) are left out."
   - id: gwas_catalog
     name: GWAS Catalog
     what: Published genome-wide associations of the variant (study, trait, p-value, effect) and of the gene
@@ -1063,7 +1078,8 @@ sources:
     category: Call information
     kind: computed
     provider: musa
-    columns: ['(GT|DP|GQ|AD|VAF)_.+', 'Inheritance.*', 'Segregation_.*', 'Comphet_.*', 'Cohort_.*']
+    columns: ['(GT|DP|GQ|AD|VAF)_.+', 'Inheritance.*', 'Segregation_.*', 'Comphet_.*', 'Cohort_.*',
+              'Family_members']
     note: "GROUP_GENOTYPES, from the joint-called VCF of a samplesheet group. Above --max_member_columns members the genotypes are in <group>.genotypes.tsv.gz; a cohort also gets <group>.genes.tsv."
 
   - id: maf_format

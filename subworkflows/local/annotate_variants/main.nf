@@ -11,8 +11,11 @@ include {ADD_GENOME_CHANGE} from '../../../modules/local/add_genome_change'
 include {ADD_REF_CONTEXT} from '../../../modules/local/add_ref_context'
 include {CLEAN_COLUMNS} from '../../../modules/local/clean_columns'
 include {PUBTATOR3_LINKS} from '../../../modules/local/pubtator3_links'
+include {REPEAT_REGIONS} from '../../../modules/local/repeat_regions'
 include {SAMPLE_GENOTYPES} from '../../../modules/local/sample_genotypes'
 include {GROUP_GENOTYPES} from '../../../modules/local/group_genotypes'
+include {VEP_TRANSCRIPTS} from '../../../modules/local/vep_transcripts'
+include {TRANSCRIPTS_TABLE} from '../../../modules/local/transcripts_table'
 include {chrom_list} from '../../../lib/annot_utils.nf'
 
 /*
@@ -28,9 +31,14 @@ include {chrom_list} from '../../../lib/annot_utils.nf'
  *   RENOVO_SCORE             RENOVO 1.5 pathogenicity class for every variant (extended mode)
  *   PUBTATOR3_LINKS          PubMed articles mentioning the variant (PubTator3, ClinVar and dbSNP
  *                            citations)
+ *   REPEAT_REGIONS           the repeat regions the variant overlaps (UCSC RepeatMasker simple,
+ *                            low-complexity and satellite repeats; Tandem Repeats Finder)
  *   SAMPLE_GENOTYPES         the sample's own genotype: zygosity, depth, allele depths, VAF
  *   GROUP_GENOTYPES          family or cohort: every member's genotype, then inheritance,
  *                            segregation and compound heterozygosity, or cohort carrier counts
+ *   VEP_TRANSCRIPTS,         every transcript of every variant (a light VEP pass, cache only),
+ *   TRANSCRIPTS_TABLE        as <patient>.transcripts.tsv.gz keyed like the MAF, with each
+ *                            transcript's own dbNSFP scores (extended mode)
  *
  * RENOVO_SCORE runs here, on the merged table, because it reads VEP, dbNSFP and ClinVar columns and
  * aligns its output on the CHROM/POS/REF/ALT columns that CLEAN_COLUMNS then drops. Eight of its
@@ -98,14 +106,23 @@ workflow ANNOTATE_VARIANTS {
 
         // RENOVO reads VEP, dbNSFP and ClinVar columns, so it scores the merged table rather than
         // running as a branch of its own.
-        merged_tsv = MERGE_ANNOTATIONS(joined)
+        MERGE_ANNOTATIONS(joined)
+        merged_tsv = MERGE_ANNOTATIONS.out.merged
         cleaned = CLEAN_COLUMNS(params.extended ? RENOVO_SCORE(merged_tsv) : merged_tsv)
-        genotyped = SAMPLE_GENOTYPES(PUBTATOR3_LINKS(cleaned)).branch { meta, _maf ->
+        genotyped = SAMPLE_GENOTYPES(REPEAT_REGIONS(PUBTATOR3_LINKS(cleaned))).branch { meta, _maf ->
             group:  meta.mode in ['family', 'cohort']
             single: true
         }
         merged = genotyped.single.mix(GROUP_GENOTYPES(genotyped.group).maf)
 
+        // Every transcript, for the sidecar table and the report's transcript selector.
+        transcripts = TRANSCRIPTS_TABLE(
+            merged.map { meta, annotated -> [meta.patient, meta, annotated] }
+                .join(VEP_TRANSCRIPTS(vcf).map { meta, tx -> [meta.patient, tx] })
+                .join(MERGE_ANNOTATIONS.out.dbnsfp_transcripts.map { meta, scores -> [meta.patient, scores] })
+                .map { _patient, meta, annotated, tx, scores -> [meta, annotated, tx, scores] })
+
     emit:
-        merged
+        maf         = merged
+        transcripts = transcripts
 }

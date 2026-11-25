@@ -3,6 +3,80 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.7.0 - 2026-11-25
+
+Every transcript of every variant, next to the MAF, and more facts for ACMG/AMP tools downstream:
+transcript lengths, the repeats a variant lies in, gnomAD XY counts and who each family member is.
+
+### `Added`
+
+- **Every transcript of every variant.** The MAF keeps one row per variant on VEP's pick;
+  `<patient>.transcripts.tsv.gz`, next to it, lists all the transcripts, keyed like the MAF and
+  ordered MANE Select first: consequence, impact, HGVS, exon or intron, MANE, canonical, APPRIS
+  and TSL flags, SIFT and PolyPhen, and `MuSA_pick` marking the one the MAF row reports. The
+  report's variant panel gets a transcript selector (MANE Select first; protein-coding
+  transcripts, MANE and the MAF's own). It comes from a second, light VEP pass (the cache only, no
+  plugins: about a minute on NA12878; `--flag_pick` on the main run took 8 min instead of 3 and
+  wrote 16 times the output), so the MAF itself is unchanged. In extended mode each line also
+  carries that transcript's own dbNSFP scores and predictions (41 `*_score` / `*_pred` columns,
+  named as in the MAF, where they stay one value per variant on the MANE transcript). The table
+  is written as it is built: 0.12 GB peak on a 74,560-row exome, so it needs no memory override.
+- **Transcript lengths**: `cDNA_length`, `CDS_length`, `Protein_length` (VEP `--total_length`) in
+  the MAF and, as the last columns, in the transcripts table: the length of the transcript the
+  row describes, e.g. for "removes more than 10% of the protein" (PVS1). VEP writes positions as
+  `position/length` with that flag; MuSA splits them, so `cDNA_position`, `CDS_position` and
+  `Protein_position` are unchanged (byte-identical on NA12878 chr22, transcripts table included).
+- **gnomAD v4.1 exomes XY counts** (extended mode): `gnomADe41_AC_XY`, `gnomADe41_AN_XY`,
+  `gnomADe41_AF_XY`, `gnomADe41_nhomalt_XY`, from the installed files (hemizygote counts on chrX).
+- **`Family_members`** (family mode): every member as `sample:role:sex:affected`, `;`-separated,
+  proband first, the same on every row, so the MAF alone says whose genotype each `GT_<sample>` is
+  and whether that person is affected (recessive segregation, PP1 / BS4).
+- **`Repeat_region`**: the repeats a variant overlaps, from UCSC RepeatMasker (`Simple_repeat`,
+  `Low_complexity`, `Satellite`; interspersed repeats left out) and Tandem Repeats Finder (`TRF`),
+  `;`-separated, `.` for none. The variant's span is the MAF's `Start_Position`..`End_Position`
+  (an insertion's two flanking bases). It is the fact behind the repeat clause of ACMG PM4 and BP3.
+  Basic mode. New manifest entries `ucsc_rmsk` and `ucsc_simple_repeat` (UCSC files dated
+  2022-10-19), built at setup into `repeat_regions/repeat_regions.bed.gz` (1.86 million intervals,
+  13 MB); an existing data directory needs `--workflow setup --update_db_only true` once. Until
+  then the MAF has no `Repeat_region` column (not `.`, which would mean "in no repeat"), and the
+  run logs a warning.
+- **`--vep_pick_order`**: VEP's `--pick_order`, i.e. which transcript each MAF row reports. The
+  default is the order used so far (`rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length`,
+  severity first), so runs that do not set it are unchanged. Start it with `mane_select` to report
+  the MANE Select transcript whenever there is one.
+- **Setup keeps ClinVar's raw tables.** `variant_summary` and `submission_summary` are installed
+  next to the indexes built from them (`clinvar_residues/`, `clinvar_submissions/`, named as the
+  manifest entries' `out`) instead of being deleted, for tools that build their own indexes
+  from them. About 0.8 GB more in the data directory. An existing data directory gets them the next time either entry changes;
+  remove the two directories and run `--workflow setup --update_db_only true` to get them now.
+- A basic MAF has 195 columns (191 in 1.6), an extended one 962 (954 in 1.6), and the sources
+  catalogue lists 107 sources (106 in 1.6).
+
+### `Fixed`
+
+- **`work/` could not be deleted without sudo.** The docker profile ran every task as root
+  (`--user root`), so task folders were root-owned. Tasks now run as the launching user
+  (`docker.runOptions = '-u $(id -u):$(id -g)'`, as in nf-core and Sarek). Folders left by
+  earlier runs stay root-owned.
+- **`--dbnsfp_transcript_scores all` changed RENOVO and lost AlphaMissense values** (since 1.5):
+  RENOVO read the per-transcript lists and scored the most damaging transcript (on a chr22 test,
+  53 of 543 scores and 2 classes changed against `mane`, one LP Benign to LP Pathogenic), and the
+  AlphaMissense fill from the VEP plugin never ran on a list (23 of 543 variants left without a
+  value). The run now warns; use the default `mane` and read per-transcript scores from the
+  transcripts table.
+- `NearestExonJB` listed exons at the same distance in a different order from run to run; the list
+  is now sorted (3 NA12878 variants).
+- **`setup --update_db_only` forgot the checksums of everything it did not download again** (since
+  1.3): the setup report showed files an earlier setup had verified as PENDING. A checksum is now
+  carried over from the data directory's manifest when the entry's URL and expected checksum are
+  unchanged. Checksums already lost are recomputed the next time their entry changes.
+
+### Upgrading from 1.6
+
+Run `setup --update_db_only true` once (add `--extended true` on an extended data directory). It
+downloads the two UCSC repeat tables (about 185 MB) and keeps a 13 MB BED. To keep ClinVar's raw
+tables as well, remove `clinvar_residues/` and `clinvar_submissions/` first.
+
 ## v1.6.0 - 2026-11-25
 
 Families and cohorts: a joint-called VCF annotated once for the whole group, with where the

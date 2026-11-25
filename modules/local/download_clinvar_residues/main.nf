@@ -40,7 +40,8 @@ process DOWNLOAD_CLINVAR_RESIDUES {
 
     fetch_entry "\$PWD/../${manifest}" clinvar_variant_summary
     clinvar_residues.py build "\${clinvar_variant_summary_out}" clinvar_residues.tsv.gz
-    rm "\${clinvar_variant_summary_out}"
+    # The raw table is installed next to the index: ARGUS's setup step reads it (its name is the
+    # manifest entry's `out`).
 
     cd ..
 

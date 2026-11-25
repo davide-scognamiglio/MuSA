@@ -55,6 +55,13 @@ workflow {
             "which also covers dbNSFP and RENOVO 1.5. Extended mode is on for this run."
     }
 
+    if (params.extended && params.dbnsfp_transcript_scores == "all") {
+        log.warn "--dbnsfp_transcript_scores all leaves dbNSFP's per-transcript lists in the MAF, and RENOVO and " +
+            "the AlphaMissense fill then work on lists: RENOVO scores on the most damaging transcript (validated on " +
+            "the MANE one) and an AlphaMissense missing on MANE is not filled from the VEP plugin. Every " +
+            "transcript's own scores are in <patient>.transcripts.tsv.gz with the default, 'mane'."
+    }
+
     if (params.build != "hg38") {
         error "Currently, we only support hg38 build. We will likely support T2T build in the future"
     }

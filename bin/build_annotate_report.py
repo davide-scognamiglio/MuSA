@@ -184,6 +184,8 @@ def parse_args():
         "sources_json":    args[9] if len(args) > 9 else "",
         # Tool versions of this run, written by SOFTWARE_VERSIONS (one probe per container image).
         "versions_yml":    args[10] if len(args) > 10 else "",
+        # Every transcript of every variant (TRANSCRIPTS_TABLE, 1.7+), for the panel's selector.
+        "transcripts":     args[11] if len(args) > 11 else "",
     }
 
 
@@ -207,6 +209,63 @@ def load_logo_base64(logo_path):
             "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(ext, "image/png")
     with open(logo_path, "rb") as fh:
         return base64.b64encode(fh.read()).decode(), mime
+
+
+# ── transcripts ───────────────────────────────────────────────────────────────
+TX_FIELDS = ["Feature", "SYMBOL", "BIOTYPE", "Consequence", "IMPACT", "HGVSc", "HGVSp", "EXON",
+             "INTRON", "MANE_SELECT", "MANE_PLUS_CLINICAL", "CANONICAL", "APPRIS", "TSL", "SIFT",
+             "PolyPhen", "MuSA_pick"]
+TX_MAX = 10           # per variant; <patient>.transcripts.tsv.gz holds them all
+TX_DISTANT = {"upstream_gene_variant", "downstream_gene_variant"}
+
+
+def load_transcripts(path, df):
+    """{"f": fields, "s": strings, "rows": {row: [[string index, ...], ...]}} for the report's
+    rows, or None. The report keeps the protein-coding transcripts the variant lies in, MANE and
+    the MAF's own transcript always (about 0.6 MB per 1,000 rows); the transcripts table on disk
+    keeps every one. Strings are pooled, since biotypes and consequences repeat."""
+    if not path or not os.path.isfile(path):
+        return None
+    key_cols = ["Chromosome", "Start_Position", "Reference_Allele", "Tumor_Seq_Allele2"]
+    if not all(c in df.columns for c in key_cols):
+        return None
+    rows = {}
+    for i, k in enumerate(zip(*(df[c].astype(str) for c in key_cols))):
+        rows.setdefault(k, []).append(i)
+    pool, index, out = [], {}, {}
+    with gzip.open(path, "rt") as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+        col = {n: j for j, n in enumerate(header)}
+        for line in fh:
+            f = line.rstrip("\n").split("\t")
+            k = tuple(f[col[c]] for c in key_cols)
+            if k not in rows:
+                continue
+            keep = (f[col["MuSA_pick"]] == "yes" or f[col["MANE_SELECT"]] not in ("", ".")
+                    or f[col["MANE_PLUS_CLINICAL"]] not in ("", ".")
+                    or (f[col["BIOTYPE"]] == "protein_coding"
+                        and not set(f[col["Consequence"]].split(",")) <= TX_DISTANT))
+            if not keep:
+                continue
+            enc = []
+            for name in TX_FIELDS:
+                v = f[col[name]]
+                if name in ("HGVSc", "HGVSp"):
+                    v = v.split(":", 1)[-1]          # the transcript / protein id is Feature
+                if v not in index:
+                    index[v] = len(pool)
+                    pool.append(v)
+                enc.append(index[v])
+            for i in rows[k]:
+                lst = out.setdefault(i, [])
+                if len(lst) < TX_MAX:
+                    lst.append(enc)
+    # A variant whose only transcript is the MAF's own adds nothing the panel does not show.
+    pick_j = TX_FIELDS.index("MuSA_pick")
+    out = {i: v for i, v in out.items() if not (len(v) == 1 and pool[v[0][pick_j]] == "yes")}
+    print(f"  Transcripts    : {sum(len(v) for v in out.values()):,} for {len(out):,} variants",
+          file=sys.stderr)
+    return {"f": TX_FIELDS, "s": pool, "rows": out}
 
 
 # ── MAF loading ───────────────────────────────────────────────────────────────
@@ -396,7 +455,7 @@ def row_zygosity(df, i):
 
 
 # ── payload ───────────────────────────────────────────────────────────────────
-def build_payload(df, main_cols, detail_cols, flags, prio, groups, sections=None):
+def build_payload(df, main_cols, detail_cols, flags, prio, groups, sections=None, transcripts=None):
     """Columnar, per-column dictionary-encoded JSON.
 
     Row-oriented JSON for a 68k exome is 66 MB; this is 26 MB, and it stays plain JSON that any
@@ -423,6 +482,7 @@ def build_payload(df, main_cols, detail_cols, flags, prio, groups, sections=None
         "prio": prio,
         "groups": groups,
         "sections": [{"name": n, "keys": ks} for n, ks in (sections or DETAIL_SECTIONS)],
+        "tx": transcripts,
     }
 
 
@@ -968,6 +1028,12 @@ table.variants tbody td.col-af { text-align: right; }
   padding-bottom: 0.25rem; margin-bottom: 0.5rem;
   border-bottom: 1px solid var(--border);
 }
+.tx-pick select {
+  width: 100%; max-width: 100%; margin-bottom: 0.5rem; padding: 0.3rem 0.4rem;
+  font: inherit; font-size: var(--step--1); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 4px;
+}
+.tx-pick select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .detail .refs { display: flex; flex-wrap: wrap; gap: 0.3rem 0.5rem; }
 .detail a.ref {
   font-family: var(--font-mono); font-size: var(--step--1);
@@ -1595,6 +1661,8 @@ PAGE_JS = r"""
       parts.push('<div class="panel-links">' + refs.join("") + "</div>");
     }
 
+    parts.push(transcriptsHTML(i));
+
     P.sections.forEach(function (sec) {
       var body = [];
       sec.keys.forEach(function (k) {
@@ -1611,6 +1679,59 @@ PAGE_JS = r"""
     parts.push("</div>");
     return parts.join("");
   }
+
+  // ── transcripts ──────────────────────────────────────────────────────────
+  // The MAF reports one transcript per variant (VEP's pick, most severe consequence first).
+  // The selector shows the variant on any of its transcripts, MANE Select first.
+  var TX_LABEL = { Feature: "Transcript", SYMBOL: "Gene", BIOTYPE: "Biotype",
+    Consequence: "Consequence", IMPACT: "Impact", HGVSc: "HGVSc", HGVSp: "HGVSp", EXON: "Exon",
+    INTRON: "Intron", MANE_SELECT: "MANE Select", MANE_PLUS_CLINICAL: "MANE Plus Clinical",
+    CANONICAL: "Ensembl canonical", APPRIS: "APPRIS", TSL: "Transcript support level",
+    SIFT: "SIFT", PolyPhen: "PolyPhen" };
+  function txOf(i) {
+    if (!P.tx || !P.tx.rows[i]) return [];
+    return P.tx.rows[i].map(function (enc) {
+      var o = {};
+      P.tx.f.forEach(function (name, j) { o[name] = P.tx.s[enc[j]]; });
+      return o;
+    });
+  }
+  function txName(t) {
+    var tags = [];
+    if (!absent(t.MANE_SELECT)) tags.push("MANE Select");
+    else if (!absent(t.MANE_PLUS_CLINICAL)) tags.push("MANE Plus Clinical");
+    if (t.MuSA_pick === "yes") tags.push("in the MAF");
+    return t.Feature + (absent(t.SYMBOL) ? "" : " " + t.SYMBOL) +
+           (absent(t.HGVSp) ? (absent(t.HGVSc) ? "" : " " + t.HGVSc) : " " + t.HGVSp) +
+           (tags.length ? " (" + tags.join(", ") + ")" : "");
+  }
+  function txBody(t) {
+    var rows = [];
+    Object.keys(TX_LABEL).forEach(function (k) {
+      var v = t[k];
+      if (absent(v)) return;
+      rows.push("<dt>" + esc(TX_LABEL[k]) + "</dt><dd>" + esc(String(v).replace(/,/g, ", ")) + "</dd>");
+    });
+    return "<dl>" + rows.join("") + "</dl>";
+  }
+  function transcriptsHTML(i) {
+    var tx = txOf(i);
+    if (!tx.length) return "";
+    var opts = tx.map(function (t, j) {
+      return '<option value="' + j + '">' + esc(txName(t)) + "</option>";
+    }).join("");
+    return '<section class="detail-sec tx-sec" data-row="' + i + '"><h4>Transcripts (' + tx.length +
+      ')</h4><label class="tx-pick"><span class="sr-only">Show the variant on transcript</span>' +
+      '<select class="tx-select">' + opts + '</select></label><div class="tx-body">' +
+      txBody(tx[0]) + "</div></section>";
+  }
+  document.addEventListener("change", function (e) {
+    var sel = e.target;
+    if (!sel.classList || !sel.classList.contains("tx-select")) return;
+    var sec = sel.closest(".tx-sec");
+    var t = txOf(parseInt(sec.dataset.row, 10))[parseInt(sel.value, 10)];
+    if (t) sec.querySelector(".tx-body").innerHTML = txBody(t);
+  });
 
   // Both views show the evidence in a panel beside the list, never over it: a reader
   // comparing several candidates must be able to see the list and one variant at the
@@ -2363,7 +2484,8 @@ def main():
     for key, _, _ in GROUPS:
         ov[key] = sorted(ov[key], key=lambda i: -prio[i])
     groups = {key: ov[key] for key, _, _ in GROUPS}
-    payload = build_payload(df, main_cols, detail_cols, flags, prio, groups, sections)
+    payload = build_payload(df, main_cols, detail_cols, flags, prio, groups, sections,
+                            load_transcripts(params["transcripts"], df))
     print(f"  Priority: {len(ov['flagged'])} ClinVar-flagged, {len(ov['escalated'])} escalated "
           f"VUS, {len(ov['novel'])} ReNOVo-only, {len(ov['contested'])} contested",
           file=sys.stderr)
