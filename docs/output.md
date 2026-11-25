@@ -32,9 +32,9 @@ results/
   - Every variant that survived preprocessing, annotated and merged into one table, one row per
     variant. Basic mode (VEP with ClinVar and ClinGen, vcf2maf, ClinGen gene curations, HPO match
     and onset, ClinVar PS1/PM5 evidence and submission comments, PubTator3 literature links, the
-    sample's own genotype): 191 columns. Extended mode adds dbNSFP's variant and gene columns, the
-    VEP plugins, gnomAD v4.1 exomes counts and RENOVO's `RENOVO_Class` / `PL_score`: 954 columns as
-    of this version.
+    sample's own genotype, transcript lengths, repeat regions): 195 columns. Extended mode adds
+    dbNSFP's variant and gene columns, the VEP plugins, gnomAD v4.1 exomes counts and RENOVO's
+    `RENOVO_Class` / `PL_score`: 962 columns as of this version.
     This number changes as annotation sources change: treat it as approximate rather than a
     stable interface.
 - `<patient>.filtered.maf`

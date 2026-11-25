@@ -3,7 +3,10 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.7.0 - unreleased
+## v1.7.0 - 2026-11-25
+
+Every transcript of every variant, next to the MAF, and more facts for ACMG/AMP tools downstream:
+transcript lengths, the repeats a variant lies in, gnomAD XY counts and who each family member is.
 
 ### `Added`
 
@@ -46,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest entries' `out`) instead of being deleted, for tools that build their own indexes
   from them. About 0.8 GB more in the data directory. An existing data directory gets them the next time either entry changes;
   remove the two directories and run `--workflow setup --update_db_only true` to get them now.
+- A basic MAF has 195 columns (191 in 1.6), an extended one 962 (954 in 1.6), and the sources
+  catalogue lists 107 sources (106 in 1.6).
 
 ### `Fixed`
 
@@ -65,6 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1.3): the setup report showed files an earlier setup had verified as PENDING. A checksum is now
   carried over from the data directory's manifest when the entry's URL and expected checksum are
   unchanged. Checksums already lost are recomputed the next time their entry changes.
+
+### Upgrading from 1.6
+
+Run `setup --update_db_only true` once (add `--extended true` on an extended data directory). It
+downloads the two UCSC repeat tables (about 185 MB) and keeps a 13 MB BED. To keep ClinVar's raw
+tables as well, remove `clinvar_residues/` and `clinvar_submissions/` first.
 
 ## v1.6.0 - 2026-11-25
 

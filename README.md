@@ -250,7 +250,8 @@ features. Pick one with `-r`:
 
 | Release | Use it to | Run with |
 |---|---|---|
-| **1.6.0** (latest) | start new analyses: family and cohort modes on a joint-called VCF, HPO terms by name, the sample's own genotype | `-r v1.6.0` |
+| **1.7.0** (latest) | start new analyses: every transcript of every variant, transcript lengths, repeat regions, gnomAD XY counts | `-r v1.7.0` |
+| **1.6.0** | reproduce results made with 1.6 (family and cohort modes, HPO terms by name) | `-r v1.6.0` |
 | **1.5.0** | reproduce results made with 1.5 (ClinVar submission comments, PubTator3, gnomAD v4.1 exomes counts) | `-r v1.5.0` |
 | **1.4.0** | reproduce results made with 1.4 (32 VEP plugins) | `-r v1.4.0` |
 | **1.3.0** | reproduce results made with 1.3 (21 VEP plugins) | `-r v1.3.0` |
