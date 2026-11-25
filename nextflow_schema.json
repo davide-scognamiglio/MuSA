@@ -135,6 +135,42 @@
                     "fa_icon": "fas fa-wrench",
                     "default": false
                 },
+                "max_member_columns": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 1,
+                    "description": "Family and cohort modes: with more members than this, member genotypes go to <group>.genotypes.tsv.gz instead of GT_/DP_/GQ_/AD_/VAF_<sample> MAF columns.",
+                    "fa_icon": "fas fa-users"
+                },
+                "dn_min_dp": {
+                    "type": "number",
+                    "default": 10,
+                    "minimum": 0,
+                    "description": "Family mode: minimum read depth in each parent for a de novo call.",
+                    "fa_icon": "fas fa-users"
+                },
+                "dn_min_gq": {
+                    "type": "number",
+                    "default": 20,
+                    "minimum": 0,
+                    "description": "Family mode: minimum genotype quality in the parents and the proband for a de novo call.",
+                    "fa_icon": "fas fa-users"
+                },
+                "dn_max_parent_alt": {
+                    "type": "number",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "Family mode: maximum alternate-allele reads in a parent for a de novo call.",
+                    "fa_icon": "fas fa-users"
+                },
+                "cohort_rare_af": {
+                    "type": "number",
+                    "default": 0.01,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Cohort mode: in <group>.genes.tsv, a variant is rare when MAX_AF is below this, or absent from the population databases.",
+                    "fa_icon": "fas fa-users"
+                },
                 "max_freq": {
                     "type": "number",
                     "description": "Maximum allele frequency to retain a variant (e.g., 0.05). Unset by default, i.e. no frequency filtering is applied.",

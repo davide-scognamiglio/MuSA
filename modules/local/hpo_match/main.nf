@@ -13,7 +13,7 @@ process HPO_MATCH {
     container "dsbioinfo/musa-helper:rebuild"
     memory { 2.GB * task.attempt }
     errorStrategy 'retry'
-    maxRetries 1
+    maxRetries 2
 
     input:
         tuple val(meta), path(maf)

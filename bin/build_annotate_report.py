@@ -87,6 +87,27 @@ DETAIL_COLUMNS = [
     ("PUBMED",               "PubMed"),
     ("PubTator3_pmids",      "PubMed (PubTator3)"),
     ("ref_context",          "Reference context"),
+    ("Zygosity",             "Zygosity"),
+    ("Sample_GT",            "Genotype"),
+    ("Sample_DP",            "Read depth"),
+    ("Sample_GQ",            "Genotype quality"),
+    ("Sample_AD",            "Allele depths (ref, alt)"),
+    ("Sample_VAF",           "Alternate allele fraction"),
+    ("Inheritance",            "Inheritance"),
+    ("Inheritance_check",      "Inheritance check"),
+    ("Segregation_affected",   "Affected members carrying it"),
+    ("Segregation_unaffected", "Unaffected members carrying it"),
+    ("Comphet_trans",          "In trans with (same gene, other parent)"),
+    ("Comphet_cis_or_unknown", "Same gene, phase not established"),
+    ("Cohort_carriers_n",      "Cohort carriers"),
+    ("Cohort_het_n",           "Cohort heterozygous carriers"),
+    ("Cohort_hom_n",           "Cohort homozygous carriers"),
+    ("Cohort_called_n",        "Cohort members called"),
+    ("Cohort_AF",              "Cohort allele frequency"),
+    ("Cohort_carrier_families_n", "Cohort carrier families"),
+    ("Cohort_affected_carriers_n",   "Affected carriers"),
+    ("Cohort_unaffected_carriers_n", "Unaffected carriers"),
+    ("Cohort_carriers",        "Carriers"),
     ("bioinfo_params",       "Call quality"),
     ("PhenotypeOrthologous_Mouse_phenotype", "Mouse orthologue phenotype"),
     ("PhenotypeOrthologous_Rat_phenotype",   "Rat orthologue phenotype"),
@@ -122,6 +143,13 @@ DETAIL_SECTIONS = [
     ("Prediction",     ["PL_score", "acmg_criteria", "acmg_score", "renovo_adj_acmg_score"]),
     # No "References" section: every accession in the MAF is rendered as a link at the
     # top of the panel instead, so listing the raw strings again would be noise.
+    ("Genotype",        ["Zygosity", "Sample_GT", "Sample_DP", "Sample_GQ", "Sample_AD",
+                         "Sample_VAF"]),
+    ("Family",          ["Inheritance", "Inheritance_check", "Segregation_affected",
+                         "Segregation_unaffected", "Comphet_trans", "Comphet_cis_or_unknown"]),
+    ("Cohort",          ["Cohort_carriers_n", "Cohort_het_n", "Cohort_hom_n", "Cohort_called_n",
+                         "Cohort_AF", "Cohort_carrier_families_n", "Cohort_affected_carriers_n",
+                         "Cohort_unaffected_carriers_n", "Cohort_carriers"]),
     ("Call parameters", ["bioinfo_params", "ref_context"]),
     ("Model organisms", ["PhenotypeOrthologous_Mouse_phenotype",
                          "PhenotypeOrthologous_Rat_phenotype"]),
@@ -319,6 +347,12 @@ GROUPS = [
     ("biallelic",  "Homozygous or hemizygous",
      "no wild-type allele was called in this sample, which is what a recessive "
      "diagnosis needs"),
+    # Family mode only (the Inheritance and Comphet_trans columns exist).
+    ("de_novo",    "De novo in the proband",
+     "carried by the proband, absent from both parents (Inheritance_check says how well "
+     "the parents' reference calls are supported)"),
+    ("comphet",    "Compound heterozygous",
+     "a heterozygous variant with another in the same gene inherited from the other parent"),
     ("escalated",  "ClinVar VUS, ReNOVo pathogenic",
      "uncertain to ClinVar, called pathogenic by MuSA"),
     ("novel",      "Not classified by ClinVar",
@@ -352,8 +386,17 @@ def zygosity(value):
     return "homozygous" if ac >= an else "heterozygous"
 
 
+def row_zygosity(df, i):
+    """The sample's zygosity: the Zygosity column (1.6+, from its own GT); INFO AC/AN for older
+    MAFs, where it is right only for a single-sample VCF."""
+    if "Zygosity" in df.columns:
+        z = str(df["Zygosity"].iloc[i])
+        return "" if z in (".", "nan", "") else z
+    return zygosity(df["bioinfo_params"].iloc[i]) if "bioinfo_params" in df.columns else ""
+
+
 # ── payload ───────────────────────────────────────────────────────────────────
-def build_payload(df, main_cols, detail_cols, flags, prio, groups):
+def build_payload(df, main_cols, detail_cols, flags, prio, groups, sections=None):
     """Columnar, per-column dictionary-encoded JSON.
 
     Row-oriented JSON for a 68k exome is 66 MB; this is 26 MB, and it stays plain JSON that any
@@ -379,7 +422,7 @@ def build_payload(df, main_cols, detail_cols, flags, prio, groups):
         "review": flags,
         "prio": prio,
         "groups": groups,
-        "sections": [{"name": n, "keys": ks} for n, ks in DETAIL_SECTIONS],
+        "sections": [{"name": n, "keys": ks} for n, ks in (sections or DETAIL_SECTIONS)],
     }
 
 
@@ -457,8 +500,11 @@ def overview(df, flags):
     lof = [i for i in idx
            if str(impact.iloc[i]).upper() == "HIGH"
            and str(valid.iloc[i]).strip().lower() in ("definitive", "strong")]
-    biallelic = [i for i in idx
-                 if zygosity(info.iloc[i]) in ("homozygous", "hemizygous")]
+    biallelic = [i for i in idx if row_zygosity(df, i) in ("homozygous", "hemizygous")]
+    inh = df["Inheritance"].fillna("") if "Inheritance" in df.columns else pd.Series([""] * len(df))
+    trans = df["Comphet_trans"].fillna(".") if "Comphet_trans" in df.columns else pd.Series(["."] * len(df))
+    de_novo = [i for i in idx if inh.iloc[i] == "de_novo"]
+    comphet = [i for i in idx if str(trans.iloc[i]) not in (".", "", "nan")]
 
     # The patient's phenotype: genes HPO_MATCH put in the phenotype panel (an exact or narrower
     # match on a specific term). When every term was too general to make a panel, HPO_panel is
@@ -488,6 +534,8 @@ def overview(df, flags):
         "unobserved": unobserved,
         "lof": lof,
         "biallelic": biallelic,
+        "de_novo": de_novo,
+        "comphet": comphet,
         "phenotype": phenotype,
         "novel": novel,
         "contested": contested,
@@ -1026,6 +1074,7 @@ PAGE_JS = r"""
     cache[key] = c.v ? c.v : c.i.map(function (i) { return c.d[i]; });
     return cache[key];
   }
+  function has(key) { return !!P.data[key]; }
 
   // "not_requested": HPO matching without patient terms (bin/hpo_match.py), shown as no data.
   function absent(v) {
@@ -1340,6 +1389,12 @@ PAGE_JS = r"""
     if (an === 1) return "hemizygous";
     return ac >= an ? "homozygous" : "heterozygous";
   }
+  // The sample's own call (Zygosity, 1.6+); INFO AC/AN only for older MAFs, where it holds for a
+  // single-sample VCF but counts every sample of a joint-called one.
+  function sampleZygosity(i, f) {
+    if (has("Zygosity")) { var z = col("Zygosity")[i]; return absent(z) ? "" : z; }
+    return zygosity(f);
+  }
 
   // ── assessment ───────────────────────────────────────────────────────────
   // The panel used to be a flat dump of every column, leaving the reader to hold
@@ -1363,13 +1418,13 @@ PAGE_JS = r"""
     else if (impact === "MODERATE") out.push(["", "Moderate-impact change (" + csq + ")."]);
     else if (!absent(impact)) out.push(["", esc(impact.toLowerCase()) + "-impact change (" + csq + ")."]);
 
-    var f = infoFields(col("bioinfo_params")[i]), z = zygosity(f);
+    var f = infoFields(col("bioinfo_params")[i]), z = sampleZygosity(i, f);
     if (z === "homozygous" || z === "hemizygous") {
       out.push(["hit", "Called " + z + ": no wild-type allele in this sample."]);
     } else if (z) {
       out.push(["", "Called heterozygous."]);
     }
-    var dp = parseFloat(f.DP);
+    var dp = parseFloat(has("Sample_DP") ? col("Sample_DP")[i] : f.DP);
     if (!isNaN(dp) && dp < 20) {
       out.push(["warn", "Only " + dp + " reads at this position; the call is weakly supported."]);
     }
@@ -1492,10 +1547,10 @@ PAGE_JS = r"""
       return '<dd class="plain refs">' + html + "</dd>";
     }
     if (k === "bioinfo_params") {
-      var f = infoFields(v), z = zygosity(f);
+      var f = infoFields(v), z = has("Zygosity") ? "" : zygosity(f);
       var rows = [];
       if (z) rows.push(["Zygosity", z + (f.AC && f.AN ? " (" + f.AC + " of " + f.AN + " alleles)" : "")]);
-      if (f.DP) rows.push(["Read depth", f.DP + "×"]);
+      if (f.DP) rows.push([has("Sample_DP") ? "Read depth (site)" : "Read depth", f.DP + "×"]);
       if (f.QD) rows.push(["Quality by depth", f.QD]);
       if (f.MQ) rows.push(["Mapping quality", f.MQ]);
       if (f.FS) rows.push(["Strand bias (FS)", f.FS]);
@@ -1977,9 +2032,13 @@ def _finding_tags(df, i):
     if get("IMPACT").upper() == "HIGH":
         tags.append(('<span class="tag on">high impact</span>'))
 
-    z = zygosity(get("bioinfo_params"))
+    z = row_zygosity(df, i)
     if z in ("homozygous", "hemizygous"):
         tags.append(f'<span class="tag on">{z}</span>')
+    if get("Inheritance") == "de_novo":
+        tags.append('<span class="tag on">de novo</span>')
+    if get("Comphet_trans") not in (".", "nan", ""):
+        tags.append('<span class="tag on">compound het</span>')
 
     af = get("MAX_AF")
     if af in (".", "nan", ""):
@@ -2190,7 +2249,7 @@ def build_html_page(patient_code, payload, stats, ov, df, logo_b64, logo_mime, m
     # so the number a reader sees and the rows they get are the same set by
     # construction rather than by two definitions that could drift.
     tones = {"flagged": "p", "phenotype": "acc", "lof": "p", "biallelic": "lp", "escalated": "lp",
-             "novel": "acc", "contested": "p"}
+             "novel": "acc", "contested": "p", "de_novo": "p", "comphet": "lp"}
     blocks, index = [], []
     for key, title, why in GROUPS:
         items = ov[key]
@@ -2282,8 +2341,14 @@ def main():
 
     main_cols = [c for c in MAIN_COLUMNS if c[0] in df.columns]
     detail_cols = [c for c in DETAIL_COLUMNS if c[0] in df.columns]
+    # Family and cohort modes: each member's genotype (GT_<sample>), in VCF order, proband first.
+    member_cols = [(c, f"{c[3:]}") for c in df.columns if c.startswith("GT_")]
+    detail_cols += member_cols
+    sections = DETAIL_SECTIONS + ([("Family genotypes", [c for c, _ in member_cols])] if member_cols else [])
 
-    missing = [c[0] for c in MAIN_COLUMNS + DETAIL_COLUMNS if c[0] not in df.columns]
+    group_only = {k for name, keys in DETAIL_SECTIONS if name in ("Family", "Cohort") for k in keys}
+    missing = [c[0] for c in MAIN_COLUMNS + DETAIL_COLUMNS
+               if c[0] not in df.columns and c[0] not in group_only]
     if missing:
         print(f"  Columns absent from MAF, omitted from the report: {', '.join(missing)}",
               file=sys.stderr)
@@ -2298,7 +2363,7 @@ def main():
     for key, _, _ in GROUPS:
         ov[key] = sorted(ov[key], key=lambda i: -prio[i])
     groups = {key: ov[key] for key, _, _ in GROUPS}
-    payload = build_payload(df, main_cols, detail_cols, flags, prio, groups)
+    payload = build_payload(df, main_cols, detail_cols, flags, prio, groups, sections)
     print(f"  Priority: {len(ov['flagged'])} ClinVar-flagged, {len(ov['escalated'])} escalated "
           f"VUS, {len(ov['novel'])} ReNOVo-only, {len(ov['contested'])} contested",
           file=sys.stderr)

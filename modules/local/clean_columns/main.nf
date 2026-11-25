@@ -85,7 +85,9 @@ process CLEAN_COLUMNS {
     DEAD="gnomad_exomes_af,gnomad_genomes_af,Exon_Number,Entrez_Gene_Id,HGVSp_Short"
 
     # gnomADe41 is the bare id column of the gnomAD exomes --custom file (extended mode): always ".".
-    DROP="\${ORIG},\${T1},\${T2},\${DEAD},gnomADe41"
+    # INFO is dbNSFP's copy of the VCF INFO column, blank since its shards are sites-only (1.6); the
+    # INFO field itself is bioinfo_params.
+    DROP="\${ORIG},\${T1},\${T2},\${DEAD},gnomADe41,INFO"
 
     # Dropped by ORIGINAL header name (checked BEFORE the ClinVar_* -> canonical rename below). None
     # at present: the bare custom ClinVar id column, dropped up to 1.4, is the ClinVar VariationID and

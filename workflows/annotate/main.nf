@@ -19,7 +19,8 @@ include {ANNOTATE_GENES} from '../../subworkflows/local/annotate_genes'
 include {CLASSIFY} from '../../subworkflows/local/classify'
 include {FILTER_AND_REPORT} from '../../subworkflows/local/filter_and_report'
 include {SOFTWARE_VERSIONS} from '../../modules/local/software_versions'
-include { extract_csv; annotation_sources; log_annotation_sources } from '../../lib/annot_utils.nf'
+include {HPO_RESOLVE} from '../../modules/local/hpo_resolve'
+include { extract_csv; group_samples; annotation_sources; log_annotation_sources } from '../../lib/annot_utils.nf'
 
 /*
  * VCF -> preprocessing -> variant-level annotation -> gene-level annotation -> classification ->
@@ -59,7 +60,17 @@ workflow ANNOTATE {
         .collectFile(name: 'software_versions.yml', storeDir: "${params.outdir}/${params.date}", sort: { f -> f.name })
         .first()
 
-    ch_germline = extract_csv(file(params.input))
+    // Samplesheet HPO terms may be codes or names: all resolved to current codes up front.
+    ch_samples = extract_csv(file(params.input))
+    hpo_table = ch_samples
+        .map { meta, _vcf -> "${meta.patient}\t${meta.hpo ?: ''}" }
+        .collectFile(name: 'samplesheet_hpo.tsv', newLine: true, sort: true)
+    hpo_resolved = HPO_RESOLVE(hpo_table)
+        .map { tsv -> tsv.readLines().collectEntries { line -> def f = line.split('\t', -1); [(f[0]): f[1]] } }
+    // Then rows sharing a `group` (family or cohort, one joint-called VCF) become one item each.
+    ch_germline = group_samples(ch_samples
+        .combine(hpo_resolved)
+        .map { meta, vcf, resolved -> [meta + [hpo: resolved[meta.patient] ?: ''], vcf] })
 
     preprocessed = PREPROCESS(ch_germline)
     variants     = ANNOTATE_VARIANTS(preprocessed)

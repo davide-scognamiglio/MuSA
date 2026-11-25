@@ -36,6 +36,14 @@ filter_maf <- function(maf,
 
   filtered <- maf
 
+  # Family mode: the review is about the proband. Variants only the relatives carry (or that the
+  # proband has no call for) stay in the raw MAF, which holds the family's every variant.
+  if ("Inheritance_check" %in% colnames(filtered)) {
+    keep <- !(filtered$Inheritance %in% "not_in_proband" | filtered$Inheritance_check %in% "proband_no_call")
+    message("Family filter: ", sum(keep), " of ", nrow(filtered), " variants carried by the proband")
+    filtered <- filtered[keep, , drop = FALSE]
+  }
+
   # Panel filter: a row stays if its gene is in the static panel or HPO_MATCH put it in the
   # phenotype panel. Either panel on its own filters; with neither, nothing is dropped here.
   use_static <- length(panel_genes) > 0 && "Hugo_Symbol" %in% colnames(filtered)

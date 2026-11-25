@@ -25,8 +25,8 @@
             },
             "hpo": {
                 "type": "string",
-                "pattern": "^HP:\\d+(;HP:\\d+)*$",
-                "errorMessage": "Optional HPOs must be semicolon-separated and in the format HP:number;HP:number"
+                "pattern": "^[^\\t\\n]*$",
+                "errorMessage": "Optional HPO terms, ';'-separated: HP: codes or exact primary names in any case (HP:0001250;Microcephaly)"
             }
         },
         "required": ["patient", "sample_type", "sample_file"]

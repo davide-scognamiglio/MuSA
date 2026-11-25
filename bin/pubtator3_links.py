@@ -117,13 +117,15 @@ def annotate(args):
         sys.exit(f"{args.index} not found: this data directory predates MuSA 1.5's PubTator3 index. "
                  "Run `--workflow setup --update_db_only true` once to add it.")
 
+    # Two passes over the MAF, so memory does not grow with it: the first keeps only each row's
+    # lookup keys, the second copies every row through with the new columns added. A joint-called
+    # family exome MAF (100,000 rows x 900 columns, 0.5 GB) held whole took 6 GB.
     with open(args.maf, newline="\n") as fin:
         header = fin.readline().rstrip("\n").split("\t")
         col = {}
         for i, name in enumerate(header):
             col.setdefault(name, i)
-        rows = [line.rstrip("\n").split("\t") for line in fin]
-    row_keys = [keys(r, col) for r in rows]
+        row_keys = [keys(line.rstrip("\n").split("\t"), col) for line in fin]
     wanted = {k for ks in row_keys for k in ks}
 
     # The index holds ~2.5 million keys; only the MAF's are kept in memory.
@@ -137,9 +139,11 @@ def annotate(args):
                 index[key] = pmids
 
     n_hit = 0
-    with open(args.output, "w", newline="\n") as fout:
+    with open(args.maf, newline="\n") as fin, open(args.output, "w", newline="\n") as fout:
+        fin.readline()
         fout.write("\t".join(header + COLUMNS) + "\n")
-        for r, ks in zip(rows, row_keys):
+        for line, ks in zip(fin, row_keys):
+            r = line.rstrip("\n")
             found = {}
             for k in ks:
                 for item in index.get(k, "").split(","):
@@ -147,7 +151,7 @@ def annotate(args):
                         pmid, _, letters = item.partition(":")
                         found[pmid] = found.get(pmid, "") + letters
             if not found:
-                fout.write("\t".join(r + ["."] * len(COLUMNS)) + "\n")
+                fout.write("\t".join([r] + ["."] * len(COLUMNS)) + "\n")
                 continue
             n_hit += 1
             ranked = sorted(found.items(), key=lambda kv: (min(RANK.get(c, 9) for c in kv[1]),
@@ -155,9 +159,9 @@ def annotate(args):
             listed = ranked[:MAX_PMIDS]
             sources = ["+".join(SOURCE_NAME[c] for c in sorted(set(letters), key=RANK.get) if c in SOURCE_NAME)
                        for _, letters in listed]
-            fout.write("\t".join(r + [str(len(found)), ",".join(p for p, _ in listed),
+            fout.write("\t".join([r, str(len(found)), ",".join(p for p, _ in listed),
                                       ",".join(sources)]) + "\n")
-    print(f"{args.output}: PubTator3 articles for {n_hit} of {len(rows)} variants", file=sys.stderr)
+    print(f"{args.output}: PubTator3 articles for {n_hit} of {len(row_keys)} variants", file=sys.stderr)
 
 
 def main():

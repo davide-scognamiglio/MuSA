@@ -1,5 +1,6 @@
 
 include {NORMALIZE_CHR} from '../../../modules/local/normalize_chr'
+include {SELECT_MEMBERS} from '../../../modules/local/select_members'
 include {BCFTOOLS_NORM_SPLIT_MULTIALLELIC} from '../../../modules/local/bcftools_norm_split_multiallelic'
 include {BCFTOOLS_FILTER_SYMBOLIC_ALLELES} from '../../../modules/local/bcftools_filter_symbolic_alleles'
 include {GATK_VARIANTFILTRATION_HARDFILTER} from '../../../modules/local/gatk_variantfiltration_hardfilter'
@@ -13,7 +14,12 @@ workflow PREPROCESS {
     take: vcf 
 
     main:
-        ch1 = NORMALIZE_CHR(vcf)
+        // A family or cohort (or a single patient naming its `sample`) keeps only its own samples.
+        normalized = NORMALIZE_CHR(vcf).branch { meta, _vcf ->
+            subset: meta.members || meta.sample
+            whole:  true
+        }
+        ch1 = normalized.whole.mix(SELECT_MEMBERS(normalized.subset))
         // If skipping BCFTOOLS, pass input directly
         if (params.skip_bcftools) {
             ch_for_next = ch1

@@ -31,9 +31,10 @@ results/
 - `<patient>.raw.maf`
   - Every variant that survived preprocessing, annotated and merged into one table, one row per
     variant. Basic mode (VEP with ClinVar and ClinGen, vcf2maf, ClinGen gene curations, HPO match
-    and onset, ClinVar PS1/PM5 evidence and submission comments, PubTator3 literature links): 185
-    columns. Extended mode adds dbNSFP's variant and gene columns, the VEP plugins, gnomAD v4.1
-    exomes counts and RENOVO's `RENOVO_Class` / `PL_score`: 951 columns as of this version.
+    and onset, ClinVar PS1/PM5 evidence and submission comments, PubTator3 literature links, the
+    sample's own genotype): 191 columns. Extended mode adds dbNSFP's variant and gene columns, the
+    VEP plugins, gnomAD v4.1 exomes counts and RENOVO's `RENOVO_Class` / `PL_score`: 954 columns as
+    of this version.
     This number changes as annotation sources change: treat it as approximate rather than a
     stable interface.
 - `<patient>.filtered.maf`
@@ -83,6 +84,7 @@ changes what the row says:
 | `not_requested` | `HPO_match`, `HPO_match_score`, `HPO_matched_terms`, `HPO_best_disease`, `HPO_panel` | the samplesheet gave no HPO terms, so no comparison was made (`none` means compared, nothing matched) |
 | `unannotated` | `HPO_match`, `HPO_onset` | HPO has no phenotype (or disease) annotation for the gene |
 | `0` | `ClinVar_SCV_*_n` | the variant is in ClinVar and no counted submission says that; `.` means no ClinVar record |
+| `.` | `Zygosity` | the sample has no genotype call at the site (the other `Sample_*` columns are `.` too) |
 
 #### Columns holding several values
 
@@ -94,7 +96,32 @@ changes what the row says:
 | `PubTator3_pmids`, `PubTator3_source`, `ClinVar_SCV_func_pmids`, `PUBMED`, `Existing_variation`, `MaveDB_score` (VEP plugin) | `,` | `41892021,40730740` |
 | `Consequence` and other VEP multi-value fields | `,` (VEP's `&`) | `missense_variant,splice_region_variant` |
 | `HPO_matched_terms`, `ClinVar_PM5` | `; ` | `R978H 3★; R978S 1★` |
+| `Comphet_trans`, `Comphet_cis_or_unknown` | `;` | `TTN:p.Arg100Cys;TTN:p.Gly2Ser` |
+| `Cohort_carriers` | `,` | `HG00097,HG00157` |
+| `Sample_AD` | `,`, reference first | `12,9` |
 
+
+### Family and cohort columns
+
+Written in [family and cohort modes](usage.md#family-and-cohort-modes) only.
+
+| Column | Values | Meaning |
+|---|---|---|
+| `GT_`, `DP_`, `GQ_`, `AD_`, `VAF_<sample>` | as in `Sample_*` | each member's call, members in samplesheet order (proband first); in `<group>.genotypes.tsv.gz` instead above `--max_member_columns` members |
+| `Inheritance` | `de_novo`, `maternal`, `paternal`, `biparental`, `not_in_proband`, `unknown` | where the proband's alternate allele comes from, from the parents' genotypes; `biparental`: a homozygous proband, one allele from each parent |
+| `Inheritance_check` | `pass`; `unchecked`; `parent_missing`, `parent_no_call`, `parent_low_depth`, `parent_low_gq`, `parent_alt_reads`; `proband_no_call`, `proband_low_gq`, `proband_allele_balance`; `both_parents_carry`; `mendelian_error` | why `Inheritance` is what it is: `unchecked` is a de novo call from a VCF without DP, GQ or AD; `both_parents_carry` is a heterozygous proband whose parents both carry the variant, so either could have passed it on |
+| `Segregation_affected`, `Segregation_unaffected` | `k/n` | members carrying the variant / members with a call, among the affected and the unaffected |
+| `Comphet_trans` | `GENE:p.change;...` | the proband's other heterozygous variants in the same gene that come from the other parent (in trans) |
+| `Comphet_cis_or_unknown` | `GENE:p.change;...` | its other heterozygous variants in the gene whose phase the parents do not establish |
+| `Cohort_called_n`, `Cohort_carriers_n`, `Cohort_het_n`, `Cohort_hom_n` | counts | members with a call, carrying it, heterozygous (hemizygous included), homozygous |
+| `Cohort_AF` | 0 to 1 | alternate allele frequency among the called members |
+| `Cohort_carrier_families_n` | count | carriers counted once per samplesheet `family` |
+| `Cohort_affected_carriers_n`, `Cohort_unaffected_carriers_n` | counts | carriers by affected status |
+| `Cohort_carriers` | names | carrier samples, up to 50 |
+
+`Zygosity` and `Sample_*` describe the proband in family mode and are `.` in cohort mode. Group
+outputs, next to the MAFs: `<group>.genotypes.tsv.gz` (more members than `--max_member_columns`) and,
+for a cohort, `<group>.genes.tsv`.
 
 ## Setup workflow
 

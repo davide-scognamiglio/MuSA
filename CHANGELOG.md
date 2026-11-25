@@ -3,7 +3,76 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v1.6.0 - 2026-11-25
+
+Families and cohorts: a joint-called VCF annotated once for the whole group, with where the
+proband's variants come from, who in the family carries them and which pairs sit in trans; or, for
+a cohort, how many members and families carry each variant and gene.
+
+### `Added`
+
+- **Family and cohort modes.** Samplesheet rows sharing a `group` (new optional columns `group`,
+  `sample`, `role`, `sex`, `affected`, `family`) point at one joint-called VCF and are annotated
+  once, on the group's union of variants (1.4 times the proband's own on the test trio) instead
+  of once per member. Each member's genotype
+  (`GT_`, `DP_`, `GQ_`, `AD_`, `VAF_<sample>`, or `<group>.genotypes.tsv.gz` for large groups).
+  - Family: `Inheritance` (`de_novo`, `maternal`, `paternal`, `biparental`, `not_in_proband`,
+    `unknown`) with `Inheritance_check` (de novo calls need parental depth, genotype quality and no
+    alternate reads: `--dn_min_dp`, `--dn_min_gq`, `--dn_max_parent_alt`), chrX and chrY by the
+    proband's sex, `Segregation_affected` / `_unaffected`, and `Comphet_trans` /
+    `_cis_or_unknown` for compound heterozygosity. The filtered MAF and the report keep the
+    proband's variants; the report adds de novo and compound-heterozygous groups and the family's
+    genotypes. Parentage is assumed, not checked.
+  - Cohort: `Cohort_*` carrier counts, cohort allele frequency, carriers counted once per family,
+    and `<group>.genes.tsv` with members and families carrying each gene's rare HIGH or MODERATE
+    variants (`--cohort_rare_af`), by affected status.
+  - `-profile test_family`: a trio covering every inheritance outcome, chrX and PAR1.
+- **HPO terms by name.** The samplesheet's `hpo` field takes HPO codes or exact primary names, in
+  any case and mixed (`HP:0001250;microcephaly`). Every patient's terms are resolved before
+  annotation starts; a synonym, a misspelling or an obsolete code with no replacement stops the
+  run in seconds with the closest primary names, instead of being dropped silently.
+- **The sample's own genotype** (`Zygosity`, `Sample_GT`, `Sample_DP`, `Sample_GQ`, `Sample_AD`,
+  `Sample_VAF`), read from its FORMAT values on every row.
+
+### `Changed`
+
+- dbNSFP annotates a sites-only copy of the VCF. Its duplicate of the `INFO`, `FORMAT` and sample
+  columns, filled only where dbNSFP had a record (12,126 of 22,597 NA12878 rows were empty), is no
+  longer in the MAF: `bioinfo_params`, `FORMAT_FIELDS` and `FORMAT_VALUES` hold the same data on
+  every row.
+- A basic MAF has 191 columns (185 in 1.5), an extended one 954 (951 in 1.5); family and cohort
+  modes add their own (212 on the basic test trio). The sources catalogue still lists 106 sources.
+
+### `Fixed`
+
+- **Memory on large exome MAFs.** `PUBTATOR3_LINKS` and `GROUP_GENOTYPES` held the whole MAF in
+  memory and were killed on joint-called clinical exomes (75,000-100,000 rows, 0.4-0.55 GB MAFs).
+  They now read the MAF in two passes, with byte-identical output: peak memory on a 101,075-row
+  family MAF went from 6.3 to 0.05 GB (PubTator3) and from 6.5 to 0.28 GB (group genotypes). The
+  per-MAF helpers that retried once (`GROUP_GENOTYPES`, `HPO_MATCH`, `SAMPLE_GENOTYPES`,
+  `SELECT_MEMBERS`) now retry twice.
+- **`HPO_matched_terms` changed from run to run**: of several gene terms equally specific under a
+  patient term, the one named depended on Python's per-run string hashing. The highest-IC term is
+  still named, with ties now going to the lowest HPO ID.
+- **Members are read from the VCF by sample name.** GATK's hard filter (`--vcf_format sarek`) sorts
+  the sample columns by name, so reading members by position gave each member another's genotypes
+  whenever the samplesheet order was not alphabetical (the proband's `Zygosity` and `Sample_*`
+  included). A member missing from the VCF stops the run, and the hard filter restores the input's
+  column order. New `-profile test_family_sarek` and `tests/check_family_fixture.py`.
+- **The report's zygosity and read-depth warning came from INFO** (`AC`/`AN`/`DP`). Those describe
+  every sample of a joint-called VCF, and many VCFs have no `AC`/`AN` at all: on GIAB's NA12878 the
+  report showed no zygosity for any variant. Both now come from the sample's own call.
+
+### Upgrading from 1.5
+
+No setup is needed: 1.6 uses the databases 1.5 installed (the same manifest, pinned to
+test-datasets `e9d81ef`).
+
 ## v1.5.0 - 2026-10-26
+
+> Updated in place on 2026-11-25: the database manifest is pinned to the test-datasets commit this
+> release was built for (`0fcf848`), now that test-datasets `main` carries MuSA 1.7's entries. No
+> setup is needed.
 
 Facts for ACMG/AMP classification tools downstream of MuSA: what ClinVar submitters wrote, the
 literature that mentions the variant, gnomAD counts for indels, and the age of onset of the gene's
