@@ -9,7 +9,6 @@ params.date = new java.util.Date().format('yyMMdd')
 include { BASIC_SETUP    } from '../../subworkflows/local/basic_setup'
 include { EXTENDED_SETUP } from '../../subworkflows/local/extended_setup'
 include { BUILD_SETUP_REPORT } from '../../modules/local/build_setup_report'
-include { ARGUS_SETUP } from '../../modules/local/argus_setup'
 
 workflow SETUP {
 
@@ -28,14 +27,5 @@ workflow SETUP {
             report_input = basic_yaml
         }
 
-        // ARGUS's resources are built from what was just installed, in both modes. Until an ARGUS
-        // image is configured (params.argus_container) the step is skipped.
-        if (params.argus_container) {
-            notes = ARGUS_SETUP(report_input)
-        } else {
-            log.warn "ARGUS resources not built: no --argus_container set."
-            notes = channel.value(file("${projectDir}/assets/NO_FILE"))
-        }
-
-        final_ch = BUILD_SETUP_REPORT(report_input, notes)
+        final_ch = BUILD_SETUP_REPORT(report_input)
 }

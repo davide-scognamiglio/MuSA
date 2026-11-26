@@ -85,13 +85,6 @@
                     ],
                     "default": "mane"
                 },
-                "argus_container": {
-                    "type": "string",
-                    "description": "ARGUS container image; setup builds ARGUS's resources into <data_dir>/argus with it",
-                    "help_text": "ARGUS, the ACMG/AMP interpretation module, generates its data resources (ClinVar amino-acid index, PM1 residue density, PS4 submitter counts, HPO term-gene table, REVEL rankscore map) from files MuSA setup installs. Empty skips that step.",
-                    "fa_icon": "fas fa-box",
-                    "default": ""
-                },
                 "vep_pick_order": {
                     "type": "string",
                     "description": "VEP --pick_order: which transcript each MAF row reports",

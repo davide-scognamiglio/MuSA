@@ -3,19 +3,6 @@
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v1.8.0 - unreleased
-
-### `Added`
-
-- **ARGUS resources at setup** (`--argus_container`): setup, in both modes, ends by building the
-  data ARGUS (the ACMG/AMP module) needs into `<data_dir>/argus` with ARGUS's own image: ClinVar
-  amino-acid index, PM1 residue density, PS4 submitter counts, HPO term-gene table, REVEL rankscore
-  map. Sources come from this setup's manifest; one not installed (SpliceAI and dbNSFP on a basic
-  setup, ClinVar's raw tables on a data dir set up before MuSA kept them) is left out, and the
-  setup report's new Notices block says which and what was not built. ARGUS rebuilds only what
-  changed (1.7 s on an unchanged extended data dir; 7 min 41 s from scratch, 11 MB). Without
-  `--argus_container` the step is skipped with a warning.
-
 ## v1.7.0 - 2026-11-25
 
 Every transcript of every variant, next to the MAF, and more facts for ACMG/AMP tools downstream:

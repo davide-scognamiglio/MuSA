@@ -253,7 +253,6 @@ before MuSA 1.3 has no HPO files: run `setup --update_db_only true` once to add 
 | `--dbnsfp_zip` | `null` | `setup`: a dbNSFP zip already on disk, instead of `--dbnsfp_url`. |
 | `--dbnsfp_max_forks` | `16` | Concurrent dbNSFP per-chromosome shards. Lower it if memory is tight. |
 | `--dbnsfp_transcript_scores` | `mane` | How to resolve dbNSFP's per-transcript score arrays to one value per variant. |
-| `--argus_container` | (empty) | ARGUS image; setup builds ARGUS's resources into `<data_dir>/argus` with it. Empty skips that step. |
 | `--vep_pick_order` | `rank,mane_select,mane_plus_clinical,canonical,appris,tsl,biotype,ccds,length` | VEP `--pick_order`: which transcript each MAF row reports. Severity first by default; start with `mane_select` to report MANE Select whenever there is one (see [output](output.md#about-the-maf-format)). |
 
 The full list is in [`nextflow_schema.json`](../nextflow_schema.json), or run with `--help`.

@@ -18,7 +18,6 @@ process BUILD_SETUP_REPORT {
 
     input:
         path merged_yaml
-        path notes
 
     output:
         path "setup_report.html"
@@ -27,7 +26,7 @@ process BUILD_SETUP_REPORT {
     script:
     """
     logo="${projectDir}/assets/MuSA_logo.png"
-    build_setup_report.py ${merged_yaml} setup_report.html \$logo "${workflow.manifest.version}" ${notes}
+    build_setup_report.py ${merged_yaml} setup_report.html \$logo "${workflow.manifest.version}"
     cp -L ${merged_yaml} dbs_manifest.yaml
     """
 }
